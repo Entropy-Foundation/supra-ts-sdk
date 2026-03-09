@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler", // ← recommended over "node"
+    // or "nodenext" if you prefer strict Node-like resolution
+    "lib": [
+      "es2022",
+      "dom"
+    ], // ← critical for browser/React
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true, // safe to keep
+    "allowSyntheticDefaultImports": true, // useful with some deps
+    "skipLibCheck": true, // speeds up + avoids many issues
+    "isolatedModules": true, // good with tsup/esbuild
+    "verbatimModuleSyntax": true, // keep if you want strict imports (most keep it now)
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}

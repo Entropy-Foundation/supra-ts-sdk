@@ -1,0 +1,39 @@
+{
+    "name": "supra-ts-sdk",
+    "includeVersion": true,
+    "cname": "sdk-docs.supra.com",
+    "entryPoints": [
+        "src/index.ts"
+    ],
+    "exclude": [
+        "tests/**/*"
+    ],
+    "excludePrivate": true,
+    "excludeProtected": true,
+    "hideGenerator": true,
+    "pretty": true,
+    "theme": "default",
+    "categorizeByGroup": true,
+    "navigation": {
+        "includeCategories": true,
+        "includeGroups": true,
+        "includeFolders": true
+    },
+    "groupOrder": [
+        "SupraClient",
+        "Account",
+        "Faucet",
+        "Transaction",
+        "Coin",
+        "FungibleAsset",
+        "Methods",
+        "Table",
+        "Events",
+        "Block",
+        "Contract",
+        "SupraAPIError"
+    ],
+    "categoryOrder": [
+        "Classes"
+    ],
+}
