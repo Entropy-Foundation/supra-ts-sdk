@@ -11,7 +11,7 @@ var DEFAULT_CHAIN_ID = 6;
 var MAX_RETRY_FOR_TRANSACTION_COMPLETION = 300;
 var DELAY_BETWEEN_POOLING_REQUEST = 1e3;
 var DEFAULT_RECORDS_ITEMS_COUNT = 15;
-var DEFAULT_MAX_GAS_UNITS = BigInt(500);
+var DEFAULT_MAX_GAS_UNITS = BigInt(1e3);
 var DEFAULT_GAS_PRICE = BigInt(1e5);
 var DEFAULT_TX_EXPIRATION_DURATION = 300;
 var MILLISECONDS_PER_SECOND = 1e3;
@@ -25,8 +25,6 @@ var DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS = 1020;
 var RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 var RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 var DEFAULT_RPC_VERSION = "v3";
-var RPC_VERSION_V1 = "v1";
-var RPC_VERSION_V2 = "v2";
 var DEFAULT_TXN_TIMEOUT_SEC = 20;
 
 // src/helper/account.ts
@@ -258,10 +256,11 @@ import { BCS as BCS4, TxnBuilderTypes as TxnBuilderTypes5 } from "supra-l1-sdk-c
 import axios from "axios";
 
 // src/utils/apiEndpoints.ts
-var Network = /* @__PURE__ */ ((Network3) => {
-  Network3["MAINNET"] = "mainnet";
-  Network3["TESTNET"] = "testnet";
-  return Network3;
+var Network = /* @__PURE__ */ ((Network2) => {
+  Network2["MAINNET"] = "mainnet";
+  Network2["TESTNET"] = "testnet";
+  Network2["CUSTOM"] = "custom";
+  return Network2;
 })(Network || {});
 var NetworkInfo = {
   ["mainnet" /* MAINNET */]: {
@@ -273,6 +272,11 @@ var NetworkInfo = {
     name: "testnet",
     chainId: 6,
     rpcUrl: "https://rpc-testnet.supra.com"
+  },
+  ["custom" /* CUSTOM */]: {
+    name: "custom",
+    chainId: 0,
+    rpcUrl: ""
   }
 };
 
@@ -2526,7 +2530,7 @@ async function fundAccountWithFaucetInternal(args, config) {
   }
   let response = await get({
     path: `/wallet/faucet/${standardizeAddress(args.accountAddress)}`
-  }, config, RPC_VERSION_V1);
+  }, config);
   return {
     hash: response.data.Accepted
   };
@@ -2669,7 +2673,7 @@ async function getTableItemInternal(args, config) {
   return await post({
     path: `tables/${args.handle}/item`,
     data: args.data
-  }, config, RPC_VERSION_V2).then((res) => res);
+  }, config).then((res) => res);
 }
 
 // src/api/table.ts
@@ -3500,14 +3504,33 @@ var SupraClient = class {
   * ```typescript
   * import { SupraClient,Network } from "supra-ts-sdk";
   * 
-  * const supra = new SupraClient({ network: Network.TESTNET });
+  * // Options:1 (Default configuration)
+  * const supra = new SupraClient({ network: Network.TESTNET }); 
+  * 
+  * 
+  * // Options:2 (Custom configuration)
+  * const supra = new SupraClient({ network: Network.CUSTOM, rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 });
+  * 
+  * 
+  * // Options:3 (Custom configuration)
+  * const supra = new SupraClient({ rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 }); 
   * 
   * ```  
   * @group SupraClient
   */
   constructor(config) {
-    this.config = { network: config.network, minGasUnitPrice: config.minGasUnitPrice ?? DEFAULT_GAS_PRICE, maxGas: config.maxGas ?? DEFAULT_MAX_GAS_UNITS };
-    this.networkInformation = { ...NetworkInfo[this.config.network], minGasUnitPrice: this.config.minGasUnitPrice, maxGas: this.config.maxGas };
+    this.config = config;
+    if ("rpcUrl" in config && "chainId" in config) {
+      this.networkInformation = {
+        name: "custom" /* CUSTOM */,
+        chainId: config.chainId,
+        rpcUrl: config.rpcUrl
+      };
+    } else {
+      this.networkInformation = NetworkInfo[config.network];
+    }
+    this.networkInformation.maxGas = config.maxGas ?? DEFAULT_MAX_GAS_UNITS;
+    this.networkInformation.minGasUnitPrice = config.minGasUnitPrice ?? DEFAULT_GAS_PRICE;
     this.account = new Account(this.networkInformation);
     this.transaction = new Transaction(this.networkInformation);
     this.contract = new Contract(this.networkInformation);
@@ -3626,8 +3649,6 @@ export {
   OBJECT_CORE,
   RAW_TRANSACTION_SALT,
   RAW_TRANSACTION_WITH_DATA_SALT,
-  RPC_VERSION_V1,
-  RPC_VERSION_V2,
   SUPRA_COIN_TYPE,
   SUPRA_FRAMEWORK_ADDRESS,
   Serialized,

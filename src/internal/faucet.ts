@@ -1,10 +1,8 @@
 import { get } from "../client/get";
-import { post } from "../client/post";
 import { standardizeAddress } from "../helper/account";
 import type { AccountAddressInput } from "../types/account";
 import type { FaucetTransactionResponse } from "../types/faucet";
 import { Network, type NetworkConfig } from "../utils/apiEndpoints";
-import { RPC_VERSION_V1 } from "../utils/constants";
 
 
 /**
@@ -23,7 +21,7 @@ export async function fundAccountWithFaucetInternal(
 
     let response = await get<{ Accepted: string }>({
         path: `/wallet/faucet/${standardizeAddress(args.accountAddress)}`,
-    }, config, RPC_VERSION_V1);
+    }, config);
 
     return {
         hash: response.data.Accepted

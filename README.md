@@ -108,7 +108,7 @@ import { SupraClient, Network } from 'supra-ts-sdk';
 - [Submit Transaction](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/submitTransaction.ts)
 - [Contract](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/contract.ts)
 - [Event](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/events.ts)
-- [Method](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/methods.ts)
+- [Methods](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/methods.ts)
 - [Table](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/table.ts)
 - [Block](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/block.ts)
 

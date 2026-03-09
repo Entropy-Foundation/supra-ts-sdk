@@ -20,6 +20,4 @@ export const DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS = 1020;
 export const RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 export const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 export const DEFAULT_RPC_VERSION = "v3"
-export const RPC_VERSION_V1 = "v1"
-export const RPC_VERSION_V2 = "v2"
 export const DEFAULT_TXN_TIMEOUT_SEC = 20;

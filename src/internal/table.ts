@@ -2,7 +2,6 @@ import { post } from "../client/post";
 import type { AccountAddressInput } from "../types/account";
 import type { TableItemRequest } from "../types/table";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import { RPC_VERSION_V2 } from "../utils/constants";
 
 
 /**
@@ -15,5 +14,5 @@ export async function getTableItemInternal<T>(
     return await post<TableItemRequest, T>({
         path: `tables/${args.handle}/item`,
         data: args.data
-    }, config, RPC_VERSION_V2).then(res => res);
+    }, config).then(res => res);
 }

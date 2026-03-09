@@ -3,7 +3,8 @@ import { AxiosResponse } from 'axios';
 
 declare enum Network {
     MAINNET = "mainnet",
-    TESTNET = "testnet"
+    TESTNET = "testnet",
+    CUSTOM = "custom"
 }
 interface NetworkConfig {
     name: string;
@@ -2178,11 +2179,17 @@ declare class Methods {
  * The SupraConfig interface is used to configure the SupraClient class.
  * You can set maxGas and minGasUnitPrice if you want to override global default values
  */
-interface SupraConfig {
-    network: Network;
+type SupraConfig = {
+    network: Network.MAINNET | Network.TESTNET;
     maxGas?: bigint;
     minGasUnitPrice?: bigint;
-}
+} | {
+    network?: Network.CUSTOM;
+    rpcUrl: string;
+    chainId: number;
+    maxGas?: bigint;
+    minGasUnitPrice?: bigint;
+};
 interface GasPrice {
     mean_gas_price: number;
     max_gas_price: number;
@@ -2953,7 +2960,16 @@ declare class SupraClient {
     * ```typescript
     * import { SupraClient,Network } from "supra-ts-sdk";
     *
+    * // Options:1 (Default configuration)
     * const supra = new SupraClient({ network: Network.TESTNET });
+    *
+    *
+    * // Options:2 (Custom configuration)
+    * const supra = new SupraClient({ network: Network.CUSTOM, rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 });
+    *
+    *
+    * // Options:3 (Custom configuration)
+    * const supra = new SupraClient({ rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 });
     *
     * ```
     * @group SupraClient
@@ -3078,8 +3094,6 @@ declare const DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS = 1020
 declare const RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 declare const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 declare const DEFAULT_RPC_VERSION = "v3";
-declare const RPC_VERSION_V1 = "v1";
-declare const RPC_VERSION_V2 = "v2";
 declare const DEFAULT_TXN_TIMEOUT_SEC = 20;
 
-export { Account, type AccountAddressInput, type AccountData, type Args, type AutoTransactionResponse, type AutomationRecordData, type AutomationRecordTransactionResponse, type AutomationRegistrationParamV1JSON, type AutomationRegistrationParams, type AutomationRegistrationParamsV1, type AutomationRegistrationParamsV2, type AutomationRegistrationPayloadJSON, type AutomationRegistrationPayloadResponse, type AutomationTransactionResponse, Block, type BlockHeader, type BlockMetadataTransactionResponse, Build, Coin, type CommittedTransactionResponse, Contract, type ContractsFromABI, type ConvertGenerics, DEFAULT_CHAIN_ID, DEFAULT_ENABLE_SIMULATION, DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, DEFAULT_MAX_GAS_UNITS, DEFAULT_RECORDS_ITEMS_COUNT, DEFAULT_RPC_VERSION, DEFAULT_TXN_TIMEOUT_SEC, DEFAULT_TX_EXPIRATION_DURATION, DEFAULT_WAIT_FOR_TX_COMPLETION, DELAY_BETWEEN_POOLING_REQUEST, type DeepReadonly, type DkgTransactionOutput, type DkgTransactionPayload, type EmptyTransactionOutput, type EnableTransactionWaitAndSimulationArgs, type EntryArgs, type EntryFunctionJSON, type EntryFunctionPayload, type EntryFunctionPayloadJSON, type EntryFunctionPayloadResponse, type EntryFunctionsFromABI, Events, Faucet, type FaucetTransactionResponse, type FunctionTypeArgs, FungibleAsset, type GasPrice, type Headers, type InputViewFunctionData, type InputViewRawFunctionData, MAX_RETRY_FOR_TRANSACTION_COMPLETION, MILLISECONDS_PER_SECOND, type MapArgs, type MapTypeArgs, Methods, type MoveModules, type MoveToTS, type MoveTransactionOutput, type MoveTransactionPayload, type MultisigPayloadJSON, type MultisigPayloadResponse, type MultisigTransactionPayload, Network, type NetworkConfig, NetworkInfo, OBJECT_CORE, type OptionalTransactionArgs, type OptionalTransactionPayloadArgs, type OracleTransactionOutput, type OracleTransactionPayload, type PaginatedResponse, type PendingTransactionResponse, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, RPC_VERSION_V1, RPC_VERSION_V2, type RawTxnJSON, type ReturnTypes, SUPRA_COIN_TYPE, SUPRA_FRAMEWORK_ADDRESS, type ScriptArgumentJson, type ScriptPayloadJSON, type ScriptPayloadResponse, type SendTxnPayload, Serialized, Simulate, type StructFromABI, Submit, SupraAPIError, type SupraAPIErrorOptions, SupraClient, type SupraConfig, type SupraTransactionResponse, Table, type TableItemRequest, type TableKeyValueType, type TableKeyValueTypeHelper, Transaction, type TransactionOutput, type TransactionPayload, type TransactionPayloadJSON, type TransactionPayloadResponse, type TransactionQueryType, type TransactionResponse, TransactionStatus, TransactionType, type UserTransactionResponse, type ViewFunctionsFromABI, type WaitForTransactionOptions, standardizeAddress };
+export { Account, type AccountAddressInput, type AccountData, type Args, type AutoTransactionResponse, type AutomationRecordData, type AutomationRecordTransactionResponse, type AutomationRegistrationParamV1JSON, type AutomationRegistrationParams, type AutomationRegistrationParamsV1, type AutomationRegistrationParamsV2, type AutomationRegistrationPayloadJSON, type AutomationRegistrationPayloadResponse, type AutomationTransactionResponse, Block, type BlockHeader, type BlockMetadataTransactionResponse, Build, Coin, type CommittedTransactionResponse, Contract, type ContractsFromABI, type ConvertGenerics, DEFAULT_CHAIN_ID, DEFAULT_ENABLE_SIMULATION, DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, DEFAULT_MAX_GAS_UNITS, DEFAULT_RECORDS_ITEMS_COUNT, DEFAULT_RPC_VERSION, DEFAULT_TXN_TIMEOUT_SEC, DEFAULT_TX_EXPIRATION_DURATION, DEFAULT_WAIT_FOR_TX_COMPLETION, DELAY_BETWEEN_POOLING_REQUEST, type DeepReadonly, type DkgTransactionOutput, type DkgTransactionPayload, type EmptyTransactionOutput, type EnableTransactionWaitAndSimulationArgs, type EntryArgs, type EntryFunctionJSON, type EntryFunctionPayload, type EntryFunctionPayloadJSON, type EntryFunctionPayloadResponse, type EntryFunctionsFromABI, Events, Faucet, type FaucetTransactionResponse, type FunctionTypeArgs, FungibleAsset, type GasPrice, type Headers, type InputViewFunctionData, type InputViewRawFunctionData, MAX_RETRY_FOR_TRANSACTION_COMPLETION, MILLISECONDS_PER_SECOND, type MapArgs, type MapTypeArgs, Methods, type MoveModules, type MoveToTS, type MoveTransactionOutput, type MoveTransactionPayload, type MultisigPayloadJSON, type MultisigPayloadResponse, type MultisigTransactionPayload, Network, type NetworkConfig, NetworkInfo, OBJECT_CORE, type OptionalTransactionArgs, type OptionalTransactionPayloadArgs, type OracleTransactionOutput, type OracleTransactionPayload, type PaginatedResponse, type PendingTransactionResponse, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, type RawTxnJSON, type ReturnTypes, SUPRA_COIN_TYPE, SUPRA_FRAMEWORK_ADDRESS, type ScriptArgumentJson, type ScriptPayloadJSON, type ScriptPayloadResponse, type SendTxnPayload, Serialized, Simulate, type StructFromABI, Submit, SupraAPIError, type SupraAPIErrorOptions, SupraClient, type SupraConfig, type SupraTransactionResponse, Table, type TableItemRequest, type TableKeyValueType, type TableKeyValueTypeHelper, Transaction, type TransactionOutput, type TransactionPayload, type TransactionPayloadJSON, type TransactionPayloadResponse, type TransactionQueryType, type TransactionResponse, TransactionStatus, TransactionType, type UserTransactionResponse, type ViewFunctionsFromABI, type WaitForTransactionOptions, standardizeAddress };
