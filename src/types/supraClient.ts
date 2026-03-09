@@ -4,11 +4,19 @@ import type { Network } from "../utils/apiEndpoints";
  * The SupraConfig interface is used to configure the SupraClient class.
  * You can set maxGas and minGasUnitPrice if you want to override global default values 
  */
-export interface SupraConfig {
-    network: Network,
-    maxGas?: bigint,
-    minGasUnitPrice?: bigint
-}
+export type SupraConfig =
+    {
+        network: Network.MAINNET | Network.TESTNET;
+        maxGas?: bigint;
+        minGasUnitPrice?: bigint;
+    }
+    | {
+        network?: Network.CUSTOM;
+        rpcUrl: string;
+        chainId: number;
+        maxGas?: bigint;
+        minGasUnitPrice?: bigint;
+    };
 
 
 export interface GasPrice {

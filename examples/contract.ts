@@ -1,7 +1,7 @@
 import { TypeTagParser } from 'supra-l1-sdk-core';
 import { SupraClient, Network } from '../src/index';
 import { account } from '../testAccount';
-import { COIN_ABI, VOTNIG_ABI as VOTING_ABI } from '../src/abi';
+import { COIN_ABI } from '../src/abi';
 
 
 (async () => {
@@ -16,8 +16,7 @@ import { COIN_ABI, VOTNIG_ABI as VOTING_ABI } from '../src/abi';
 
 
     const contract_abis = [
-        COIN_ABI,
-        VOTING_ABI
+        COIN_ABI
     ] as const;
 
     const instance = supra.contract.fromABI(contract_abis);

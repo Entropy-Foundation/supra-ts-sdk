@@ -1,6 +1,7 @@
 export enum Network {
     MAINNET = "mainnet",
     TESTNET = "testnet",
+    CUSTOM = "custom"
 }
 
 
@@ -23,5 +24,10 @@ export const NetworkInfo: Record<Network, NetworkConfig> = {
         name: "testnet",
         chainId: 6,
         rpcUrl: "https://rpc-testnet.supra.com"
+    },
+    [Network.CUSTOM]: {
+        name: "custom",
+        chainId: 0,
+        rpcUrl: ""
     }
 }

@@ -90,15 +90,43 @@ export class SupraClient {
     * ```typescript
     * import { SupraClient,Network } from "supra-ts-sdk";
     * 
-    * const supra = new SupraClient({ network: Network.TESTNET });
+    * // Options:1 (Default configuration)
+    * const supra = new SupraClient({ network: Network.TESTNET }); 
+    * 
+    * 
+    * // Options:2 (Custom configuration)
+    * const supra = new SupraClient({ network: Network.CUSTOM, rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 });
+    * 
+    * 
+    * // Options:3 (Custom configuration)
+    * const supra = new SupraClient({ rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 }); 
     * 
     * ```  
     * @group SupraClient
     */
     constructor(config: SupraConfig) {
-        this.config = { network: config.network, minGasUnitPrice: config.minGasUnitPrice ?? DEFAULT_GAS_PRICE, maxGas: config.maxGas ?? DEFAULT_MAX_GAS_UNITS };
 
-        this.networkInformation = { ...NetworkInfo[this.config.network], minGasUnitPrice: this.config.minGasUnitPrice!, maxGas: this.config.maxGas! };
+        this.config = config;
+
+        // Set network
+        // use default network configuration if network is testnet or mainnet
+        if ('rpcUrl' in config && 'chainId' in config) {
+            // Custom network
+            this.networkInformation = {
+                name: Network.CUSTOM,
+                chainId: config.chainId,
+                rpcUrl: config.rpcUrl
+            };
+
+        } else {
+            // Predefined network
+            this.networkInformation = NetworkInfo[config.network];
+        }
+
+        // Optional gas
+        this.networkInformation.maxGas = config.maxGas ?? DEFAULT_MAX_GAS_UNITS;
+        this.networkInformation.minGasUnitPrice = config.minGasUnitPrice ?? DEFAULT_GAS_PRICE;
+
 
         /**
          * Initialize all the classes that will be used to interact with the Supra API.

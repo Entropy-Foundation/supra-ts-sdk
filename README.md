@@ -98,19 +98,19 @@ import { SupraClient, Network } from 'supra-ts-sdk';
 
 ## 📚 More Examples
 
-- [Account](/examples/account.ts)
-- [Faucet](/examples/faucet.ts)
-- [Coin](/examples/coin.ts)
-- [Fungible Asset](/examples/fungibleAsste.ts)
-- [Transaction](/examples/transaction.ts)
-- [Build Transaction](/examples/buildTransaction.ts)
-- [Simulate Transaction](/examples/simulateTransaction.ts)
-- [Submit Transaction](/examples/submitTransaction.ts)
-- [Contract](/examples/contract.ts)
-- [Event](/examples/events.ts)
-- [Method](/examples/methods.ts)
-- [Table](/examples/table.ts)
-- [Block](/examples/block.ts)
+- [Account](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/account.ts)
+- [Faucet](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/faucet.ts)
+- [Coin](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/coin.ts)
+- [Fungible Asset](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/fungibleAsste.ts)
+- [Transaction](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/transaction.ts)
+- [Build Transaction](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/buildTransaction.ts)
+- [Simulate Transaction](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/simulateTransaction.ts)
+- [Submit Transaction](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/submitTransaction.ts)
+- [Contract](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/contract.ts)
+- [Event](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/events.ts)
+- [Method](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/methods.ts)
+- [Table](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/table.ts)
+- [Block](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/block.ts)
 
 
 
