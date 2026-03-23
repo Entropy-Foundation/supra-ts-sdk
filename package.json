@@ -76,5 +76,13 @@
   "dependencies": {
     "js-sha3": "^0.9.3",
     "supra-l1-sdk-core": "^2.0.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "@jest/transform": "^29.7.0",
+      "babel-jest": "^29.7.0",
+      "jest-util": "^29.7.0",
+      "@jest/types": "^29.6.3"
+    }
   }
 }
