@@ -50,6 +50,7 @@ describe("internal/transaction", () => {
             mockGet.mockResolvedValue({ data: {} });
 
             await getTransactionByHashInternal(
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 { transactionHash: "0xabc", type: "user" as any, exclude_uncommitted: true },
                 testConfig,
             );

@@ -222,6 +222,7 @@ export class SupraClient {
 export interface SupraClient extends Account, Transaction, Contract, Methods, Faucet, Table, Coin, Events, Block, FungibleAsset { };
 
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyMixins(derivedCtor: any, constructors: any[]) {
     constructors.forEach((baseCtor) => {
         Object.getOwnPropertyNames(baseCtor.prototype).forEach((name) => {

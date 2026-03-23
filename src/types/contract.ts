@@ -32,7 +32,7 @@ export type MoveToTS<T extends string> =
     // ----------------------------
     // vector<u8>
     // ----------------------------
-    T extends "vector<u8>" ? string | Uint8Array | ArrayBuffer | any[] :
+    T extends "vector<u8>" ? string | Uint8Array | ArrayBuffer | number[] :
 
     // ----------------------------
     // Objects (e.g., 0x1::object::Object)
@@ -67,7 +67,7 @@ export type MoveToTS<T extends string> =
     // ----------------------------
     // Fallback
     // ----------------------------
-    any;
+    unknown;
 
 export type ReturnTypes<F extends DeepReadonly<MoveFunction>> =
     F['return'] extends readonly [...infer R]
@@ -81,12 +81,13 @@ export type MapArgs<ARGUMENTS extends readonly string[] | undefined> =
     : [];
 
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type MapTypeArgs<TYPE_ARGUMENTS extends readonly any[] | undefined> =
     TYPE_ARGUMENTS extends readonly [...infer TRest,]
     ? { [K in keyof TRest]: string | TxnBuilderTypes.TypeTag }
     : [];
 
-
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Args<FUNCTION extends { typeArguments?: readonly any[] | undefined, functionArguments?: readonly string[] | undefined }> = {
     functionArguments: MapArgs<FUNCTION['functionArguments']>;
     typeArguments: MapTypeArgs<FUNCTION['typeArguments']>;
@@ -100,6 +101,7 @@ export type ViewFunctionsFromABI<CONTRACT extends DeepReadonly<MoveModule>> = {
     : never]: (args: Args<{ functionArguments: FUNCTION['params'], typeArguments: ConvertGenerics<FUNCTION['generic_type_params']> }>) => Promise<ReturnTypes<FUNCTION>>;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type EntryArgs<FUNCTION extends { typeArguments?: readonly any[] | undefined, functionArguments?: readonly string[] | undefined, optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs, enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs }> = {
     functionArguments: MapArgs<FUNCTION['functionArguments']>;
     typeArguments: MapTypeArgs<FUNCTION['typeArguments']>;
@@ -138,9 +140,11 @@ export type DeepReadonly<T> = Readonly<{
 }>
 
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export type ConvertGenerics<
     T extends readonly any[],
     Counter extends any[] = []
 > = T extends readonly [any, ...infer Rest]
     ? readonly [`T${Counter['length']}`, ...ConvertGenerics<Rest, [...Counter, any]>]
     : readonly [];
+/* eslint-enable @typescript-eslint/no-explicit-any */

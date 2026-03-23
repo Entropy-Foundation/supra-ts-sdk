@@ -29,5 +29,6 @@ export type TableItemRequest = {
     /**
      * The value of the table item's key
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     key: any;
 };

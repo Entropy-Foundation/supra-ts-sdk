@@ -22,10 +22,12 @@ export async function submitTxnInternal(
         (args.enableTransactionWaitAndSimulationArgs?.enableTransactionSimulation ??
             DEFAULT_ENABLE_SIMULATION) === true
     ) {
+        // eslint-disable-next-line no-console
         console.log("Simulating transaction...");
         await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
     }
 
+    // eslint-disable-next-line no-console
     console.log("Submitting transaction...");
 
     let txHash = await post<SendTxnPayload, string>({

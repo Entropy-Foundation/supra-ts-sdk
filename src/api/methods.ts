@@ -93,7 +93,7 @@ export class Methods {
      * ```
      * @group Methods
      */
-    async viewRaw<T extends Array<any>>(args: InputViewRawFunctionData): Promise<T> {
+    async viewRaw<T extends Array<unknown>>(args: InputViewRawFunctionData): Promise<T> {
         return viewRawInternal(args, this.networkInformation);
     }
 }

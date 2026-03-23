@@ -43,14 +43,17 @@ describe("getFunctionParts", () => {
     });
 
     it("should throw for 2-part input", () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect(() => getFunctionParts("0x1::coin" as any)).toThrow("Invalid function");
     });
 
     it("should throw for 4-part input", () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect(() => getFunctionParts("0x1::coin::balance::extra" as any)).toThrow("Invalid function");
     });
 
     it("should throw for single string", () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect(() => getFunctionParts("just_a_name" as any)).toThrow("Invalid function");
     });
 });

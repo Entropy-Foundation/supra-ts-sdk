@@ -63,6 +63,7 @@ export interface EntryFunctionPayload {
     /**
      * Arguments of the function
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     arguments: Array<any>;
 }
 
@@ -87,6 +88,7 @@ export type ScriptPayloadResponse = {
     /**
      * Arguments of the function
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     arguments: Array<any>;
 };
 
@@ -128,7 +130,8 @@ export interface AutomationRegistrationParamsV1 {
     max_gas_amount: number;
     gas_price_cap: number;
     automation_fee_cap: number;
-    aux_data: any[]; // any additional data
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    aux_data: any[];
 }
 
 /**
@@ -140,6 +143,7 @@ export interface AutomationRegistrationParamsV2 {
     max_gas_amount: number,
     gas_price_cap: number,
     automation_fee_cap: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aux_data: any[],
     task_type: "User" | "System",
     task_priority?: number,
@@ -193,6 +197,7 @@ export interface MoveTransactionPayload {
  * The payload for a Dkg transaction, which contains the Dkg transaction payload.
  */
 export interface DkgTransactionPayload {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Dkg: any;
 }
 
@@ -200,6 +205,7 @@ export interface DkgTransactionPayload {
  * The payload for an Oracle transaction, which contains the Oracle transaction payload.
  */
 export interface OracleTransactionPayload {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Oracle: any;
 }
 
@@ -321,6 +327,7 @@ export interface AutomationRecordData {
     block_height: number,
     /// Action performed in scope of the bookkeeping record.
     action: {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         Process: any[]
     },
 }

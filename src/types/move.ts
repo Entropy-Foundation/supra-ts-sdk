@@ -173,6 +173,7 @@ export interface MoveEvent {
     guid: EventGuid;
     sequence_number: string;
     type: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: Record<string, any> | any;
     // keep flexible — different events have different schemas
 }

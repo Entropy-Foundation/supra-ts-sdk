@@ -59,7 +59,7 @@ export interface FunctionTypeArgs {
         address: string;
         module: string;
         name: string;
-        type_args: Array<any>;
+        type_args: Array<FunctionTypeArgs>;
     };
 }
 
