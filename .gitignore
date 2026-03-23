@@ -45,7 +45,7 @@ next-env.d.ts
 
 testAccount.ts
 
-abi.ts
+/abi.ts
 
 # generated docs
 /docs
