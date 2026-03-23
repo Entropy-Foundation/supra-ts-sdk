@@ -1,6 +1,6 @@
 import { BCS, TxnBuilderTypes } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import type { Ed25519Signature, MoveInnerAuthenticator, MultiAgentSignature, MultiEd25519Signature } from "../../types/move";
+import type { Ed25519Signature, MoveInnerAuthenticator, MultiAgentSignature } from "../../types/move";
 import { TransactionStatus, type MoveTransactionOutput, type TransactionResponse } from "../../types/transaction";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../../utils/apiEndpoints";

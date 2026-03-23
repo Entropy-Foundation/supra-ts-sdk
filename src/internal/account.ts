@@ -80,7 +80,8 @@ export async function getAccountResourcesInternal(
 }
 
 
-export async function getAccountResourceInternal<T extends {} = any>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getAccountResourceInternal<T extends object = any>(
     args: {
         accountAddress: AccountAddressInput;
         resourceType: MoveStructId;
@@ -234,7 +235,7 @@ export async function isAccountExistsInternal(args: { accountAddress: AccountAdd
 
         return true;
 
-    } catch (error) {
+    } catch {
 
         // account not found
         return false;

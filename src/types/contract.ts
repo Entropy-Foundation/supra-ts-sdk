@@ -1,5 +1,5 @@
 import type { SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
-import type { MoveFunction, MoveFunctionGenericTypeParam, MoveModule } from "./move";
+import type { MoveFunction, MoveModule } from "./move";
 import type { TransactionResponse } from "./transaction";
 import type { AccountAddressInput } from "./account";
 import type { OptionalTransactionPayloadArgs } from "./transactionManager/transactionBuild";
@@ -37,7 +37,7 @@ export type MoveToTS<T extends string> =
     // ----------------------------
     // Objects (e.g., 0x1::object::Object)
     // ----------------------------
-    T extends `0x1::object::Object<${infer U}>` ? AccountAddressInput :
+    T extends `0x1::object::Object<${infer _U}>` ? AccountAddressInput :
 
     // ----------------------------
     // Option<u8> special case

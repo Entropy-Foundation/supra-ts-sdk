@@ -2,7 +2,7 @@ import { post } from "../client/post";
 import { convertValueToAbiReturnTypedValue } from "../helper/general";
 import { generateViewFunctionPayload } from "../helper/view";
 import type { InputViewFunctionData, InputViewRawFunctionData } from "../types/methods";
-import type { MoveModuleBytecode, MoveValue } from "../types/move";
+import type { MoveValue } from "../types/move";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 
 

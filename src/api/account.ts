@@ -2,7 +2,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { AccountAddressInput, AccountData, PaginatedResponse } from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
 import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
-import { getAccountAutoTransactionsInternal, getAccountCoinBalanceInternal, getAccountCoinsCountInternal, getAccountCoinTransactionsInternal, getAccountInfoInternal, getAccountLegacyCoins, getAccountModuleInternal, getAccountModulesInternal, getAccountResourceInternal, getAccountResourcesInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../internal/account";
+import { getAccountAutoTransactionsInternal, getAccountCoinBalanceInternal, getAccountCoinsCountInternal, getAccountCoinTransactionsInternal, getAccountInfoInternal, getAccountModuleInternal, getAccountModulesInternal, getAccountResourceInternal, getAccountResourcesInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../internal/account";
 import { SUPRA_COIN_TYPE } from "../utils/constants";
 import { validateAddress, validatePaginationCount, validateStructId } from "../helper/validation";
 
@@ -199,7 +199,7 @@ export class Account {
      * ```
      * @group Account
      */
-    async getAccountResource<T extends {}>(args: {
+    async getAccountResource<T extends object>(args: {
         accountAddress: AccountAddressInput;
         resourceType: MoveStructId;
     }): Promise<MoveResource<T>> {

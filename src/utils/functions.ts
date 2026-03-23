@@ -19,7 +19,7 @@ export async function sleep(timeMs: number): Promise<null> {
 export const parseFunctionTypeArgs = (
     functionTypeArgs: TxnBuilderTypes.TypeTag[]
 ): Array<FunctionTypeArgs> => {
-    const functionTypeArgsParsed: Array<FunctionTypeArgs> = new Array();
+    const functionTypeArgsParsed: Array<FunctionTypeArgs> = [];
     functionTypeArgs.forEach((data) => {
         const structTagData = (data as TxnBuilderTypes.TypeTagStruct).value;
         functionTypeArgsParsed.push({
@@ -37,7 +37,7 @@ export const parseFunctionTypeArgs = (
 export const parseScriptArgs = (
     scriptArgs: TxnBuilderTypes.TransactionArgument[]
 ): Array<ScriptArgumentJson> => {
-    const parsedArgs: Array<ScriptArgumentJson> = new Array();
+    const parsedArgs: Array<ScriptArgumentJson> = [];
     scriptArgs.forEach((arg) => {
         if (arg instanceof TxnBuilderTypes.TransactionArgumentU8) {
             parsedArgs.push({ U8: arg.value });
@@ -65,7 +65,7 @@ export const parseScriptArgs = (
 export const fromUint8ArrayToJSArray = (
     arr: Uint8Array[]
 ): Array<Array<number>> => {
-    const resData: Array<Array<number>> = new Array();
+    const resData: Array<Array<number>> = [];
     for (let i = 0; i < arr.length; i++) {
         if (arr[i]) {
             resData.push(Array.from(arr[i]!));

@@ -1,5 +1,4 @@
 import { get } from "../client/get";
-import { post } from "../client/post";
 import type { GasPrice } from "../types/supraClient";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 

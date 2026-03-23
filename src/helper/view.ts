@@ -1,6 +1,6 @@
 import { getAccountModuleInternal } from "../internal/account";
 import type { InputViewFunctionData } from "../types/methods";
-import type { MoveModuleBytecode } from "../types/move";
+
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { getFunctionABI } from "./abi";
 import { convertPayloadArgsToJSONParsable, convertPayloadTypeArgsToJSONParsable, getFunctionParts } from "./general";

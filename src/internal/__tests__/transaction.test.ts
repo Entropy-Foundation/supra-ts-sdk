@@ -20,7 +20,7 @@ const testConfig: NetworkConfig = {
     rpcUrl: "https://rpc-testnet.supra.com",
 };
 
-const fullHash = "0x0000000000000000000000000000000000000000000000000000000000000abc";
+const _fullHash = "0x0000000000000000000000000000000000000000000000000000000000000abc";
 
 describe("internal/transaction", () => {
     beforeEach(() => {

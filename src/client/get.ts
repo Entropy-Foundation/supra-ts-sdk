@@ -13,7 +13,7 @@ export interface RequestParams {
 * @param args - An object containing the path and optional data for the request.
 * @returns A Promise that resolves to the response data of type Res.
 */
-export async function get<Res extends {}>(args: RequestParams, config: NetworkConfig, rpcVersion: string = DEFAULT_RPC_VERSION): Promise<{ data: Res, cursor?: string | undefined }> {
+export async function get<Res extends object>(args: RequestParams, config: NetworkConfig, rpcVersion: string = DEFAULT_RPC_VERSION): Promise<{ data: Res, cursor?: string | undefined }> {
 
     const baseURL = `${config.rpcUrl}/rpc/${rpcVersion}${args.path}`;
 

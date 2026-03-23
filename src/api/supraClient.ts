@@ -20,6 +20,7 @@ import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../utils/constants";
  * It takes a SupraConfig object as a parameter and use the NetworkConfig property to interact with the Supra rest api.
  * @group SupraClient 
 */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export class SupraClient {
 
     /**
@@ -217,6 +218,7 @@ export class SupraClient {
 
 
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 export interface SupraClient extends Account, Transaction, Contract, Methods, Faucet, Table, Coin, Events, Block, FungibleAsset { };
 
 

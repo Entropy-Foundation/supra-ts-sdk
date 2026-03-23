@@ -31,7 +31,7 @@ export type MoveModuleBytecode = {
 /**
  * A Move resource with a type and data.
  */
-export type MoveResource<T = {}> = {
+export type MoveResource<T = object> = {
     type: MoveStructId;
     data: T;
 };
@@ -387,7 +387,7 @@ export type MoveValue =
     | null // To support optional empty
     | undefined // To support optional empty
     | MoveStructId
-    | Object
+    | object
     | Array<MoveValue>;
 
 /**
@@ -410,7 +410,7 @@ export type SimpleEntryFunctionArgumentTypesRaw =
     | boolean
     | number // for u8, u16, u32
     | string // for u64, u128, u256 or string
-    | Object // for struct and option
+    | object // for struct and option
     | Uint8Array
     | ArrayBuffer
     | Array<SimpleEntryFunctionArgumentTypes>;

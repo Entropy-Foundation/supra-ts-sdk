@@ -8,7 +8,7 @@ import { DEFAULT_RPC_VERSION, DEFAULT_REQUEST_TIMEOUT_MS } from "../utils/consta
 * @param args - An object containing the path and optional data for the request.
 * @returns A Promise that resolves to the response data of type Res.
 */
-export async function post<Req extends {}, Res>(args: RequestParams, config: NetworkConfig, rpcVersion: string = DEFAULT_RPC_VERSION): Promise<Res> {
+export async function post<Req extends object, Res>(args: RequestParams, config: NetworkConfig, rpcVersion: string = DEFAULT_RPC_VERSION): Promise<Res> {
 
     const url = `${config.rpcUrl}/rpc/${rpcVersion}${args.path}`;
 
