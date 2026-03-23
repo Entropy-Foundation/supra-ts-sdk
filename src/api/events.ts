@@ -25,7 +25,7 @@ export class Events {
     * 
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```  
-    * @group Faucet
+    * @group Events
     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;

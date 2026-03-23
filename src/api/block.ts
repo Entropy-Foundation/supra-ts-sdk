@@ -1,8 +1,5 @@
 import { getBlockByHashInternal, getBlockByHeightInternal, getLatestBlockInternal, getTransactionsByBlockHashInternal } from "../internal/block";
-import { fundAccountWithFaucetInternal } from "../internal/faucet";
-import type { AccountAddressInput } from "../types/account";
 import type { FinalizedBlockHeader } from "../types/block";
-import type { FaucetTransactionResponse } from "../types/faucet";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 
 /**
@@ -27,7 +24,7 @@ export class Block {
     * 
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```  
-    * @group Faucet
+    * @group Block
     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
@@ -40,11 +37,10 @@ export class Block {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
-     *    const accountAddress = "0x1";
      *    const block = await supra.block.getLatestBlock();
      *    console.log(block);
      * }

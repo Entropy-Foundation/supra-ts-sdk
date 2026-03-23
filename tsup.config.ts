@@ -12,7 +12,7 @@ export default defineConfig({
     shims: false,
 
     // Very useful for browser compatibility
-    external: ['axios', 'supra-l1-sdk-core', 'js-sha3'],
+    external: ['supra-l1-sdk-core', 'js-sha3'],
 
     // Optional: if you later add worker / edge support
     // platform: 'neutral',

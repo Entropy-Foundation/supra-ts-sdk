@@ -1,5 +1,4 @@
 import { HexString, TxnBuilderTypes, SupraAccount, AnyRawTransaction } from 'supra-l1-sdk-core';
-import { AxiosResponse } from 'axios';
 
 declare enum Network {
     MAINNET = "mainnet",
@@ -12,6 +11,7 @@ interface NetworkConfig {
     rpcUrl: string;
     maxGas?: bigint;
     minGasUnitPrice?: bigint;
+    timeout?: number;
 }
 declare const NetworkInfo: Record<Network, NetworkConfig>;
 
@@ -1581,7 +1581,7 @@ declare class Account {
     constructor(networkInformation: NetworkConfig);
     /**
      * Check whether given account exists onchain or not
-     * @param args.account - The address of the account to query.
+     * @param args.accountAddress - The address of the account to query.
      * @returns `true` if account exists otherwise `false`
      * @example
      * ```typescript
@@ -1887,7 +1887,7 @@ declare class Account {
      */
     getAccountSupraCoinBalance(args: {
         accountAddress: AccountAddressInput;
-    }): Promise<BigInt>;
+    }): Promise<bigint>;
     /**
      * Queries the balance of a coin owned by an account.
      * @param args.accountAddress - The address of the account to query.
@@ -1912,7 +1912,7 @@ declare class Account {
     getAccountCoinBalance(args: {
         accountAddress: AccountAddressInput;
         asset: MoveStructId | AccountAddressInput;
-    }): Promise<BigInt>;
+    }): Promise<bigint>;
 }
 
 type MoveModules = DeepReadonly<MoveModule[]>;
@@ -1993,7 +1993,7 @@ declare class Contract {
     *
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```
-    * @group Faucet
+    * @group Contract
     */
     constructor(networkInformation: NetworkConfig);
     /**
@@ -2506,7 +2506,7 @@ declare class Coin {
     *
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```
-    * @group Faucet
+    * @group Coin
     */
     constructor(networkInformation: NetworkConfig);
     /**
@@ -2615,7 +2615,7 @@ declare class Events {
     *
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```
-    * @group Faucet
+    * @group Events
     */
     constructor(networkInformation: NetworkConfig);
     /**
@@ -2685,7 +2685,7 @@ declare class Block {
     *
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```
-    * @group Faucet
+    * @group Block
     */
     constructor(networkInformation: NetworkConfig);
     /**
@@ -2698,7 +2698,6 @@ declare class Block {
      * const supra = new SupraClient({ network: Network.TESTNET });
      *
      * async function runExample() {
-     *    const accountAddress = "0x1";
      *    const block = await supra.block.getLatestBlock();
      *    console.log(block);
      * }
@@ -2807,7 +2806,7 @@ declare class FungibleAsset {
     *
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```
-    * @group Faucet
+    * @group FungibleAsset
     */
     constructor(networkInformation: NetworkConfig);
     /**
@@ -3043,8 +3042,7 @@ interface SupraAPIErrorOptions {
     status: number;
     statusText: string;
     url: string;
-    data?: any;
-    request: AxiosResponse | undefined;
+    data?: unknown;
 }
 /**
  * SupraAPIError is a custom error class that extends the built-in Error class. It is used to represent errors that occur when making requests to the Supra API.
@@ -3055,11 +3053,64 @@ declare class SupraAPIError extends Error {
     readonly status: number;
     readonly statusText: string;
     readonly url: string;
-    readonly data?: any;
-    readonly request: AxiosResponse;
+    readonly data?: unknown;
     readonly major_status: string | undefined;
     constructor(args: SupraAPIErrorOptions);
+    toJSON(): {
+        name: string;
+        status: number;
+        statusText: string;
+        url: string;
+        data: unknown;
+        major_status: string | undefined;
+    };
 }
+
+/**
+ * Common Move VM major status codes returned in transaction failures.
+ * These codes help identify the specific type of Move VM error.
+ * @see https://github.com/nicetomeetyou1/supra-l1-devnet/blob/master/aptos-move/vm-genesis/src/error_mapping.rs
+ */
+declare enum MoveVmError {
+    /** The transaction was executed successfully */
+    EXECUTED = "EXECUTED",
+    /** An account address was out of range */
+    OUT_OF_GAS = "OUT_OF_GAS",
+    /** The sequence number is too old */
+    SEQUENCE_NUMBER_TOO_OLD = "SEQUENCE_NUMBER_TOO_OLD",
+    /** The sequence number is too new */
+    SEQUENCE_NUMBER_TOO_NEW = "SEQUENCE_NUMBER_TOO_NEW",
+    /** Insufficient balance to pay the transaction fee */
+    INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE = "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE",
+    /** The transaction has expired */
+    TRANSACTION_EXPIRED = "TRANSACTION_EXPIRED",
+    /** Sending account does not exist */
+    SENDING_ACCOUNT_DOES_NOT_EXIST = "SENDING_ACCOUNT_DOES_NOT_EXIST",
+    /** The sending account is frozen */
+    SENDING_ACCOUNT_FROZEN = "SENDING_ACCOUNT_FROZEN",
+    /** An unknown validation status was encountered */
+    UNKNOWN_VALIDATION_STATUS = "UNKNOWN_VALIDATION_STATUS",
+    /** The maximum transaction size has been exceeded */
+    EXCEEDED_MAX_TRANSACTION_SIZE = "EXCEEDED_MAX_TRANSACTION_SIZE",
+    /** Module not found */
+    LINKER_ERROR = "LINKER_ERROR",
+    /** Function not found in module */
+    FUNCTION_RESOLUTION_FAILURE = "FUNCTION_RESOLUTION_FAILURE",
+    /** Type argument mismatch */
+    TYPE_MISMATCH = "TYPE_MISMATCH",
+    /** Move abort: execution aborted with code */
+    MOVE_ABORT = "MOVE_ABORT",
+    /** Arithmetic error in the VM */
+    ARITHMETIC_ERROR = "ARITHMETIC_ERROR",
+    /** Execution stack overflow */
+    EXECUTION_STACK_OVERFLOW = "EXECUTION_STACK_OVERFLOW",
+    /** Out of bounds memory access in the VM */
+    MEMORY_LIMIT_EXCEEDED = "MEMORY_LIMIT_EXCEEDED"
+}
+/**
+ * Checks if a major_status string matches a known Move VM error.
+ */
+declare function isMoveVmError(status: string | undefined): status is MoveVmError;
 
 /**
  * Standardize an address
@@ -3095,5 +3146,6 @@ declare const RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 declare const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 declare const DEFAULT_RPC_VERSION = "v3";
 declare const DEFAULT_TXN_TIMEOUT_SEC = 20;
+declare const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 
-export { Account, type AccountAddressInput, type AccountData, type Args, type AutoTransactionResponse, type AutomationRecordData, type AutomationRecordTransactionResponse, type AutomationRegistrationParamV1JSON, type AutomationRegistrationParams, type AutomationRegistrationParamsV1, type AutomationRegistrationParamsV2, type AutomationRegistrationPayloadJSON, type AutomationRegistrationPayloadResponse, type AutomationTransactionResponse, Block, type BlockHeader, type BlockMetadataTransactionResponse, Build, Coin, type CommittedTransactionResponse, Contract, type ContractsFromABI, type ConvertGenerics, DEFAULT_CHAIN_ID, DEFAULT_ENABLE_SIMULATION, DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, DEFAULT_MAX_GAS_UNITS, DEFAULT_RECORDS_ITEMS_COUNT, DEFAULT_RPC_VERSION, DEFAULT_TXN_TIMEOUT_SEC, DEFAULT_TX_EXPIRATION_DURATION, DEFAULT_WAIT_FOR_TX_COMPLETION, DELAY_BETWEEN_POOLING_REQUEST, type DeepReadonly, type DkgTransactionOutput, type DkgTransactionPayload, type EmptyTransactionOutput, type EnableTransactionWaitAndSimulationArgs, type EntryArgs, type EntryFunctionJSON, type EntryFunctionPayload, type EntryFunctionPayloadJSON, type EntryFunctionPayloadResponse, type EntryFunctionsFromABI, Events, Faucet, type FaucetTransactionResponse, type FunctionTypeArgs, FungibleAsset, type GasPrice, type Headers, type InputViewFunctionData, type InputViewRawFunctionData, MAX_RETRY_FOR_TRANSACTION_COMPLETION, MILLISECONDS_PER_SECOND, type MapArgs, type MapTypeArgs, Methods, type MoveModules, type MoveToTS, type MoveTransactionOutput, type MoveTransactionPayload, type MultisigPayloadJSON, type MultisigPayloadResponse, type MultisigTransactionPayload, Network, type NetworkConfig, NetworkInfo, OBJECT_CORE, type OptionalTransactionArgs, type OptionalTransactionPayloadArgs, type OracleTransactionOutput, type OracleTransactionPayload, type PaginatedResponse, type PendingTransactionResponse, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, type RawTxnJSON, type ReturnTypes, SUPRA_COIN_TYPE, SUPRA_FRAMEWORK_ADDRESS, type ScriptArgumentJson, type ScriptPayloadJSON, type ScriptPayloadResponse, type SendTxnPayload, Serialized, Simulate, type StructFromABI, Submit, SupraAPIError, type SupraAPIErrorOptions, SupraClient, type SupraConfig, type SupraTransactionResponse, Table, type TableItemRequest, type TableKeyValueType, type TableKeyValueTypeHelper, Transaction, type TransactionOutput, type TransactionPayload, type TransactionPayloadJSON, type TransactionPayloadResponse, type TransactionQueryType, type TransactionResponse, TransactionStatus, TransactionType, type UserTransactionResponse, type ViewFunctionsFromABI, type WaitForTransactionOptions, standardizeAddress };
+export { Account, type AccountAddressInput, type AccountData, type Args, type AutoTransactionResponse, type AutomationRecordData, type AutomationRecordTransactionResponse, type AutomationRegistrationParamV1JSON, type AutomationRegistrationParams, type AutomationRegistrationParamsV1, type AutomationRegistrationParamsV2, type AutomationRegistrationPayloadJSON, type AutomationRegistrationPayloadResponse, type AutomationTransactionResponse, Block, type BlockHeader, type BlockMetadataTransactionResponse, Build, Coin, type CommittedTransactionResponse, Contract, type ContractsFromABI, type ConvertGenerics, DEFAULT_CHAIN_ID, DEFAULT_ENABLE_SIMULATION, DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, DEFAULT_MAX_GAS_UNITS, DEFAULT_RECORDS_ITEMS_COUNT, DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RPC_VERSION, DEFAULT_TXN_TIMEOUT_SEC, DEFAULT_TX_EXPIRATION_DURATION, DEFAULT_WAIT_FOR_TX_COMPLETION, DELAY_BETWEEN_POOLING_REQUEST, type DeepReadonly, type DkgTransactionOutput, type DkgTransactionPayload, type EmptyTransactionOutput, type EnableTransactionWaitAndSimulationArgs, type EntryArgs, type EntryFunctionJSON, type EntryFunctionPayload, type EntryFunctionPayloadJSON, type EntryFunctionPayloadResponse, type EntryFunctionsFromABI, Events, Faucet, type FaucetTransactionResponse, type FunctionTypeArgs, FungibleAsset, type GasPrice, type Headers, type InputViewFunctionData, type InputViewRawFunctionData, MAX_RETRY_FOR_TRANSACTION_COMPLETION, MILLISECONDS_PER_SECOND, type MapArgs, type MapTypeArgs, Methods, type MoveModules, type MoveToTS, type MoveTransactionOutput, type MoveTransactionPayload, MoveVmError, type MultisigPayloadJSON, type MultisigPayloadResponse, type MultisigTransactionPayload, Network, type NetworkConfig, NetworkInfo, OBJECT_CORE, type OptionalTransactionArgs, type OptionalTransactionPayloadArgs, type OracleTransactionOutput, type OracleTransactionPayload, type PaginatedResponse, type PendingTransactionResponse, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, type RawTxnJSON, type ReturnTypes, SUPRA_COIN_TYPE, SUPRA_FRAMEWORK_ADDRESS, type ScriptArgumentJson, type ScriptPayloadJSON, type ScriptPayloadResponse, type SendTxnPayload, Serialized, Simulate, type StructFromABI, Submit, SupraAPIError, type SupraAPIErrorOptions, SupraClient, type SupraConfig, type SupraTransactionResponse, Table, type TableItemRequest, type TableKeyValueType, type TableKeyValueTypeHelper, Transaction, type TransactionOutput, type TransactionPayload, type TransactionPayloadJSON, type TransactionPayloadResponse, type TransactionQueryType, type TransactionResponse, TransactionStatus, TransactionType, type UserTransactionResponse, type ViewFunctionsFromABI, type WaitForTransactionOptions, isMoveVmError, standardizeAddress };

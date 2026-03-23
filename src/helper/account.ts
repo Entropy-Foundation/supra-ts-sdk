@@ -29,7 +29,6 @@ export function standardizeAddress(address: AccountAddressInput): string {
             url: "",
             status: 400,
             statusText: `Address ${address} is not a valid address`,
-            request: undefined,
         });
     }
 

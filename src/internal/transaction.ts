@@ -53,6 +53,7 @@ export async function waitForTransactionInternal(
     let lastTxn: TransactionResponse | undefined;
     let backoffIntervalMs = 200;
     const backoffMultiplier = 1.5;
+    const maxBackoffMs = 5000;
 
     while (isPending && timeElapsed < timeoutSecs) {
         let txn = await getTransactionByHashInternal({ transactionHash: args.transactionHash }, config);
@@ -62,7 +63,7 @@ export async function waitForTransactionInternal(
         if (isPending) {
             await sleep(backoffIntervalMs);
             timeElapsed += backoffIntervalMs / 1000;
-            backoffIntervalMs *= backoffMultiplier;
+            backoffIntervalMs = Math.min(backoffIntervalMs * backoffMultiplier, maxBackoffMs);
         }
     }
 
@@ -72,7 +73,7 @@ export async function waitForTransactionInternal(
             statusText: "Transaction timed out",
             url: `/transactions/${args.transactionHash}`,
             data: lastTxn,
-            request: undefined
+
         });
     }
 
@@ -86,7 +87,7 @@ export async function waitForTransactionInternal(
             statusText: "Transaction failed",
             url: `/transactions/${args.transactionHash}`,
             data: lastTxn,
-            request: undefined
+
         });
     }
 

@@ -4,6 +4,7 @@ import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/mo
 import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
 import { getAccountAutoTransactionsInternal, getAccountCoinBalanceInternal, getAccountCoinsCountInternal, getAccountCoinTransactionsInternal, getAccountInfoInternal, getAccountLegacyCoins, getAccountModuleInternal, getAccountModulesInternal, getAccountResourceInternal, getAccountResourcesInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../internal/account";
 import { SUPRA_COIN_TYPE } from "../utils/constants";
+import { validateAddress, validatePaginationCount, validateStructId } from "../helper/validation";
 
 
 /**
@@ -35,7 +36,7 @@ export class Account {
 
     /**
      * Check whether given account exists onchain or not
-     * @param args.account - The address of the account to query.
+     * @param args.accountAddress - The address of the account to query.
      * @returns `true` if account exists otherwise `false`
      * @example
      * ```typescript
@@ -54,6 +55,7 @@ export class Account {
      * @group Account
      */
     async isAccountExists(args: { accountAddress: AccountAddressInput }): Promise<boolean> {
+        validateAddress(args.accountAddress, "accountAddress");
         return isAccountExistsInternal(args, this.networkInformation);
     }
 
@@ -78,9 +80,8 @@ export class Account {
      * @group Account
      */
     async getAccountInfo(args: { accountAddress: AccountAddressInput }): Promise<AccountData> {
-
+        validateAddress(args.accountAddress, "accountAddress");
         return getAccountInfoInternal(args, this.networkInformation);
-
     }
 
     /**
@@ -109,6 +110,8 @@ export class Account {
         accountAddress: AccountAddressInput;
         options?: { count?: number; start?: string };
     }): Promise<PaginatedResponse<MoveModuleBytecode[]>> {
+        validateAddress(args.accountAddress, "accountAddress");
+        validatePaginationCount(args.options?.count);
         return getAccountModulesInternal(args, this.networkInformation);
     }
 
@@ -137,6 +140,7 @@ export class Account {
         accountAddress: AccountAddressInput;
         moduleName: string;
     }): Promise<MoveModuleBytecode> {
+        validateAddress(args.accountAddress, "accountAddress");
         return getAccountModuleInternal(args, this.networkInformation);
     }
 
@@ -168,7 +172,8 @@ export class Account {
         accountAddress: AccountAddressInput;
         options?: { count?: number; start?: string };
     }): Promise<PaginatedResponse<MoveResource[]>> {
-
+        validateAddress(args.accountAddress, "accountAddress");
+        validatePaginationCount(args.options?.count);
         return getAccountResourcesInternal(args, this.networkInformation);
     }
 
@@ -198,6 +203,8 @@ export class Account {
         accountAddress: AccountAddressInput;
         resourceType: MoveStructId;
     }): Promise<MoveResource<T>> {
+        validateAddress(args.accountAddress, "accountAddress");
+        validateStructId(args.resourceType, "resourceType");
         return getAccountResourceInternal<T>(args, this.networkInformation);
     }
 
@@ -235,6 +242,8 @@ export class Account {
             ascending?: boolean;
         };
     }): Promise<PaginatedResponse<T[]>> {
+        validateAddress(args.accountAddress, "accountAddress");
+        validatePaginationCount(args.options?.count);
         return getAccountTransactionsInternal<T>(args, this.networkInformation);
     }
 
@@ -273,7 +282,8 @@ export class Account {
             type?: TransactionQueryType
         };
     }): Promise<PaginatedResponse<T[]>> {
-
+        validateAddress(args.accountAddress, "accountAddress");
+        validatePaginationCount(args.options?.count);
         return getAccountCoinTransactionsInternal<T>(args, this.networkInformation);
     }
 
@@ -317,7 +327,8 @@ export class Account {
             ascending?: boolean;
         };
     }): Promise<PaginatedResponse<T[]>> {
-
+        validateAddress(args.accountAddress, "accountAddress");
+        validatePaginationCount(args.options?.count);
         return getAccountAutoTransactionsInternal(args, this.networkInformation);
     }
 
@@ -347,7 +358,7 @@ export class Account {
     async getAccountCoinsCount(args: {
         accountAddress: AccountAddressInput;
     }): Promise<number> {
-
+        validateAddress(args.accountAddress, "accountAddress");
         return getAccountCoinsCountInternal(args, this.networkInformation);
     }
 
@@ -373,7 +384,7 @@ export class Account {
      */
     async getAccountSupraCoinBalance(args: {
         accountAddress: AccountAddressInput;
-    }): Promise<BigInt> {
+    }): Promise<bigint> {
         return this.getAccountCoinBalance({ accountAddress: args.accountAddress, asset: SUPRA_COIN_TYPE });
     }
 
@@ -402,8 +413,8 @@ export class Account {
     async getAccountCoinBalance(args: {
         accountAddress: AccountAddressInput;
         asset: MoveStructId | AccountAddressInput;
-    }): Promise<BigInt> {
-
+    }): Promise<bigint> {
+        validateAddress(args.accountAddress, "accountAddress");
         return getAccountCoinBalanceInternal(args, this.networkInformation);
     }
 

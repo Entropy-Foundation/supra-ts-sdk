@@ -31,7 +31,6 @@ export async function simulateTxnInternal(
         throw new SupraAPIError({
             status: 400,
             statusText: (simulatedTxnResponse.output as MoveTransactionOutput).Move.vm_status,
-            request: undefined,
             url: "",
             data: simulatedTxnResponse
         })
@@ -70,7 +69,7 @@ export async function simulateSerializedTxnInternal(
         serializedRawTransaction: Uint8Array,
     },
     config: NetworkConfig
-): Promise<any> {
+): Promise<TransactionResponse> {
     let sendTxPayload = {
         Move: {
             raw_txn: getRawTxnJSONInternal(

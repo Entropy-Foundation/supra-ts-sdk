@@ -43,6 +43,7 @@ __export(index_exports, {
   DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS: () => DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS,
   DEFAULT_MAX_GAS_UNITS: () => DEFAULT_MAX_GAS_UNITS,
   DEFAULT_RECORDS_ITEMS_COUNT: () => DEFAULT_RECORDS_ITEMS_COUNT,
+  DEFAULT_REQUEST_TIMEOUT_MS: () => DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_RPC_VERSION: () => DEFAULT_RPC_VERSION,
   DEFAULT_TXN_TIMEOUT_SEC: () => DEFAULT_TXN_TIMEOUT_SEC,
   DEFAULT_TX_EXPIRATION_DURATION: () => DEFAULT_TX_EXPIRATION_DURATION,
@@ -54,6 +55,7 @@ __export(index_exports, {
   MAX_RETRY_FOR_TRANSACTION_COMPLETION: () => MAX_RETRY_FOR_TRANSACTION_COMPLETION,
   MILLISECONDS_PER_SECOND: () => MILLISECONDS_PER_SECOND,
   Methods: () => Methods,
+  MoveVmError: () => MoveVmError,
   Network: () => Network,
   NetworkInfo: () => NetworkInfo,
   OBJECT_CORE: () => OBJECT_CORE,
@@ -70,6 +72,7 @@ __export(index_exports, {
   Transaction: () => Transaction,
   TransactionStatus: () => TransactionStatus,
   TransactionType: () => TransactionType,
+  isMoveVmError: () => isMoveVmError,
   standardizeAddress: () => standardizeAddress
 });
 module.exports = __toCommonJS(index_exports);
@@ -100,6 +103,7 @@ var RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 var RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 var DEFAULT_RPC_VERSION = "v3";
 var DEFAULT_TXN_TIMEOUT_SEC = 20;
+var DEFAULT_REQUEST_TIMEOUT_MS = 3e4;
 
 // src/helper/account.ts
 var import_supra_l1_sdk_core = require("supra-l1-sdk-core");
@@ -110,7 +114,6 @@ var SupraAPIError = class extends Error {
   statusText;
   url;
   data;
-  request;
   major_status;
   constructor(args) {
     super(args.statusText);
@@ -119,10 +122,19 @@ var SupraAPIError = class extends Error {
     this.statusText = args.statusText;
     this.url = args.url;
     this.data = args.data;
-    this.request = args.request;
-    let message = args.request?.data?.message?.toString();
+    const message = args.data?.message?.toString();
     const match = message?.match(/major_status: (\w+)/);
     this.major_status = match ? match[1] : "unknown";
+  }
+  toJSON() {
+    return {
+      name: this.name,
+      status: this.status,
+      statusText: this.statusText,
+      url: this.url,
+      data: this.data,
+      major_status: this.major_status
+    };
   }
 };
 
@@ -137,8 +149,7 @@ function standardizeAddress(address) {
     throw new SupraAPIError({
       url: "",
       status: 400,
-      statusText: `Address ${address} is not a valid address`,
-      request: void 0
+      statusText: `Address ${address} is not a valid address`
     });
   }
   return `0x${cleanAddress}`;
@@ -276,15 +287,16 @@ function convertValueToReturnTypedValue(type, value) {
   const intTypes = ["u8", "u16", "u32", "i8", "i16", "i32"];
   const bigIntTypes = ["u64", "u128", "u256", "i64", "i128", "i256"];
   if (type.startsWith("0x1::object::Object")) {
-    if (typeof value == "object") {
+    if (typeof value == "object" && value !== null && "inner" in value) {
       return value.inner;
     }
   }
   const optionInner = extractOptionInner(type);
   if (optionInner) {
-    if (optionInner === "u8") return value.vec;
-    if (!value.vec || value.vec.length === 0) return null;
-    return convertValueToReturnTypedValue(optionInner, value.vec[0]);
+    const optVal = value;
+    if (optionInner === "u8") return optVal.vec;
+    if (!optVal.vec || optVal.vec.length === 0) return null;
+    return convertValueToReturnTypedValue(optionInner, optVal.vec[0]);
   }
   if (type === "vector<u8>") {
     if (typeof value === "string") {
@@ -326,9 +338,6 @@ function uint8ArrayToHexString(bytes) {
 // src/internal/transaction.ts
 var import_supra_l1_sdk_core6 = require("supra-l1-sdk-core");
 
-// src/client/get.ts
-var import_axios = __toESM(require("axios"), 1);
-
 // src/utils/apiEndpoints.ts
 var Network = /* @__PURE__ */ ((Network2) => {
   Network2["MAINNET"] = "mainnet";
@@ -356,40 +365,35 @@ var NetworkInfo = {
 
 // src/client/get.ts
 async function get(args, config, rpcVersion = DEFAULT_RPC_VERSION) {
-  let { path } = args;
-  let response = await (0, import_axios.default)({
-    method: "get",
-    baseURL: config.rpcUrl + `/rpc/${rpcVersion}`,
-    url: path,
-    params: args.query,
+  const baseURL = `${config.rpcUrl}/rpc/${rpcVersion}${args.path}`;
+  const url = new URL(baseURL);
+  if (args.query) {
+    for (const [key, value] of Object.entries(args.query)) {
+      if (value !== void 0) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+  }
+  const response = await fetch(url.toString(), {
+    method: "GET",
     headers: {
       "Content-Type": "application/json"
     },
-    validateStatus: () => true
-    // Allow handling of all status codes in the response
+    signal: AbortSignal.timeout(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS)
   });
-  let cursor = response.headers["x-supra-cursor"];
-  if (response.status >= 200 && response.status < 300) {
+  const data = await response.json();
+  const cursor = response.headers.get("x-supra-cursor") ?? void 0;
+  if (response.ok) {
     return {
-      data: response.data,
+      data,
       cursor
     };
-  }
-  if (response.status >= 400) {
-    throw new SupraAPIError({
-      status: response.status,
-      statusText: response.statusText,
-      url: `${config.rpcUrl}/rpc/${rpcVersion}${path}`,
-      data: response.data,
-      request: response
-    });
   }
   throw new SupraAPIError({
     status: response.status,
     statusText: response.statusText,
-    url: `${config.rpcUrl}/rpc/${rpcVersion}${path}`,
-    data: response.data,
-    request: response
+    url: url.toString(),
+    data
   });
 }
 
@@ -418,9 +422,9 @@ async function sleep(timeMs) {
   });
 }
 var parseFunctionTypeArgs = (functionTypeArgs) => {
-  let functionTypeArgsParsed = new Array();
+  const functionTypeArgsParsed = new Array();
   functionTypeArgs.forEach((data) => {
-    let structTagData = data.value;
+    const structTagData = data.value;
     functionTypeArgsParsed.push({
       struct: {
         address: structTagData.address.toHexString().toString(),
@@ -433,7 +437,7 @@ var parseFunctionTypeArgs = (functionTypeArgs) => {
   return functionTypeArgsParsed;
 };
 var parseScriptArgs = (scriptArgs) => {
-  let parsedArgs = new Array();
+  const parsedArgs = new Array();
   scriptArgs.forEach((arg) => {
     if (arg instanceof import_supra_l1_sdk_core3.TxnBuilderTypes.TransactionArgumentU8) {
       parsedArgs.push({ U8: arg.value });
@@ -458,7 +462,7 @@ var parseScriptArgs = (scriptArgs) => {
   return parsedArgs;
 };
 var fromUint8ArrayToJSArray = (arr) => {
-  let resData = new Array();
+  const resData = new Array();
   for (let i = 0; i < arr.length; i++) {
     if (arr[i]) {
       resData.push(Array.from(arr[i]));
@@ -468,46 +472,38 @@ var fromUint8ArrayToJSArray = (arr) => {
 };
 
 // src/client/post.ts
-var import_axios2 = __toESM(require("axios"), 1);
 async function post(args, config, rpcVersion = DEFAULT_RPC_VERSION) {
-  const { path, data } = args;
-  let response = await (0, import_axios2.default)({
-    method: "post",
-    baseURL: config.rpcUrl + `/rpc/${rpcVersion}`,
-    url: path,
-    data,
+  const url = `${config.rpcUrl}/rpc/${rpcVersion}${args.path}`;
+  const response = await fetch(url, {
+    method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
-    validateStatus: () => true
-    // Allow handling of all status codes in the response
+    body: args.data ? JSON.stringify(args.data) : null,
+    signal: AbortSignal.timeout(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS)
   });
-  if (response.status >= 200 && response.status < 300) {
-    return response.data;
-  }
-  if (response.status >= 400) {
-    throw new SupraAPIError({
-      status: response.status,
-      statusText: response.statusText,
-      url: `${config.rpcUrl}/rpc/${rpcVersion}${path}`,
-      data: response.data,
-      request: response
-    });
+  const data = await response.json();
+  if (response.ok) {
+    return data;
   }
   throw new SupraAPIError({
     status: response.status,
     statusText: response.statusText,
-    url: `${config.rpcUrl}/rpc/${rpcVersion}${path}`,
-    data: response.data,
-    request: response
+    url,
+    data
   });
 }
 
 // src/helper/abi.ts
 async function getFunctionABI(abi, moduleAddress, moduleName, functionName) {
-  if (abi.address !== moduleAddress && abi.name !== moduleName) throw new Error(`ABI not found for module ${moduleName}`);
-  let funcABI = abi?.exposed_functions.find((f) => f.name === functionName);
-  if (!funcABI) throw new Error(`Function ${functionName} not found in ABI`);
+  const funcABI = abi.exposed_functions.find(
+    (f) => f.name === functionName
+  );
+  if (!funcABI) {
+    throw new Error(
+      `Function '${functionName}' not found in module '${moduleAddress}::${moduleName}'`
+    );
+  }
   return funcABI;
 }
 
@@ -662,7 +658,7 @@ async function getAccountCoinBalanceInternal(args, config) {
 }
 async function isAccountExistsInternal(args, config) {
   try {
-    let accountData = await getAccountInfoInternal({ accountAddress: args.accountAddress }, config);
+    await getAccountInfoInternal({ accountAddress: args.accountAddress }, config);
     return true;
   } catch (error) {
     return false;
@@ -688,7 +684,6 @@ async function simulateTxnInternal(args, config) {
     throw new SupraAPIError({
       status: 400,
       statusText: simulatedTxnResponse.output.Move.vm_status,
-      request: void 0,
       url: "",
       data: simulatedTxnResponse
     });
@@ -880,6 +875,7 @@ async function waitForTransactionInternal(args, config) {
   let lastTxn;
   let backoffIntervalMs = 200;
   const backoffMultiplier = 1.5;
+  const maxBackoffMs = 5e3;
   while (isPending && timeElapsed < timeoutSecs) {
     let txn = await getTransactionByHashInternal({ transactionHash: args.transactionHash }, config);
     lastTxn = txn;
@@ -887,7 +883,7 @@ async function waitForTransactionInternal(args, config) {
     if (isPending) {
       await sleep(backoffIntervalMs);
       timeElapsed += backoffIntervalMs / 1e3;
-      backoffIntervalMs *= backoffMultiplier;
+      backoffIntervalMs = Math.min(backoffIntervalMs * backoffMultiplier, maxBackoffMs);
     }
   }
   if (isPending) {
@@ -895,8 +891,7 @@ async function waitForTransactionInternal(args, config) {
       status: 500,
       statusText: "Transaction timed out",
       url: `/transactions/${args.transactionHash}`,
-      data: lastTxn,
-      request: void 0
+      data: lastTxn
     });
   }
   if (!checkSuccess) {
@@ -907,8 +902,7 @@ async function waitForTransactionInternal(args, config) {
       status: 500,
       statusText: "Transaction failed",
       url: `/transactions/${args.transactionHash}`,
-      data: lastTxn,
-      request: void 0
+      data: lastTxn
     });
   }
   return lastTxn;
@@ -2152,6 +2146,45 @@ var Submit = class {
   }
 };
 
+// src/helper/validation.ts
+var HEX_ADDRESS_REGEX = /^0x[0-9a-fA-F]{1,64}$/;
+function validateAddress(address, paramName = "address") {
+  const str = typeof address === "string" ? address : address != null && typeof address.toString === "function" ? String(address) : void 0;
+  if (!str || !HEX_ADDRESS_REGEX.test(str)) {
+    throw new Error(
+      `Invalid ${paramName}: expected a 0x-prefixed hex string (1-64 hex chars), got ${JSON.stringify(String(address))}`
+    );
+  }
+}
+function validateStructId(structId, paramName = "resourceType") {
+  if (typeof structId !== "string") {
+    throw new Error(`Invalid ${paramName}: expected a string, got ${typeof structId}`);
+  }
+  const baseType = structId.includes("<") ? structId.slice(0, structId.indexOf("<")) : structId;
+  const parts = baseType.split("::");
+  if (parts.length !== 3) {
+    throw new Error(
+      `Invalid ${paramName}: expected format "0xADDR::module::StructName", got "${structId}"`
+    );
+  }
+  validateAddress(parts[0], `${paramName} module address`);
+}
+function validateTransactionHash(hash, paramName = "transactionHash") {
+  if (typeof hash !== "string" || !/^0x[0-9a-fA-F]+$/.test(hash)) {
+    throw new Error(
+      `Invalid ${paramName}: expected a 0x-prefixed hex string, got ${JSON.stringify(hash)}`
+    );
+  }
+}
+function validatePaginationCount(count, paramName = "count") {
+  if (count === void 0 || count === null) return;
+  if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 100) {
+    throw new Error(
+      `Invalid ${paramName}: expected an integer between 1 and 100, got ${JSON.stringify(count)}`
+    );
+  }
+}
+
 // src/api/account.ts
 var Account = class {
   /**
@@ -2174,7 +2207,7 @@ var Account = class {
   }
   /**
    * Check whether given account exists onchain or not
-   * @param args.account - The address of the account to query.
+   * @param args.accountAddress - The address of the account to query.
    * @returns `true` if account exists otherwise `false`
    * @example
    * ```typescript
@@ -2193,6 +2226,7 @@ var Account = class {
    * @group Account
    */
   async isAccountExists(args) {
+    validateAddress(args.accountAddress, "accountAddress");
     return isAccountExistsInternal(args, this.networkInformation);
   }
   /**
@@ -2216,6 +2250,7 @@ var Account = class {
    * @group Account
    */
   async getAccountInfo(args) {
+    validateAddress(args.accountAddress, "accountAddress");
     return getAccountInfoInternal(args, this.networkInformation);
   }
   /**
@@ -2241,6 +2276,8 @@ var Account = class {
    * @group Account
    */
   async getAccountModules(args) {
+    validateAddress(args.accountAddress, "accountAddress");
+    validatePaginationCount(args.options?.count);
     return getAccountModulesInternal(args, this.networkInformation);
   }
   /**
@@ -2265,6 +2302,7 @@ var Account = class {
    * @group Account  
    */
   async getAccountModule(args) {
+    validateAddress(args.accountAddress, "accountAddress");
     return getAccountModuleInternal(args, this.networkInformation);
   }
   /**
@@ -2290,6 +2328,8 @@ var Account = class {
    * @group Account
    */
   async getAccountResources(args) {
+    validateAddress(args.accountAddress, "accountAddress");
+    validatePaginationCount(args.options?.count);
     return getAccountResourcesInternal(args, this.networkInformation);
   }
   /**
@@ -2315,6 +2355,8 @@ var Account = class {
    * @group Account
    */
   async getAccountResource(args) {
+    validateAddress(args.accountAddress, "accountAddress");
+    validateStructId(args.resourceType, "resourceType");
     return getAccountResourceInternal(args, this.networkInformation);
   }
   /**
@@ -2343,6 +2385,8 @@ var Account = class {
    * @group Account
    */
   async getAccountTransactions(args) {
+    validateAddress(args.accountAddress, "accountAddress");
+    validatePaginationCount(args.options?.count);
     return getAccountTransactionsInternal(args, this.networkInformation);
   }
   /**
@@ -2371,6 +2415,8 @@ var Account = class {
    * @group Account
    */
   async getAccountCoinTransactions(args) {
+    validateAddress(args.accountAddress, "accountAddress");
+    validatePaginationCount(args.options?.count);
     return getAccountCoinTransactionsInternal(args, this.networkInformation);
   }
   /**
@@ -2405,6 +2451,8 @@ var Account = class {
    * @group Account
    */
   async getAccountAutoTransactions(args) {
+    validateAddress(args.accountAddress, "accountAddress");
+    validatePaginationCount(args.options?.count);
     return getAccountAutoTransactionsInternal(args, this.networkInformation);
   }
   /**
@@ -2429,6 +2477,7 @@ var Account = class {
    * @group Account
    */
   async getAccountCoinsCount(args) {
+    validateAddress(args.accountAddress, "accountAddress");
     return getAccountCoinsCountInternal(args, this.networkInformation);
   }
   /**
@@ -2476,6 +2525,7 @@ var Account = class {
    * @group Account
    */
   async getAccountCoinBalance(args) {
+    validateAddress(args.accountAddress, "accountAddress");
     return getAccountCoinBalanceInternal(args, this.networkInformation);
   }
 };
@@ -2483,9 +2533,9 @@ var Account = class {
 // src/internal/contract.ts
 var import_supra_l1_sdk_core13 = require("supra-l1-sdk-core");
 async function callContractInternal(args, config) {
-  let signers = [];
-  let functionArguments = [];
-  args.functionArguments.map((f) => {
+  const signers = [];
+  const functionArguments = [];
+  args.functionArguments.forEach((f) => {
     if (f instanceof import_supra_l1_sdk_core13.SupraAccount) {
       signers.push(f);
     } else {
@@ -2495,16 +2545,16 @@ async function callContractInternal(args, config) {
   if (signers.length > 1) {
     throw new Error("Multi agent not supported");
   }
-  let senderAccount = args.functionArguments[0];
+  const senderAccount = args.functionArguments[0];
   if (!(senderAccount instanceof import_supra_l1_sdk_core13.SupraAccount)) {
     throw new Error("Sender account must be SupraAccount");
   }
-  let simpleRawTxn = await simpleInternal({
+  const simpleRawTxn = await simpleInternal({
     senderAddress: senderAccount.address(),
     senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: senderAccount.address() }, config)).sequence_number,
     function: args.function,
     functionTypeArgs: args.typeArguments ?? [],
-    functionArgs: args.functionArguments.slice(1) ?? [],
+    functionArgs: functionArguments,
     optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
     abi: args.abi
   }, config);
@@ -2530,7 +2580,7 @@ var Contract = class {
   * 
   * const supra = new SupraClient({ network: Network.TESTNET });
   * ```  
-  * @group Faucet
+  * @group Contract
   */
   constructor(networkInformation) {
     this.networkInformation = networkInformation;
@@ -2581,7 +2631,7 @@ var Contract = class {
             }),
             entry: new Proxy(abi, {
               get: (target, prop2) => {
-                return async (args = {}) => {
+                return async (args) => {
                   return await callContractInternal({
                     ...args,
                     function: `${target.address}::${target.name}::${prop2}`,
@@ -2864,6 +2914,7 @@ var Transaction = class {
   * @group Transaction
   */
   async getTransactionByHash(args) {
+    validateTransactionHash(args.transactionHash);
     return getTransactionByHashInternal(args, this.networkInformation);
   }
   /**
@@ -2888,6 +2939,7 @@ var Transaction = class {
   * @group Transaction
   */
   async isPendingTransaction(args) {
+    validateTransactionHash(args.transactionHash);
     return isPendingTransactionInternal(args, this.networkInformation);
   }
   /**
@@ -2914,6 +2966,7 @@ var Transaction = class {
    * @group Transaction
    */
   async waitForTransaction(args) {
+    validateTransactionHash(args.transactionHash);
     return waitForTransactionInternal(args, this.networkInformation);
   }
   /**
@@ -3082,7 +3135,7 @@ var Coin = class {
   * 
   * const supra = new SupraClient({ network: Network.TESTNET });
   * ```  
-  * @group Faucet
+  * @group Coin
   */
   constructor(networkInformation) {
     this.networkInformation = networkInformation;
@@ -3200,7 +3253,7 @@ var Events = class {
   * 
   * const supra = new SupraClient({ network: Network.TESTNET });
   * ```  
-  * @group Faucet
+  * @group Events
   */
   constructor(networkInformation) {
     this.networkInformation = networkInformation;
@@ -3278,7 +3331,7 @@ var Block = class {
   * 
   * const supra = new SupraClient({ network: Network.TESTNET });
   * ```  
-  * @group Faucet
+  * @group Block
   */
   constructor(networkInformation) {
     this.networkInformation = networkInformation;
@@ -3289,11 +3342,10 @@ var Block = class {
    * @example
    * ```typescript
    * import { SupraClient,Network } from "supra-ts-sdk";
-   * 
+   *
    * const supra = new SupraClient({ network: Network.TESTNET });
-   * 
+   *
    * async function runExample() {
-   *    const accountAddress = "0x1";
    *    const block = await supra.block.getLatestBlock();
    *    console.log(block);
    * }
@@ -3431,7 +3483,7 @@ var FungibleAsset = class {
   * 
   * const supra = new SupraClient({ network: Network.TESTNET });
   * ```  
-  * @group Faucet
+  * @group FungibleAsset
   */
   constructor(networkInformation) {
     this.networkInformation = networkInformation;
@@ -3694,6 +3746,32 @@ function applyMixins(derivedCtor, constructors) {
   });
 }
 applyMixins(SupraClient, [Account, Transaction, Contract, Methods, Faucet, Table, Coin, Events, Block, FungibleAsset]);
+
+// src/errors/moveVmErrors.ts
+var MoveVmError = /* @__PURE__ */ ((MoveVmError2) => {
+  MoveVmError2["EXECUTED"] = "EXECUTED";
+  MoveVmError2["OUT_OF_GAS"] = "OUT_OF_GAS";
+  MoveVmError2["SEQUENCE_NUMBER_TOO_OLD"] = "SEQUENCE_NUMBER_TOO_OLD";
+  MoveVmError2["SEQUENCE_NUMBER_TOO_NEW"] = "SEQUENCE_NUMBER_TOO_NEW";
+  MoveVmError2["INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE"] = "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE";
+  MoveVmError2["TRANSACTION_EXPIRED"] = "TRANSACTION_EXPIRED";
+  MoveVmError2["SENDING_ACCOUNT_DOES_NOT_EXIST"] = "SENDING_ACCOUNT_DOES_NOT_EXIST";
+  MoveVmError2["SENDING_ACCOUNT_FROZEN"] = "SENDING_ACCOUNT_FROZEN";
+  MoveVmError2["UNKNOWN_VALIDATION_STATUS"] = "UNKNOWN_VALIDATION_STATUS";
+  MoveVmError2["EXCEEDED_MAX_TRANSACTION_SIZE"] = "EXCEEDED_MAX_TRANSACTION_SIZE";
+  MoveVmError2["LINKER_ERROR"] = "LINKER_ERROR";
+  MoveVmError2["FUNCTION_RESOLUTION_FAILURE"] = "FUNCTION_RESOLUTION_FAILURE";
+  MoveVmError2["TYPE_MISMATCH"] = "TYPE_MISMATCH";
+  MoveVmError2["MOVE_ABORT"] = "MOVE_ABORT";
+  MoveVmError2["ARITHMETIC_ERROR"] = "ARITHMETIC_ERROR";
+  MoveVmError2["EXECUTION_STACK_OVERFLOW"] = "EXECUTION_STACK_OVERFLOW";
+  MoveVmError2["MEMORY_LIMIT_EXCEEDED"] = "MEMORY_LIMIT_EXCEEDED";
+  return MoveVmError2;
+})(MoveVmError || {});
+function isMoveVmError(status) {
+  if (!status) return false;
+  return Object.values(MoveVmError).includes(status);
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   Account,
@@ -3708,6 +3786,7 @@ applyMixins(SupraClient, [Account, Transaction, Contract, Methods, Faucet, Table
   DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS,
   DEFAULT_MAX_GAS_UNITS,
   DEFAULT_RECORDS_ITEMS_COUNT,
+  DEFAULT_REQUEST_TIMEOUT_MS,
   DEFAULT_RPC_VERSION,
   DEFAULT_TXN_TIMEOUT_SEC,
   DEFAULT_TX_EXPIRATION_DURATION,
@@ -3719,6 +3798,7 @@ applyMixins(SupraClient, [Account, Transaction, Contract, Methods, Faucet, Table
   MAX_RETRY_FOR_TRANSACTION_COMPLETION,
   MILLISECONDS_PER_SECOND,
   Methods,
+  MoveVmError,
   Network,
   NetworkInfo,
   OBJECT_CORE,
@@ -3735,6 +3815,7 @@ applyMixins(SupraClient, [Account, Transaction, Contract, Methods, Faucet, Table
   Transaction,
   TransactionStatus,
   TransactionType,
+  isMoveVmError,
   standardizeAddress
 });
 //# sourceMappingURL=index.cjs.map

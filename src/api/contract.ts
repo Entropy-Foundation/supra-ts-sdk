@@ -1,8 +1,22 @@
 import { viewInternal } from "../internal/methods";
 import type { DeepReadonly, ContractsFromABI } from "../types/contract";
-import type { MoveModule } from "../types/move";
+import type { MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { callContractInternal } from "../internal/contract";
+import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
+import type { EnableTransactionWaitAndSimulationArgs } from "../types/transactionManager/transactionSubmit";
+
+interface ViewProxyArgs {
+    typeArguments?: Array<TypeArgument>;
+    functionArguments?: Array<SimpleEntryFunctionArgumentTypes>;
+}
+
+interface EntryProxyArgs {
+    typeArguments?: Array<TypeArgument>;
+    functionArguments: Array<SimpleEntryFunctionArgumentTypes>;
+    optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
+    enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+}
 
 
 /**
@@ -27,7 +41,7 @@ export class Contract {
     * 
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```  
-    * @group Faucet
+    * @group Contract
     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
@@ -73,7 +87,7 @@ export class Contract {
                         view: new Proxy(abi, {
                             get: (target, prop: string) => {
 
-                                return async (args: any = {}) => {
+                                return async (args: ViewProxyArgs = {}) => {
 
                                     return await viewInternal({
                                         function: `${target.address}::${target.name}::${prop}`,
@@ -89,7 +103,7 @@ export class Contract {
                         entry: new Proxy(abi, {
                             get: (target, prop: string) => {
 
-                                return async (args: any = {}) => {
+                                return async (args: EntryProxyArgs) => {
 
                                     return await callContractInternal({
                                         ...args,
