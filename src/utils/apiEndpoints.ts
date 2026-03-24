@@ -10,7 +10,8 @@ export interface NetworkConfig {
     chainId: number;
     rpcUrl: string;
     maxGas?: bigint,
-    minGasUnitPrice?: bigint
+    minGasUnitPrice?: bigint,
+    timeout?: number
 }
 
 

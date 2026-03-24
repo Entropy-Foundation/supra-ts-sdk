@@ -1,6 +1,6 @@
 import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import type { InputViewFunctionData } from "../types/methods";
-import type { MoveFunction, MoveFunctionId, TypeArgument } from "../types/move";
+import type { MoveFunction, MoveFunctionId, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 
 /**
  * Splits a function identifier into its constituent parts: module address, module name, and function name.
@@ -116,7 +116,7 @@ export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefi
 /**
  * Converts a Move value to a JSON parsable value
  */
-export function convertArgsValueToJSONParsable(type: string, value: any): any {
+export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryFunctionArgumentTypes): unknown {
 
     // ----------------------------
     // 1️⃣ Handle null for Option
@@ -227,7 +227,7 @@ export function convertArgsValueToJSONParsable(type: string, value: any): any {
 /**
  * Convert a Move value to a TS value
  */
-export function convertValueToAbiReturnTypedValue(returnType: string[], response: any) {
+export function convertValueToAbiReturnTypedValue(returnType: string[], response: unknown[]) {
 
     // Convert return values
     if (!returnType || returnType.length === 0) return [];
@@ -242,7 +242,7 @@ export function convertValueToAbiReturnTypedValue(returnType: string[], response
 /**
  * Convert a Move value to a TS value
  */
-export function convertValueToReturnTypedValue(type: string, value: any): any {
+export function convertValueToReturnTypedValue(type: string, value: unknown): unknown {
 
     const intTypes = ["u8", "u16", "u32", "i8", "i16", "i32"];
     const bigIntTypes = ["u64", "u128", "u256", "i64", "i128", "i256"];
@@ -251,8 +251,8 @@ export function convertValueToReturnTypedValue(type: string, value: any): any {
     // 0️⃣ Object
     // --------------------
     if (type.startsWith("0x1::object::Object")) {
-        if (typeof value == "object") {
-            return value.inner
+        if (typeof value == "object" && value !== null && "inner" in value) {
+            return (value as { inner: unknown }).inner;
         }
     }
 
@@ -261,12 +261,13 @@ export function convertValueToReturnTypedValue(type: string, value: any): any {
     // --------------------
     const optionInner = extractOptionInner(type);
     if (optionInner) {
+        const optVal = value as { vec?: unknown[] };
         // Special RPC quirk for Option<u8>
-        if (optionInner === "u8") return value.vec;
+        if (optionInner === "u8") return optVal.vec;
         // Empty Option
-        if (!value.vec || value.vec.length === 0) return null;
+        if (!optVal.vec || optVal.vec.length === 0) return null;
         // Recursive conversion
-        return convertValueToReturnTypedValue(optionInner, value.vec[0]);
+        return convertValueToReturnTypedValue(optionInner, optVal.vec[0]);
     }
 
     // --------------------
@@ -297,7 +298,7 @@ export function convertValueToReturnTypedValue(type: string, value: any): any {
     // 4️⃣ Primitives
     // --------------------
     if (intTypes.includes(type)) return Number(value);
-    if (bigIntTypes.includes(type)) return BigInt(value);
+    if (bigIntTypes.includes(type)) return BigInt(value as string | number | bigint);
     if (type === "bool") return Boolean(value);
     if (type === "address") return String(value);
 

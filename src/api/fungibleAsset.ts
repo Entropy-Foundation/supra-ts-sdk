@@ -1,12 +1,8 @@
 import type { SupraAccount } from "supra-l1-sdk-core";
-import { fundAccountWithFaucetInternal } from "../internal/faucet";
 import type { AccountAddressInput } from "../types/account";
-import type { FaucetTransactionResponse } from "../types/faucet";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
 import type { TransactionResponse } from "../types/transaction";
-import { getCoinInfoInternal, transferCoinInternal } from "../internal/coin";
-import type { MoveFunctionId } from "../types/move";
 import type { CoinInfo } from "../types/coin";
 import { getFungibleAssetMetadataInternal, transferFungibleAssetInternal } from "../internal/fungibleAsset";
 
@@ -32,7 +28,7 @@ export class FungibleAsset {
     * 
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```  
-    * @group Faucet
+    * @group FungibleAsset
     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;

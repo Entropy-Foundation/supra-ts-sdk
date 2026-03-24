@@ -1,6 +1,6 @@
 import { BCS, TxnBuilderTypes } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import type { Ed25519Signature, MoveInnerAuthenticator, MultiAgentSignature, MultiEd25519Signature } from "../../types/move";
+import type { Ed25519Signature, MoveInnerAuthenticator, MultiAgentSignature } from "../../types/move";
 import { TransactionStatus, type MoveTransactionOutput, type TransactionResponse } from "../../types/transaction";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
@@ -31,7 +31,6 @@ export async function simulateTxnInternal(
         throw new SupraAPIError({
             status: 400,
             statusText: (simulatedTxnResponse.output as MoveTransactionOutput).Move.vm_status,
-            request: undefined,
             url: "",
             data: simulatedTxnResponse
         })
@@ -70,7 +69,7 @@ export async function simulateSerializedTxnInternal(
         serializedRawTransaction: Uint8Array,
     },
     config: NetworkConfig
-): Promise<any> {
+): Promise<TransactionResponse> {
     let sendTxPayload = {
         Move: {
             raw_txn: getRawTxnJSONInternal(

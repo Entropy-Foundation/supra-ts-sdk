@@ -30,6 +30,7 @@ export * from "./types/transactionManager/transactionSubmit";
 
 // errors
 export * from "./errors/apiError";
+export * from "./errors/moveVmErrors";
 
 //function 
 export { standardizeAddress } from './helper/account';

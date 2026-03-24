@@ -1,4 +1,4 @@
-import type { MoveFunctionId, MoveModule, MoveModuleBytecode, SimpleEntryFunctionArgumentTypes, SimpleEntryFunctionArgumentTypesRaw, TypeArgument } from "./move";
+import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, SimpleEntryFunctionArgumentTypesRaw, TypeArgument } from "./move";
 
 
 /**

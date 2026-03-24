@@ -3,7 +3,7 @@ import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { OptionalTransactionPayloadArgs, SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
-import { generateTransactionPayload, rawTxnObjectInternal, sendTxnPayloadInternal, signedTransactionInternal, simpleInternal } from "../../internal/transactionManager/txnBuild";
+import { rawTxnObjectInternal, sendTxnPayloadInternal, signedTransactionInternal, simpleInternal } from "../../internal/transactionManager/txnBuild";
 import { Serialized } from "./txnBuildSerialized";
 
 /**

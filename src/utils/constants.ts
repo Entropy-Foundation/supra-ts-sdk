@@ -21,3 +21,4 @@ export const RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 export const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 export const DEFAULT_RPC_VERSION = "v3"
 export const DEFAULT_TXN_TIMEOUT_SEC = 20;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30000;

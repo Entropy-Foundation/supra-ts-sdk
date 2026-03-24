@@ -80,7 +80,8 @@ export async function getAccountResourcesInternal(
 }
 
 
-export async function getAccountResourceInternal<T extends {} = any>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function getAccountResourceInternal<T extends object = any>(
     args: {
         accountAddress: AccountAddressInput;
         resourceType: MoveStructId;
@@ -207,16 +208,16 @@ export async function getAccountCoinBalanceInternal(
         asset: MoveStructId | AccountAddressInput;
     },
     config: NetworkConfig
-): Promise<BigInt> {
+): Promise<bigint> {
 
     if (isMoveStruct(args.asset.toString())) {
-        return await viewInternal<[BigInt]>({
+        return await viewInternal<[bigint]>({
             function: "0x1::coin::balance",
             functionArguments: [args.accountAddress.toString()],
             typeArguments: [args.asset.toString()]
         }, config).then(res => res[0]);
     } else {
-        return await viewInternal<[BigInt]>({
+        return await viewInternal<[bigint]>({
             function: "0x1::primary_fungible_store::balance",
             functionArguments: [args.accountAddress.toString(), args.asset.toString()],
             typeArguments: [OBJECT_CORE]
@@ -230,11 +231,11 @@ export async function isAccountExistsInternal(args: { accountAddress: AccountAdd
 
     try {
 
-        let accountData = await getAccountInfoInternal({ accountAddress: args.accountAddress }, config);
+        await getAccountInfoInternal({ accountAddress: args.accountAddress }, config);
 
-        return true
+        return true;
 
-    } catch (error) {
+    } catch {
 
         // account not found
         return false;

@@ -1,7 +1,5 @@
 import type { SupraAccount } from "supra-l1-sdk-core";
-import { fundAccountWithFaucetInternal } from "../internal/faucet";
 import type { AccountAddressInput } from "../types/account";
-import type { FaucetTransactionResponse } from "../types/faucet";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
 import type { TransactionResponse } from "../types/transaction";
@@ -31,7 +29,7 @@ export class Coin {
     * 
     * const supra = new SupraClient({ network: Network.TESTNET });
     * ```  
-    * @group Faucet
+    * @group Coin
     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;

@@ -1,13 +1,14 @@
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { CommittedTransactionResponse, TransactionQueryType, TransactionResponse, WaitForTransactionOptions } from "../types/transaction";
 import { getTransactionByHashInternal, getTransactionSignatureMessageInternal, isPendingTransactionInternal, publishPackageInternal, signTransactionInternal, waitForTransactionInternal } from "../internal/transaction";
-import type { AccountAddressInput } from "../types/account";
+
 import { Build } from "./transactionManager/txnBuild";
 import { BCS, TxnBuilderTypes, type AnyRawTransaction, type HexString, type SupraAccount } from "supra-l1-sdk-core";
 import { Simulate } from "./transactionManager/txnSimulate";
 import { Submit } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
 import sha3 from "js-sha3";
+import { validateTransactionHash } from "../helper/validation";
 
 /**
  * The Transaction class provides methods for interacting with the Supra network.
@@ -79,7 +80,7 @@ export class Transaction {
     * @group Transaction
     */
     async getTransactionByHash<T extends TransactionResponse>(args: { transactionHash: string, type?: TransactionQueryType, exclude_uncommitted?: boolean }): Promise<TransactionResponse> {
-
+        validateTransactionHash(args.transactionHash);
         return getTransactionByHashInternal<T>(args, this.networkInformation);
     }
 
@@ -106,6 +107,7 @@ export class Transaction {
     * @group Transaction
     */
     async isPendingTransaction(args: { transactionHash: string }): Promise<boolean> {
+        validateTransactionHash(args.transactionHash);
         return isPendingTransactionInternal(args, this.networkInformation);
     }
 
@@ -136,6 +138,7 @@ export class Transaction {
         transactionHash: string;
         options?: WaitForTransactionOptions
     }): Promise<CommittedTransactionResponse> {
+        validateTransactionHash(args.transactionHash);
         return waitForTransactionInternal(args, this.networkInformation);
     }
 

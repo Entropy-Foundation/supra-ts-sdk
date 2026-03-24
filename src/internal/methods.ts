@@ -2,7 +2,7 @@ import { post } from "../client/post";
 import { convertValueToAbiReturnTypedValue } from "../helper/general";
 import { generateViewFunctionPayload } from "../helper/view";
 import type { InputViewFunctionData, InputViewRawFunctionData } from "../types/methods";
-import type { MoveModuleBytecode, MoveValue } from "../types/move";
+import type { MoveValue } from "../types/move";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 
 
@@ -43,7 +43,7 @@ export async function viewInternal<T extends Array<MoveValue>>(args: InputViewFu
  * @returns A Promise that resolves to an array of MoveValue objects.
  * @note This is for raw data without type conversion or parsing.
  */
-export async function viewRawInternal<T extends Array<any>>(args: InputViewRawFunctionData, config: NetworkConfig): Promise<T> {
+export async function viewRawInternal<T extends Array<unknown>>(args: InputViewRawFunctionData, config: NetworkConfig): Promise<T> {
 
     return await post<InputViewFunctionData, { result: T }>({
         path: `/view`,

@@ -36,10 +36,16 @@ yarn-error.log*
 # vercel
 .vercel
 
+# build output
+dist/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 
 testAccount.ts
 
-abi.ts
+/abi.ts
+
+# generated docs
+/docs

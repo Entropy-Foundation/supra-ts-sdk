@@ -1,4 +1,4 @@
-import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
+import { HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { OptionalTransactionPayloadArgs, RawTxnJSON, SendTxnPayload, TransactionPayloadJSON } from "../../types/transactionManager/transactionBuild";
 import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND } from "../../utils/constants";
@@ -8,7 +8,7 @@ import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, Type
 import { convertPayloadTypeArgsToMoveType, getFunctionParts } from "../../helper/general";
 import { signTransactionInternal } from "../transaction";
 import { fromUint8ArrayToJSArray, parseFunctionTypeArgs, parseScriptArgs } from "../../utils/functions";
-import type { InputViewFunctionData } from "../../types/methods";
+
 import { getAccountModuleInternal } from "../account";
 import { getFunctionABI } from "../../helper/abi";
 import { DynamicTransactionSerializer } from "../../utils/serializer";

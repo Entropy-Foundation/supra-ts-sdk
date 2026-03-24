@@ -3,7 +3,7 @@ import type { SimpleEntryFunctionArgumentTypes } from "../types/move";
 
 export class DynamicTransactionSerializer {
     private serializeValue(
-        value: any,
+        value: unknown,
         type: string,
         serializer: BCS.Serializer
     ): void {
@@ -35,19 +35,19 @@ export class DynamicTransactionSerializer {
 
         switch (type) {
             case "address":
-                this.serializeAddress(value, serializer);
+                this.serializeAddress(value as string, serializer);
                 break;
             case "u8":
-                this.serializeU8(value, serializer);
+                this.serializeU8(value as number | string, serializer);
                 break;
             case "u64":
-                this.serializeU64(value, serializer);
+                this.serializeU64(value as number | string | bigint, serializer);
                 break;
             case "u128":
-                this.serializeU128(value, serializer);
+                this.serializeU128(value as number | string | bigint, serializer);
                 break;
             case "bool":
-                this.serializeBool(value, serializer);
+                this.serializeBool(value as boolean, serializer);
                 break;
             default:
                 throw new Error(`Unsupported type: ${type}`);
@@ -55,7 +55,7 @@ export class DynamicTransactionSerializer {
     }
 
     private serializeVector(
-        value: any[],
+        value: unknown,
         innerType: string,
         serializer: BCS.Serializer
     ): void {
