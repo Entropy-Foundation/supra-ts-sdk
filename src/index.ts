@@ -32,6 +32,7 @@ export * from "./errors/apiError";
 
 //function 
 export { standardizeAddress } from './helper/account';
+export {addAddressPadding , getFunctionParts} from "./helper/general";
 
 //constants
 export * from "./utils/constants";
