@@ -4,7 +4,7 @@
 import "supra-l1-sdk-core";
 
 // src/internal/transactionManager/txnBuild.ts
-import { HexString as HexString5, TxnBuilderTypes as TxnBuilderTypes6 } from "supra-l1-sdk-core";
+import { BCS as BCS6, HexString as HexString5, SupraAccount as SupraAccount2, TxnBuilderTypes as TxnBuilderTypes6 } from "supra-l1-sdk-core";
 
 // src/utils/constants.ts
 var DEFAULT_CHAIN_ID = 6;
@@ -1034,6 +1034,7 @@ var DynamicTransactionSerializer = class {
 };
 
 // src/internal/transactionManager/txnBuild.ts
+import sha32 from "js-sha3";
 async function generateTransactionPayload(args, config) {
   let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
   if (!args.abi) {
@@ -1239,31 +1240,21 @@ function sendTxnPayloadInternal(args) {
     }
   };
 }
-
-// src/api/transactionManager/txnBuildSerialized.ts
-import "supra-l1-sdk-core";
-
-// src/internal/transactionManager/txnBuildSerialized.ts
-import { BCS as BCS7, HexString as HexString6, TxnBuilderTypes as TxnBuilderTypes7 } from "supra-l1-sdk-core";
-import sha32 from "js-sha3";
-function serializedRawTxnObjectInternal(args, config) {
-  return BCS7.bcsToBytes(rawTxnObjectInternal(args, config));
-}
-function serializedScriptRawTxnObjectInternal(args, config) {
-  let payload = new TxnBuilderTypes7.TransactionPayloadScript(
-    new TxnBuilderTypes7.Script(args.scriptCode, args.scriptTypeArgs, args.scriptArgs)
+function scriptRawTxnObjectInternal(args, config) {
+  let payload = new TxnBuilderTypes6.TransactionPayloadScript(
+    new TxnBuilderTypes6.Script(args.scriptCode, args.scriptTypeArgs, args.scriptArgs)
   );
-  return BCS7.bcsToBytes(rawTxnObjectInnerInternal({
+  return rawTxnObjectInnerInternal({
     senderAddress: args.senderAddress,
     senderSequenceNumber: args.senderSequenceNumber,
     payload,
     optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {}
-  }, config));
+  }, config);
 }
-function serializedAutomationRegistrationRawTxnObjectInternal(args, config) {
-  let payload = new TxnBuilderTypes7.TransactionPayloadAutomationRegistration(
-    new TxnBuilderTypes7.AutomationRegistrationParamsV1(
-      new TxnBuilderTypes7.AutomationRegistrationParamsV1Data(
+function automationRegistrationRawTxnObjectInternal(args, config) {
+  let payload = new TxnBuilderTypes6.TransactionPayloadAutomationRegistration(
+    new TxnBuilderTypes6.AutomationRegistrationParamsV1(
+      new TxnBuilderTypes6.AutomationRegistrationParamsV1Data(
         buildEntryFunctionInternal({
           function: args.function,
           functionTypeArgs: args.functionTypeArgs,
@@ -1277,21 +1268,19 @@ function serializedAutomationRegistrationRawTxnObjectInternal(args, config) {
       )
     )
   );
-  return BCS7.bcsToBytes(
-    rawTxnObjectInnerInternal({
-      senderAddress: args.senderAddress,
-      senderSequenceNumber: args.senderSequenceNumber,
-      payload,
-      optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {}
-    }, config)
-  );
+  return rawTxnObjectInnerInternal({
+    senderAddress: args.senderAddress,
+    senderSequenceNumber: args.senderSequenceNumber,
+    payload,
+    optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {}
+  }, config);
 }
-function serializedMultisigRawTxnObjectInternal(args, config) {
-  let multisigAddress = typeof args.multisigAddress === "string" ? new HexString6(args.multisigAddress.toString()) : args.multisigAddress;
-  let payload = new TxnBuilderTypes7.TransactionPayloadMultisig(
-    new TxnBuilderTypes7.MultiSig(
-      TxnBuilderTypes7.AccountAddress.fromHex(multisigAddress),
-      new TxnBuilderTypes7.MultiSigTransactionPayload(
+function multisigRawTxnObjectInternal(args, config) {
+  let multisigAddress = typeof args.multisigAddress === "string" ? new HexString5(args.multisigAddress.toString()) : args.multisigAddress;
+  let payload = new TxnBuilderTypes6.TransactionPayloadMultisig(
+    new TxnBuilderTypes6.MultiSig(
+      TxnBuilderTypes6.AccountAddress.fromHex(multisigAddress),
+      new TxnBuilderTypes6.MultiSigTransactionPayload(
         buildEntryFunctionInternal({
           function: args.function,
           functionTypeArgs: args.functionTypeArgs,
@@ -1300,267 +1289,182 @@ function serializedMultisigRawTxnObjectInternal(args, config) {
       )
     )
   );
-  return BCS7.bcsToBytes(
-    rawTxnObjectInnerInternal(
-      {
-        senderAddress: args.senderAddress,
-        senderSequenceNumber: args.senderSequenceNumber,
-        payload,
-        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {}
-      },
-      config
-    )
+  return rawTxnObjectInnerInternal(
+    {
+      senderAddress: args.senderAddress,
+      senderSequenceNumber: args.senderSequenceNumber,
+      payload,
+      optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {}
+    },
+    config
   );
 }
 function multisigProposalTxRawTxnObjectInternal(args, config) {
-  let multisigAddress = typeof args.multisigAddress === "string" ? new HexString6(args.multisigAddress.toString()) : args.multisigAddress;
-  let multisigPayload = new TxnBuilderTypes7.MultiSigTransactionPayload(
+  let multisigAddress = typeof args.multisigAddress === "string" ? new HexString5(args.multisigAddress.toString()) : args.multisigAddress;
+  let multisigPayload = new TxnBuilderTypes6.MultiSigTransactionPayload(
     buildEntryFunctionInternal({
       function: args.function,
       functionTypeArgs: args.functionTypeArgs,
       functionArgs: args.functionArgs
     })
   );
-  let multisigPayloadHash = new HexString6(
-    sha32.sha3_256(BCS7.bcsToBytes(multisigPayload))
+  let multisigPayloadHash = new HexString5(
+    sha32.sha3_256(BCS6.bcsToBytes(multisigPayload))
   );
-  return serializedRawTxnObjectInternal(
+  return rawTxnObjectInternal(
     {
       senderAddress: args.senderAddress,
       senderSequenceNumber: args.senderSequenceNumber,
       function: `${SUPRA_FRAMEWORK_ADDRESS}::multisig_account::create_transaction_with_hash`,
       functionTypeArgs: [],
       functionArgs: [
-        BCS7.bcsToBytes(TxnBuilderTypes7.AccountAddress.fromHex(multisigAddress)),
-        BCS7.bcsSerializeBytes(multisigPayloadHash.toUint8Array())
+        BCS6.bcsToBytes(TxnBuilderTypes6.AccountAddress.fromHex(multisigAddress)),
+        BCS6.bcsSerializeBytes(multisigPayloadHash.toUint8Array())
       ],
       optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {}
     },
     config
   );
 }
-
-// src/api/transactionManager/txnBuildSerialized.ts
-var Serialized = class {
+var ExtendedRawTransaction = class extends TxnBuilderTypes6.RawTransaction {
+  constructor(config, ...args) {
+    super(...args);
+    this.config = config;
+  }
   /**
-   * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+   * Serialize the transaction to bytes
+   * @returns bytes
    */
-  networkInformation;
+  toBytes() {
+    return BCS6.bcsToBytes(this);
+  }
   /**
-   * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
-   * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
-   * @example
-   * ```typescript
-   * import { SupraClient,Network } from "supra-ts-sdk";
-   * 
-   * const supra = new SupraClient({ network: Network.TESTNET });
-   * ```  
-   * @group Transaction
+   * Create a signed transaction
+   * @param args.senderAccount - Sender KeyPair
+   * @returns `SignedTransaction`
    */
-  constructor(networkInformation) {
-    this.networkInformation = networkInformation;
+  signedTransaction(senderAccount) {
+    return signedTransactionInternal({
+      senderAccount,
+      rawTxn: this
+    });
   }
   /**
-  * Create serialized raw transaction for `entry_function_payload` type txn
-  * Under the hood the method utilizes `build.rawTxnObject` method to create a raw transaction
-  * and then it serializes using bcs serializer
-  * @param args.senderAddress - Sender account address
-  * @param args.senderSequenceNumber - Sender account sequence number
-  * @param args.function - Target function name as MoveFunctionId
-  * @param args.functionTypeArgs - Target function type args
-  * @param args.functionArgs - Target function args
-  * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
-  * @returns Serialized raw transaction object
-  * @example
-  * ```typescript
-  * import { SupraClient,Network } from "supra-ts-sdk";
-  * 
-  * const supra = new SupraClient({ network: Network.TESTNET });
-  * 
-  * async function runExample() {
-  *     
-  *     let supraCoinTransferSerializedRawTransaction = supra.transaction.build.serialized.rawTxnObject({
-  *         senderAddress: account.address(),
-  *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-  *         function: "0x1::supra_account::transfer" as MoveFunctionId,
-  *         functionTypeArgs: [],
-  *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000)]
-  *     });
-  * 
-  *     console.log(supraCoinTransferRawTransaction);
-  * }
-  *
-  * runExample().catch(console.error);
-  *
-  * ```
-  * @group Transaction
-  */
-  rawTxnObject(args) {
-    return serializedRawTxnObjectInternal(args, this.networkInformation);
-  }
-  /**
-  * Create serialized raw transaction for `script_payload` type txn
-  * @param args.senderAddress - Sender account address
-  * @param args.senderSequenceNumber - Sender account sequence number
-  * @param args.scriptCode - Move script bytecode
-  * @param args.scriptTypeArgs - Type arguments that move script bytecode requires
-  * @param args.scriptArgs - Arguments to the move script bytecode function
-  * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
-  * @returns Serialized raw script transaction object
-  * @example
-  * ```typescript
-  * import { SupraClient,Network } from "supra-ts-sdk";
-  * 
-  * const supra = new SupraClient({ network: Network.TESTNET });
-  * 
-  * async function runExample() {
-  *     
-  *     let moveScriptCodeHex = "a11ceb0b06000000050100040...";
-  * 
-  *     let supraCoinTransferSerializedScriptRawTransaction = supra.transaction.build.serialized.scriptRawTxnObject({
-  *         senderAddress: account.address(),
-  *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-  *         scriptCode: Uint8Array.from(Buffer.from(moveScriptCodeHex, "hex")),
-  *         scriptTypeArgs: [],
-  *         scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(BigInt(1000))]
-  *     });
-  * 
-  *     console.log(supraCoinTransferRawTransaction);
-  * }
-  *
-  * runExample().catch(console.error);
-  *
-  * ```
-  * @group Transaction
-  */
-  scriptRawTxnObject(args) {
-    return serializedScriptRawTxnObjectInternal(args, this.networkInformation);
-  }
-  /**
-   * Create serialized raw transaction object for `automation_registration_payload` type txn
-   * @param args.senderAddress - Sender account address
-   * @param args.senderSequenceNumber - Sender account sequence number
-   * @param function - Target function name as MoveFunctionId
-   * @param args.functionTypeArgs - Target function type args
-   * @param args.functionArgs - Target function args
-   * @param args.automationMaxGasAmount - Max gas amount for automated transaction
-   * @param args.automationGasPriceCap - Gas Uint price upper limit that user is willing to pay
-   * @param args.automationFeeCapForEpoch - Maximum automation fee that user is willing to pay for epoch.
-   * @param args.automationFeeCapForEpoch - Expiration time of the automated transaction in seconds since UTC Epoch start.
-   * @param args.automationAuxData - Reserved for future extensions of registration parameters.
-   * @param optionalTransactionPayloadArgs Optional arguments for transaction payload
-   * @returns Serialized raw transaction object
-   * @example
-   * ```typescript
-   * import { SupraClient,Network } from "supra-ts-sdk";
-   * 
-   * const supra = new SupraClient({ network: Network.TESTNET });
-   * 
-   * async function runExample() {
-   *     
-   *     let supraCoinTransferAutomationSerializedRawTransaction = supra.transaction.build.serialized.automationRegistrationRawTxnObject({
-   *         senderAddress: account.address(),
-   *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-   *         function: "0x1::supra_account::transfer" as MoveFunctionId,
-   *         functionTypeArgs: [],
-   *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)],
-   *         automationMaxGasAmount: BigInt(500),
-   *         automationGasPriceCap: BigInt(100),
-   *         automationFeeCapForEpoch: BigInt(1000000000),
-   *         automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 2 * 60 * 60),
-   *         automationAuxData: [],
-   *     });
-   * 
-   *     console.log(supraCoinTransferAutomationSerializedRawTransaction);
-   * }
-   *
-   * runExample().catch(console.error);
-   *
-   * ```
-   * @group Transaction
+   * Create a send transaction payload
+   * @param args.senderAccount - Sender KeyPair
+   * @returns `SendTxnPayload`
    */
-  automationRegistrationRawTxnObject(args) {
-    return serializedAutomationRegistrationRawTxnObjectInternal(args, this.networkInformation);
+  sendTxnPayload(senderAccount) {
+    return sendTxnPayloadInternal({
+      senderAccount,
+      rawTxn: this
+    });
   }
   /**
-   * Create serialized raw transaction object for `multisig_payload` type txn
-   * @param args.senderAddress - Sender account address
-   * @param args.senderSequenceNumber - Sender account sequence number
-   * @param args.multisigAddress - Multisig account address
-   * @param args.function - Target function name as MoveFunctionId
-   * @param args.functionTypeArgs - Target function type args
-   * @param args.functionArgs - Target function args
-   * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload
-   * @returns Serialized raw transaction object
-   * @example
-   * ```typescript
-   * import { SupraClient,Network } from "supra-ts-sdk";
-   * 
-   * const supra = new SupraClient({ network: Network.TESTNET });
-   * 
-   * async function runExample() {
-   *     
-   *     let supraCoinTransferSerializedMultisigRawTransaction = supra.transaction.build.serialized.multisigRawTxnObject({
-   *         senderAddress: account.address(),
-   *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-   *         multisigAddress: multisigAccountAddress,
-   *         function: "0x1::supra_account::transfer",
-   *         functionTypeArgs: [],
-   *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)]
-   *     });
-   * 
-   *     console.log(supraCoinTransferSerializedMultisigRawTransaction);
-   * }
-   * 
-   * runExample().catch(console.error);
-   * 
-   * ```
-   * @group Transaction
+   * Simulate the transaction
+   * @param args.senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
+   * @returns `TransactionResponse`
    */
-  multisigRawTxnObject(args) {
-    return serializedMultisigRawTxnObjectInternal(args, this.networkInformation);
+  simulate(senderAccountOrAuthenticator) {
+    if (senderAccountOrAuthenticator instanceof SupraAccount2) {
+      return simulateTxnInternal({
+        sendTxPayload: sendTxnPayloadInternal({
+          senderAccount: senderAccountOrAuthenticator,
+          rawTxn: this
+        })
+      }, this.config);
+    }
+    return simulateSerializedTxnInternal({
+      txAuthenticator: senderAccountOrAuthenticator,
+      serializedRawTransaction: BCS6.bcsToBytes(this)
+    }, this.config);
   }
   /**
-  * Create serialized raw transaction object to create multisig transaction
-  * @param args.senderAddress - Sender account address
-  * @param args.senderSequenceNumber - Sender account sequence number
-  * @param args.multisigAddress - Multisig account address
-  * @param args.function - Target function name as MoveFunctionId
-  * @param args.functionTypeArgs - Target function type args
-  * @param args.functionArgs - Target function args
-  * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
-  * @returns Serialized raw transaction object
-  * @example
-  * ```typescript
-  * import { SupraClient,Network } from "supra-ts-sdk";
-  * 
-  * const supra = new SupraClient({ network: Network.TESTNET });
-  * 
-  * async function runExample() {
-  *     
-  *     let supraCoinTransferSerializedMultisigHashedRawTransaction = supra.transaction.build.serialized.multisigProposalTxRawTxnObject(
-  *         {
-  *             senderAddress: account.address(),
-  *             senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-  *             multisigAddress: multisigAccountAddress,
-  *             function: "0x1::supra_account::transfer",
-  *             functionTypeArgs: [],
-  *             functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)]
-  *         }
-  *     );
-  * 
-  *     console.log(supraCoinTransferSerializedMultisigHashedRawTransaction);
-  * }
-  * 
-  * runExample().catch(console.error);
-  * 
-  * ```
-  * @group Transaction
-  */
-  multisigProposalTxRawTxnObject(args) {
-    return multisigProposalTxRawTxnObjectInternal(args, this.networkInformation);
+   * Submit the transaction
+   * @param args.senderAccount - Sender KeyPair
+   * @returns `TransactionResponse`
+   */
+  submitTransaction(args) {
+    return submitSerializedRawTransactionInternal({
+      senderAccount: args.senderAccount,
+      serializedRawTransaction: BCS6.bcsToBytes(this),
+      enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+    }, this.config);
+  }
+  /**
+   * Submit the transaction with signature
+   * @param args.senderPubkey - Sender ed25519 pubkey
+   * @param args.signature - Ed25519 signature
+   * @returns `TransactionResponse`
+   */
+  submitTransactionAndSignature(args) {
+    return submitSerializedRawTransactionAndSignatureInternal({
+      serializedRawTransaction: BCS6.bcsToBytes(this),
+      senderPubkey: args.senderPubkey,
+      signature: args.signature,
+      enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+    }, this.config);
+  }
+  /**
+   * Submit the sponsor transaction
+   * @param args.feePayerAddress - Fee payer address
+   * @param args.secondarySignersAccountAddress - Secondary signers address
+   * @param args.senderAuthenticator - Sender authenticator
+   * @param args.feePayerAuthenticator - Fee payer authenticator
+   * @param args.secondarySignersAuthenticator - Secondary signers authenticator
+   * @returns `TransactionResponse`
+   */
+  submitSponsorTransaction(args) {
+    return submitSponsorTransactionInternal({
+      feePayerAddress: args.feePayerAddress,
+      secondarySignersAccountAddress: args.secondarySignersAccountAddress,
+      senderAuthenticator: args.senderAuthenticator,
+      feePayerAuthenticator: args.feePayerAuthenticator,
+      secondarySignersAuthenticator: args.secondarySignersAuthenticator,
+      rawTxn: this,
+      enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+    }, this.config);
+  }
+  /**
+   * Submit the multi agent transaction
+   * @param args.secondarySignersAccountAddress - Secondary signers address
+   * @param args.senderAuthenticator - Sender authenticator
+   * @param args.secondarySignersAuthenticator - Secondary signers authenticator
+   * @returns `TransactionResponse`
+   */
+  submitMultiAgentTransaction(args) {
+    return submitMultiAgentTransactionInternal({
+      secondarySignersAccountAddress: args.secondarySignersAccountAddress,
+      senderAuthenticator: args.senderAuthenticator,
+      secondarySignersAuthenticator: args.secondarySignersAuthenticator,
+      rawTxn: this,
+      enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+    }, this.config);
+  }
+  /**
+   * Sign the transaction
+   * @param senderAccount - Sender account
+   * @returns ed25519 signature in `HexString` or signer authenticator
+   */
+  signTransaction(senderAccount) {
+    return signTransactionInternal({
+      senderAccount,
+      rawTxn: this
+    });
   }
 };
+function extendedRawTransaction(args, config) {
+  return new ExtendedRawTransaction(
+    config,
+    args.rawTxn.sender,
+    args.rawTxn.sequence_number,
+    args.rawTxn.payload,
+    args.rawTxn.max_gas_amount,
+    args.rawTxn.gas_unit_price,
+    args.rawTxn.expiration_timestamp_secs,
+    args.rawTxn.chain_id
+  );
+}
 
 // src/api/transactionManager/txnBuild.ts
 var Build = class {
@@ -1569,10 +1473,6 @@ var Build = class {
    */
   networkInformation;
   /**
-   * The serialized property is an instance of the Serialized class, which is used to build serialize transactions.
-   */
-  serialized;
-  /**
    * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
    * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
    * @example
@@ -1585,7 +1485,6 @@ var Build = class {
    */
   constructor(networkInformation) {
     this.networkInformation = networkInformation;
-    this.serialized = new Serialized(networkInformation);
   }
   /**
    * Create raw transaction object for `simple` type txn
@@ -1619,7 +1518,7 @@ var Build = class {
    * @group Transaction
    */
   async simple(args) {
-    return simpleInternal(args, this.networkInformation);
+    return extendedRawTransaction({ rawTxn: await simpleInternal(args, this.networkInformation) }, this.networkInformation);
   }
   /**
   * Create raw transaction object for `entry_function_payload` type txn
@@ -1655,7 +1554,169 @@ var Build = class {
   * @group Transaction
   */
   rawTxnObject(args) {
-    return rawTxnObjectInternal(args, this.networkInformation);
+    return extendedRawTransaction({ rawTxn: rawTxnObjectInternal(args, this.networkInformation) }, this.networkInformation);
+  }
+  /**
+  * Create raw transaction for `script_payload` type txn
+  * @param args.senderAddress - Sender account address
+  * @param args.senderSequenceNumber - Sender account sequence number
+  * @param args.scriptCode - Move script bytecode
+  * @param args.scriptTypeArgs - Type arguments that move script bytecode requires
+  * @param args.scriptArgs - Arguments to the move script bytecode function
+  * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
+  * @returns Raw script transaction object
+  * @example
+  * ```typescript
+  * import { SupraClient,Network } from "supra-ts-sdk";
+  * 
+  * const supra = new SupraClient({ network: Network.TESTNET });
+  * 
+  * async function runExample() {
+  *     
+  *     let moveScriptCodeHex = "a11ceb0b06000000050100040...";
+  * 
+  *     let supraCoinTransferSerializedScriptRawTransaction = supra.transaction.build.scriptRawTxnObject({
+  *         senderAddress: account.address(),
+  *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+  *         scriptCode: Uint8Array.from(Buffer.from(moveScriptCodeHex, "hex")),
+  *         scriptTypeArgs: [],
+  *         scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(BigInt(1000))]
+  *     }).toBytes();
+  * 
+  *     console.log(supraCoinTransferSerializedScriptRawTransaction);
+  * }
+  *
+  * runExample().catch(console.error);
+  *
+  * ```
+  * @group Transaction
+  */
+  scriptRawTxnObject(args) {
+    return extendedRawTransaction({ rawTxn: scriptRawTxnObjectInternal(args, this.networkInformation) }, this.networkInformation);
+  }
+  /**
+   * Create raw transaction object for `automation_registration_payload` type txn
+   * @param args.senderAddress - Sender account address
+   * @param args.senderSequenceNumber - Sender account sequence number
+   * @param function - Target function name as MoveFunctionId
+   * @param args.functionTypeArgs - Target function type args
+   * @param args.functionArgs - Target function args
+   * @param args.automationMaxGasAmount - Max gas amount for automated transaction
+   * @param args.automationGasPriceCap - Gas Uint price upper limit that user is willing to pay
+   * @param args.automationFeeCapForEpoch - Maximum automation fee that user is willing to pay for epoch.
+   * @param args.automationFeeCapForEpoch - Expiration time of the automated transaction in seconds since UTC Epoch start.
+   * @param args.automationAuxData - Reserved for future extensions of registration parameters.
+   * @param optionalTransactionPayloadArgs Optional arguments for transaction payload
+   * @returns Raw transaction object
+   * @example
+   * ```typescript
+   * import { SupraClient,Network } from "supra-ts-sdk";
+   * 
+   * const supra = new SupraClient({ network: Network.TESTNET });
+   * 
+   * async function runExample() {
+   *     
+   *     let supraCoinTransferAutomationSerializedRawTransaction = supra.transaction.build.automationRegistrationRawTxnObject({
+   *         senderAddress: account.address(),
+   *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+   *         function: "0x1::supra_account::transfer" as MoveFunctionId,
+   *         functionTypeArgs: [],
+   *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)],
+   *         automationMaxGasAmount: BigInt(500),
+   *         automationGasPriceCap: BigInt(100),
+   *         automationFeeCapForEpoch: BigInt(1000000000),
+   *         automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 2 * 60 * 60),
+   *         automationAuxData: [],
+   *     }).toBytes();
+   * 
+   *     console.log(supraCoinTransferAutomationSerializedRawTransaction);
+   * }
+   *
+   * runExample().catch(console.error);
+   *
+   * ```
+   * @group Transaction
+   */
+  automationRegistrationRawTxnObject(args) {
+    return extendedRawTransaction({ rawTxn: automationRegistrationRawTxnObjectInternal(args, this.networkInformation) }, this.networkInformation);
+  }
+  /**
+   * Create raw transaction object for `multisig_payload` type txn
+   * @param args.senderAddress - Sender account address
+   * @param args.senderSequenceNumber - Sender account sequence number
+   * @param args.multisigAddress - Multisig account address
+   * @param args.function - Target function name as MoveFunctionId
+   * @param args.functionTypeArgs - Target function type args
+   * @param args.functionArgs - Target function args
+   * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload
+   * @returns Raw transaction object
+   * @example
+   * ```typescript
+   * import { SupraClient,Network } from "supra-ts-sdk";
+   * 
+   * const supra = new SupraClient({ network: Network.TESTNET });
+   * 
+   * async function runExample() {
+   *     
+   *     let supraCoinTransferSerializedMultisigRawTransaction = supra.transaction.build.multisigRawTxnObject({
+   *         senderAddress: account.address(),
+   *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+   *         multisigAddress: multisigAccountAddress,
+   *         function: "0x1::supra_account::transfer",
+   *         functionTypeArgs: [],
+   *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)]
+   *     }).toBytes();
+   * 
+   *     console.log(supraCoinTransferSerializedMultisigRawTransaction);
+   * }
+   * 
+   * runExample().catch(console.error);
+   * 
+   * ```
+   * @group Transaction
+   */
+  multisigRawTxnObject(args) {
+    return extendedRawTransaction({ rawTxn: multisigRawTxnObjectInternal(args, this.networkInformation) }, this.networkInformation);
+  }
+  /**
+  * Create raw transaction object to create multisig transaction
+  * @param args.senderAddress - Sender account address
+  * @param args.senderSequenceNumber - Sender account sequence number
+  * @param args.multisigAddress - Multisig account address
+  * @param args.function - Target function name as MoveFunctionId
+  * @param args.functionTypeArgs - Target function type args
+  * @param args.functionArgs - Target function args
+  * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
+  * @returns Raw transaction object
+  * @example
+  * ```typescript
+  * import { SupraClient,Network } from "supra-ts-sdk";
+  * 
+  * const supra = new SupraClient({ network: Network.TESTNET });
+  * 
+  * async function runExample() {
+  *     
+  *     let supraCoinTransferSerializedMultisigHashedRawTransaction = supra.transaction.build.multisigProposalTxRawTxnObject(
+  *         {
+  *             senderAddress: account.address(),
+  *             senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+  *             multisigAddress: multisigAccountAddress,
+  *             function: "0x1::supra_account::transfer",
+  *             functionTypeArgs: [],
+  *             functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)]
+  *         }
+  *     ).toBytes();
+  * 
+  *     console.log(supraCoinTransferSerializedMultisigHashedRawTransaction);
+  * }
+  * 
+  * runExample().catch(console.error);
+  * 
+  * ```
+  * @group Transaction
+  */
+  multisigProposalTxRawTxnObject(args) {
+    return extendedRawTransaction({ rawTxn: multisigProposalTxRawTxnObjectInternal(args, this.networkInformation) }, this.networkInformation);
   }
   /**
    * Create signed transaction payload
@@ -1814,7 +1875,7 @@ var Simulate = class {
 };
 
 // src/api/transactionManager/txnSubmit.ts
-import { BCS as BCS8 } from "supra-l1-sdk-core";
+import { BCS as BCS7 } from "supra-l1-sdk-core";
 var Submit = class {
   /**
    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
@@ -1865,7 +1926,7 @@ var Submit = class {
    * @group Transaction
    */
   async submitRawTransaction(args) {
-    return submitSerializedRawTransactionInternal({ ...args, serializedRawTransaction: BCS8.bcsToBytes(args.rawTransaction) }, this.networkInformation);
+    return submitSerializedRawTransactionInternal({ ...args, serializedRawTransaction: BCS7.bcsToBytes(args.rawTransaction) }, this.networkInformation);
   }
   /**
    * Send `entry_function_payload` type tx using serialized raw transaction data
@@ -2407,7 +2468,7 @@ var Account = class {
 };
 
 // src/internal/contract.ts
-import { BCS as BCS9, SupraAccount as SupraAccount4 } from "supra-l1-sdk-core";
+import { BCS as BCS8, SupraAccount as SupraAccount4 } from "supra-l1-sdk-core";
 async function callContractInternal(args, config) {
   let signers = [];
   let functionArguments = [];
@@ -2436,7 +2497,7 @@ async function callContractInternal(args, config) {
   }, config);
   return await submitSerializedRawTransactionInternal({
     senderAccount,
-    serializedRawTransaction: BCS9.bcsToBytes(simpleRawTxn),
+    serializedRawTransaction: BCS8.bcsToBytes(simpleRawTxn),
     enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
   }, config);
 }
@@ -2666,7 +2727,7 @@ var Methods = class {
 };
 
 // src/api/supraClient.ts
-import { TxnBuilderTypes as TxnBuilderTypes10 } from "supra-l1-sdk-core";
+import { TxnBuilderTypes as TxnBuilderTypes9 } from "supra-l1-sdk-core";
 
 // src/internal/table.ts
 async function getTableItemInternal(args, config) {
@@ -2729,7 +2790,7 @@ var Table = class {
 };
 
 // src/api/transaction.ts
-import { BCS as BCS10 } from "supra-l1-sdk-core";
+import { BCS as BCS9 } from "supra-l1-sdk-core";
 import sha33 from "js-sha3";
 var Transaction = class {
   /**
@@ -2905,7 +2966,7 @@ var Transaction = class {
    * @group Transaction
    */
   deriveTransactionHash(args) {
-    return sha33.keccak256(BCS10.bcsToBytes(args.signedTransaction));
+    return sha33.keccak256(BCS9.bcsToBytes(args.signedTransaction));
   }
   /**
   * Publish package or module on supra network
@@ -2952,9 +3013,9 @@ async function getMinGasUnitPriceInternal(config) {
 }
 
 // src/internal/coin.ts
-import { BCS as BCS11, HexString as HexString7, TypeTagParser as TypeTagParser2 } from "supra-l1-sdk-core";
+import { BCS as BCS10, HexString as HexString6, TypeTagParser as TypeTagParser2 } from "supra-l1-sdk-core";
 async function transferCoinInternal(args, config) {
-  let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString7(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
+  let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString6(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
   if (args.coinType == "0x1::supra_coin::SupraCoin" && args.optionalTransactionArgs?.optionalTransactionPayloadArgs && !args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.maxGas) {
     let maxGas = BigInt(
       DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS
@@ -2971,7 +3032,7 @@ async function transferCoinInternal(args, config) {
     senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: args.senderAccount.address() }, config)).sequence_number,
     function: `${SUPRA_FRAMEWORK_ADDRESS}::supra_account::transfer_coins`,
     functionTypeArgs: [new TypeTagParser2(args.coinType).parseTypeTag()],
-    functionArgs: [receiverAccountAddress.toUint8Array(), BCS11.bcsSerializeUint64(args.amount)]
+    functionArgs: [receiverAccountAddress.toUint8Array(), BCS10.bcsSerializeUint64(args.amount)]
   };
   let raw_txn = rawTxnObjectInternal(supraTransferPayload, config);
   let sendTxPayload = sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn });
@@ -2982,7 +3043,7 @@ async function transferCoinInternal(args, config) {
 }
 async function getCoinInfoInternal(args, config) {
   return await getAccountResourceInternal({
-    accountAddress: new HexString7(args.coinType.split("::")[0]),
+    accountAddress: new HexString6(args.coinType.split("::")[0]),
     resourceType: `${SUPRA_FRAMEWORK_ADDRESS}::coin::CoinInfo<${args.coinType}>`
   }, config).then((res) => {
     return {
@@ -3306,7 +3367,7 @@ var Block = class {
 };
 
 // src/internal/fungibleAsset.ts
-import { BCS as BCS12, HexString as HexString8, TypeTagParser as TypeTagParser3 } from "supra-l1-sdk-core";
+import { BCS as BCS11, HexString as HexString7, TypeTagParser as TypeTagParser3 } from "supra-l1-sdk-core";
 async function getFungibleAssetMetadataInternal(args, config) {
   return await getAccountResourceInternal({
     accountAddress: args.assetAddress,
@@ -3314,8 +3375,8 @@ async function getFungibleAssetMetadataInternal(args, config) {
   }, config).then((res) => res.data);
 }
 async function transferFungibleAssetInternal(args, config) {
-  let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString8(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
-  let assetAddress = typeof args.assetAddress === "string" ? new HexString8(args.assetAddress.toString()) : args.assetAddress;
+  let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString7(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
+  let assetAddress = typeof args.assetAddress === "string" ? new HexString7(args.assetAddress.toString()) : args.assetAddress;
   if (args.assetAddress == "0x000000000000000000000000000000000000000000000000000000000000000a" && args.optionalTransactionArgs?.optionalTransactionPayloadArgs && !args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.maxGas) {
     let maxGas = BigInt(
       DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS
@@ -3332,7 +3393,7 @@ async function transferFungibleAssetInternal(args, config) {
     senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: args.senderAccount.address() }, config)).sequence_number,
     function: `${SUPRA_FRAMEWORK_ADDRESS}::primary_fungible_store::transfer`,
     functionTypeArgs: [new TypeTagParser3("0x1::fungible_asset::Metadata").parseTypeTag()],
-    functionArgs: [assetAddress.toUint8Array(), receiverAccountAddress.toUint8Array(), BCS12.bcsSerializeUint64(args.amount)]
+    functionArgs: [assetAddress.toUint8Array(), receiverAccountAddress.toUint8Array(), BCS11.bcsSerializeUint64(args.amount)]
   };
   let raw_txn = rawTxnObjectInternal(supraTransferPayload, config);
   let sendTxPayload = sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn });
@@ -3561,7 +3622,7 @@ var SupraClient = class {
    * @group SupraClient
    */
   getChainId() {
-    return new TxnBuilderTypes10.ChainId(
+    return new TxnBuilderTypes9.ChainId(
       Number(this.networkInformation.chainId)
     );
   }
@@ -3620,8 +3681,12 @@ function applyMixins(derivedCtor, constructors) {
   });
 }
 applyMixins(SupraClient, [Account, Transaction, Contract, Methods, Faucet, Table, Coin, Events, Block, FungibleAsset]);
+
+// src/index.ts
+import { BCS as BCS12 } from "supra-l1-sdk-core";
 export {
   Account,
+  BCS12 as BCS,
   Block,
   Build,
   Coin,
@@ -3651,7 +3716,6 @@ export {
   RAW_TRANSACTION_WITH_DATA_SALT,
   SUPRA_COIN_TYPE,
   SUPRA_FRAMEWORK_ADDRESS,
-  Serialized,
   Simulate,
   Submit,
   SupraAPIError,
