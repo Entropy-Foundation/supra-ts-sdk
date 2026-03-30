@@ -1,5 +1,4 @@
 export * from "./api/transactionManager/txnBuild";
-export * from "./api/transactionManager/txnBuildSerialized";
 export * from "./api/transactionManager/txnSimulate";
 export * from "./api/transactionManager/txnSubmit";
 export * from "./api/account";
@@ -34,6 +33,10 @@ export * from "./errors/moveVmErrors";
 
 //function 
 export { standardizeAddress } from './helper/account';
+export {addAddressPadding , getFunctionParts} from "./helper/general";
 
 //constants
 export * from "./utils/constants";
+
+// BCS
+export {BCS} from "supra-l1-sdk-core";

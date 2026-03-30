@@ -49,3 +49,5 @@ testAccount.ts
 
 # generated docs
 /docs
+/docs/
+/src/abi.ts
