@@ -353,7 +353,7 @@ export function isMoveStruct(type: string) {
 }
 
 
-function uint8ArrayToHexString(bytes: Uint8Array) {
+export function uint8ArrayToHexString(bytes: Uint8Array) {
     return Array.from(bytes)
         .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');

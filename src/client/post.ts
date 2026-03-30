@@ -20,10 +20,9 @@ export async function post<Req extends object, Res>(args: RequestParams, config:
         body: args.data ? JSON.stringify(args.data as Req) : null,
         signal: AbortSignal.timeout(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS),
     });
-
-    const data = await response.json();
-
+    
     if (response.ok) {
+        const data = await response.json();
         return data as Res;
     }
 
@@ -31,6 +30,6 @@ export async function post<Req extends object, Res>(args: RequestParams, config:
         status: response.status,
         statusText: response.statusText,
         url,
-        data,
+        data : response,    
     });
 }

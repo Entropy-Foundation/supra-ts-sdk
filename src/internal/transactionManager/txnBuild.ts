@@ -1,11 +1,11 @@
-import { BCS, HexString, SupraAccount, TxnBuilderTypes, type AnyRawTransaction } from "supra-l1-sdk-core";
+import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { OptionalTransactionPayloadArgs, RawTxnJSON, SendTxnPayload, TransactionPayloadJSON } from "../../types/transactionManager/transactionBuild";
 import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
 import type { AccountAddressInput } from "../../types/account";
 import { standardizeAddress } from "../../helper/account";
 import type { MoveFunctionId, MoveInnerAuthenticator, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
-import { convertPayloadTypeArgsToMoveType, getFunctionParts } from "../../helper/general";
+import { convertPayloadTypeArgsToMoveType, getFunctionParts, uint8ArrayToHexString } from "../../helper/general";
 import { signTransactionInternal } from "../transaction";
 import { fromUint8ArrayToJSArray, parseFunctionTypeArgs, parseScriptArgs } from "../../utils/functions";
 import { getAccountModuleInternal } from "../account";
@@ -488,6 +488,14 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      */
     toBytes(): Uint8Array {
         return BCS.bcsToBytes(this);
+    }
+
+    /**
+     * Serialize the transaction to hex string
+     * @returns hex string
+     */
+    toHexString(): HexString {
+        return new HexString(uint8ArrayToHexString(BCS.bcsToBytes(this)));
     }
 
     /**
