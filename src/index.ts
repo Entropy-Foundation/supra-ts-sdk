@@ -19,9 +19,13 @@ export * from "./utils/apiEndpoints";
 //types 
 export * from "./types/supraClient";
 export * from "./types/account";
+export * from "./types/block";
+export * from "./types/coin";
 export * from "./types/contract";
 export * from "./types/faucet";
+export * from "./types/fungibleAsset";
 export * from "./types/methods";
+export * from "./types/move";
 export * from "./types/table";
 export * from "./types/transaction";
 export * from "./types/transactionManager/transactionBuild";
