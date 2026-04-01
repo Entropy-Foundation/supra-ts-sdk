@@ -1,4 +1,5 @@
 import { post } from "../client/post";
+import { standardizeAddress } from "../helper/account";
 import type { AccountAddressInput } from "../types/account";
 import type { TableItemRequest } from "../types/table";
 import type { NetworkConfig } from "../utils/apiEndpoints";
@@ -12,7 +13,7 @@ export async function getTableItemInternal<T>(
     config: NetworkConfig
 ): Promise<T> {
     return await post<TableItemRequest, T>({
-        path: `tables/${args.handle}/item`,
+        path: `/tables/${standardizeAddress(args.handle)}/item`,
         data: args.data
     }, config).then(res => res);
 }
