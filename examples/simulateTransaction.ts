@@ -1,7 +1,6 @@
-import { BCS, HexString, SupraAccount, TxnBuilderTypes } from 'supra-l1-sdk-core';
+import { BCS, HexString } from 'supra-l1-sdk-core';
 import { SupraClient, Network } from '../src/index';
 import { MoveFunctionId } from '../src/types/move';
-import { MILLISECONDS_PER_SECOND } from '../src/utils/constants';
 import { account } from '../testAccount';
 
 (async () => {
@@ -50,7 +49,7 @@ import { account } from '../testAccount';
     // Simulate serialized transaction
     // ---------------------------------------------------------------------------
 
-    let supraCoinTransferSerializedRawTransaction = supra.transaction.build.serialized.rawTxnObject(supraTransferPayload);
+    let supraCoinTransferSerializedRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload);
 
     let simulationResponseSerialized = await supra.transaction.simulate.serialized({
         txAuthenticator: {
@@ -59,10 +58,28 @@ import { account } from '../testAccount';
                 signature: "0x" + "0".repeat(128),
             },
         },
-        serializedRawTransaction: supraCoinTransferSerializedRawTransaction
+        serializedRawTransaction: supraCoinTransferSerializedRawTransaction.toBytes()
     });
 
     console.log("Simulation response:", simulationResponseSerialized);
 
+
+    // ---------------------------------------------------------------------------
+    // Shorthand simulate transaction
+    // ---------------------------------------------------------------------------
+
+    let simulationResponse1 = await supraCoinTransferSerializedRawTransaction.simulate(account);
+
+    console.log("Simulation response:", simulationResponse1);
+
+
+    let simulationResponse2 = await supraCoinTransferSerializedRawTransaction.simulate({
+        Ed25519: {
+            public_key: account.pubKey().toString(),
+            signature: "0x" + "0".repeat(128),
+        },
+    });
+
+    console.log("Simulation response:", simulationResponse2);
 
 })();

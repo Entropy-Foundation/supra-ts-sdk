@@ -1,5 +1,4 @@
 export * from "./api/transactionManager/txnBuild";
-export * from "./api/transactionManager/txnBuildSerialized";
 export * from "./api/transactionManager/txnSimulate";
 export * from "./api/transactionManager/txnSubmit";
 export * from "./api/account";
@@ -20,9 +19,13 @@ export * from "./utils/apiEndpoints";
 //types 
 export * from "./types/supraClient";
 export * from "./types/account";
+export * from "./types/block";
+export * from "./types/coin";
 export * from "./types/contract";
 export * from "./types/faucet";
+export * from "./types/fungibleAsset";
 export * from "./types/methods";
+export * from "./types/move";
 export * from "./types/table";
 export * from "./types/transaction";
 export * from "./types/transactionManager/transactionBuild";
@@ -34,6 +37,10 @@ export * from "./errors/moveVmErrors";
 
 //function 
 export { standardizeAddress } from './helper/account';
+export {addAddressPadding , getFunctionParts} from "./helper/general";
 
 //constants
 export * from "./utils/constants";
+
+// BCS
+export {BCS} from "supra-l1-sdk-core";

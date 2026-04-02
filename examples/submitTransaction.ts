@@ -44,18 +44,10 @@ import { account, feePayerAccount, secondarySignerAccount } from '../testAccount
 
     let supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload)
 
-
-    // Generating serialized `rawTxn` using `rawTxn` Object
-    // and sending transaction using generated serialized `rawTxn`
-    let supraCoinTransferRawTransactionSerializer = new BCS.Serializer();
-    supraCoinTransferRawTransaction.serialize(
-        supraCoinTransferRawTransactionSerializer
-    );
-
     // You use can above serialized payload to send transaction.
     let txn = await supra.transaction.submit.submitSerializedRawTransaction({
         senderAccount: account,
-        serializedRawTransaction: supraCoinTransferRawTransactionSerializer.getBytes(),
+        serializedRawTransaction: supraCoinTransferRawTransaction.toBytes(),
         enableTransactionWaitAndSimulationArgs: {
             enableTransactionSimulation: true,
             enableWaitForTransaction: true
@@ -69,7 +61,7 @@ import { account, feePayerAccount, secondarySignerAccount } from '../testAccount
     // Submit serialized transaction with signature
     // ---------------------------------------------------------------------------
 
-    let supraCoinTransferSerializedRawTransaction = supra.transaction.build.serialized.rawTxnObject(supraTransferPayload);
+    let supraCoinTransferSerializedRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload).toBytes();
 
     let raw_txn = TxnBuilderTypes.RawTransaction.deserialize(
         new BCS.Deserializer(supraCoinTransferSerializedRawTransaction),

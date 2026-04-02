@@ -353,8 +353,55 @@ export function isMoveStruct(type: string) {
 }
 
 
-function uint8ArrayToHexString(bytes: Uint8Array) {
+export function uint8ArrayToHexString(bytes: Uint8Array) {
     return Array.from(bytes)
         .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');
 }
+
+
+
+export function addAddressPadding(address: string): string {
+    if (!address) return address
+    /**
+     * Pads a Move-style LP token address and its inner token addresses for consistent formatting.
+     * Example: "0x1::lp_coin::LP<0x2::token::TokenA, 0x3::token::TokenB>"
+     */
+    const isLpTokenAddressMatch = address.match(/<([^>]+)>/)
+    if (isLpTokenAddressMatch && isLpTokenAddressMatch.length === 2) {
+      const firstPart = address.slice(0, address.indexOf('<'))
+      if (firstPart.includes('::')) {
+        const inner = isLpTokenAddressMatch[1] ?? ''
+        if (inner) {
+          const innerFixed = inner
+            .split(',')
+            .map((part) => addAddressPadding(part.trim()))
+            .join(', ')
+          return `${addAddressPadding(firstPart)}<${innerFixed}>`
+        }
+      }
+    }
+  
+    // Normalize uppercase/lowercase and trim spaces
+    address = address.trim().replace(/^Ox/, '0x').replace(/^0X/, '0x')
+  
+    // Handle module-style address: split by "::"
+    if (address.includes('::')) {
+      const [addrPart, ...rest] = address.split('::')
+      const paddedAddr = addAddressPadding(addrPart as string)
+      return `${paddedAddr}::${rest.join('::')}`
+    }
+  
+    // Ensure 0x prefix
+    if (!address.startsWith('0x')) {
+      address = '0x' + address
+    }
+  
+    // Strip prefix for padding
+    const hexPart = address.slice(2)
+  
+    // Left pad with zeros up to 64 hex chars (32 bytes)
+    const paddedHex = hexPart.padStart(64, '0')
+  
+    return '0x' + paddedHex
+  }

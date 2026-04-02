@@ -1,17 +1,22 @@
-import { HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
+import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { OptionalTransactionPayloadArgs, RawTxnJSON, SendTxnPayload, TransactionPayloadJSON } from "../../types/transactionManager/transactionBuild";
-import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND } from "../../utils/constants";
+import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
 import type { AccountAddressInput } from "../../types/account";
 import { standardizeAddress } from "../../helper/account";
-import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
-import { convertPayloadTypeArgsToMoveType, getFunctionParts } from "../../helper/general";
+import type { MoveFunctionId, MoveInnerAuthenticator, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
+import { convertPayloadTypeArgsToMoveType, getFunctionParts, uint8ArrayToHexString } from "../../helper/general";
 import { signTransactionInternal } from "../transaction";
 import { fromUint8ArrayToJSArray, parseFunctionTypeArgs, parseScriptArgs } from "../../utils/functions";
-
 import { getAccountModuleInternal } from "../account";
 import { getFunctionABI } from "../../helper/abi";
 import { DynamicTransactionSerializer } from "../../utils/serializer";
+import type { TransactionResponse } from "../../types/transaction";
+import { simulateSerializedTxnInternal, simulateTxnInternal } from "./txnSimulate";
+import { submitMultiAgentTransactionInternal, submitSerializedRawTransactionAndSignatureInternal, submitSerializedRawTransactionInternal, submitSponsorTransactionInternal } from "./txnSubmit";
+import type { EnableTransactionWaitAndSimulationArgs } from "../../types/transactionManager/transactionSubmit";
+import sha3 from "js-sha3";
+
 
 /**
  * Generate the serialized payload for a transaction
@@ -321,4 +326,336 @@ export function sendTxnPayloadInternal(
             },
         },
     };
+}
+
+export function scriptRawTxnObjectInternal(
+    args: {
+        senderAddress: AccountAddressInput,
+        senderSequenceNumber: bigint,
+        scriptCode: Uint8Array,
+        scriptTypeArgs: TxnBuilderTypes.TypeTag[],
+        scriptArgs: TxnBuilderTypes.TransactionArgument[],
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+    },
+    config: NetworkConfig
+): TxnBuilderTypes.RawTransaction {
+    let payload = new TxnBuilderTypes.TransactionPayloadScript(
+        new TxnBuilderTypes.Script(args.scriptCode, args.scriptTypeArgs, args.scriptArgs),
+    );
+
+    return rawTxnObjectInnerInternal({
+        senderAddress: args.senderAddress,
+        senderSequenceNumber: args.senderSequenceNumber,
+        payload: payload,
+        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+    }, config);
+
+}
+
+
+export function automationRegistrationRawTxnObjectInternal(
+    args: {
+        senderAddress: AccountAddressInput,
+        senderSequenceNumber: bigint,
+        function: MoveFunctionId,
+        functionTypeArgs: TxnBuilderTypes.TypeTag[],
+        functionArgs: Uint8Array[],
+        automationMaxGasAmount: bigint,
+        automationGasPriceCap: bigint,
+        automationFeeCapForEpoch: bigint,
+        automationExpirationTimestampSecs: bigint,
+        automationAuxData: Uint8Array[],
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+    },
+    config: NetworkConfig
+): TxnBuilderTypes.RawTransaction {
+
+    let payload = new TxnBuilderTypes.TransactionPayloadAutomationRegistration(
+        new TxnBuilderTypes.AutomationRegistrationParamsV1(
+            new TxnBuilderTypes.AutomationRegistrationParamsV1Data(
+                buildEntryFunctionInternal({
+                    function: args.function,
+                    functionTypeArgs: args.functionTypeArgs,
+                    functionArgs: args.functionArgs
+                }),
+                args.automationMaxGasAmount,
+                args.automationGasPriceCap,
+                args.automationFeeCapForEpoch,
+                args.automationExpirationTimestampSecs,
+                args.automationAuxData,
+            ),
+        ),
+    );
+    return rawTxnObjectInnerInternal({
+        senderAddress: args.senderAddress,
+        senderSequenceNumber: args.senderSequenceNumber,
+        payload: payload,
+        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+    }, config);
+
+}
+
+
+export function multisigRawTxnObjectInternal(
+    args: {
+        senderAddress: AccountAddressInput,
+        senderSequenceNumber: bigint,
+        multisigAddress: AccountAddressInput,
+        function: MoveFunctionId,
+        functionTypeArgs: TxnBuilderTypes.TypeTag[],
+        functionArgs: Uint8Array[],
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+    },
+    config: NetworkConfig
+): TxnBuilderTypes.RawTransaction {
+    let multisigAddress = typeof args.multisigAddress === "string" ? new HexString(args.multisigAddress.toString()) : args.multisigAddress;
+
+    let payload = new TxnBuilderTypes.TransactionPayloadMultisig(
+        new TxnBuilderTypes.MultiSig(
+            TxnBuilderTypes.AccountAddress.fromHex(multisigAddress),
+            new TxnBuilderTypes.MultiSigTransactionPayload(
+                buildEntryFunctionInternal({
+                    function: args.function,
+                    functionTypeArgs: args.functionTypeArgs,
+                    functionArgs: args.functionArgs
+                })
+            ),
+        ),
+    );
+    return rawTxnObjectInnerInternal(
+        {
+            senderAddress: args.senderAddress,
+            senderSequenceNumber: args.senderSequenceNumber,
+            payload: payload,
+            optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+        }, config);
+
+}
+
+
+export function multisigProposalTxRawTxnObjectInternal(
+    args: {
+        senderAddress: AccountAddressInput,
+        senderSequenceNumber: bigint,
+        multisigAddress: AccountAddressInput,
+        function: MoveFunctionId,
+        functionTypeArgs: TxnBuilderTypes.TypeTag[],
+        functionArgs: Uint8Array[],
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+    },
+    config: NetworkConfig
+): TxnBuilderTypes.RawTransaction {
+    let multisigAddress = typeof args.multisigAddress === "string" ? new HexString(args.multisigAddress.toString()) : args.multisigAddress;
+
+    let multisigPayload = new TxnBuilderTypes.MultiSigTransactionPayload(
+        buildEntryFunctionInternal({
+            function: args.function,
+            functionTypeArgs: args.functionTypeArgs,
+            functionArgs: args.functionArgs
+        })
+    );
+    let multisigPayloadHash = new HexString(
+        sha3.sha3_256(BCS.bcsToBytes(multisigPayload)),
+    );
+
+    return rawTxnObjectInternal(
+        {
+            senderAddress: args.senderAddress,
+            senderSequenceNumber: args.senderSequenceNumber,
+            function: `${SUPRA_FRAMEWORK_ADDRESS}::multisig_account::create_transaction_with_hash`,
+            functionTypeArgs: [],
+            functionArgs: [
+                BCS.bcsToBytes(TxnBuilderTypes.AccountAddress.fromHex(multisigAddress)),
+                BCS.bcsSerializeBytes(multisigPayloadHash.toUint8Array()),
+            ],
+            optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+        }, config
+    );
+}
+
+
+export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
+    constructor(
+        private config: NetworkConfig, // pass whatever you need
+        ...args: ConstructorParameters<typeof TxnBuilderTypes.RawTransaction>
+    ) {
+        super(...args);
+    }
+
+    /**
+     * Serialize the transaction to bytes
+     * @returns bytes
+     */
+    toBytes(): Uint8Array {
+        return BCS.bcsToBytes(this);
+    }
+
+    /**
+     * Serialize the transaction to hex string
+     * @returns hex string
+     */
+    toHexString(): HexString {
+        return new HexString(uint8ArrayToHexString(BCS.bcsToBytes(this)));
+    }
+
+    /**
+     * Create a signed transaction
+     * @param args.senderAccount - Sender KeyPair
+     * @returns `SignedTransaction`
+     */
+    signedTransaction(senderAccount: SupraAccount): TxnBuilderTypes.SignedTransaction {
+        return signedTransactionInternal({
+            senderAccount,
+            rawTxn: this
+        })
+    }
+
+    /**
+     * Create a send transaction payload
+     * @param args.senderAccount - Sender KeyPair
+     * @returns `SendTxnPayload`
+     */
+    sendTxnPayload(senderAccount: SupraAccount): SendTxnPayload {
+        return sendTxnPayloadInternal({
+            senderAccount,
+            rawTxn: this
+        })
+    }
+
+    /**
+     * Simulate the transaction
+     * @param args.senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
+     * @returns `TransactionResponse`
+     */
+    simulate(senderAccountOrAuthenticator: SupraAccount | MoveInnerAuthenticator): Promise<TransactionResponse> {
+
+        if (senderAccountOrAuthenticator instanceof SupraAccount) {
+            return simulateTxnInternal({
+                sendTxPayload: sendTxnPayloadInternal({
+                    senderAccount: senderAccountOrAuthenticator,
+                    rawTxn: this
+                })
+            }, this.config)
+        }
+
+        return simulateSerializedTxnInternal({
+            txAuthenticator: senderAccountOrAuthenticator,
+            serializedRawTransaction: BCS.bcsToBytes(this)
+        }, this.config)
+
+    }
+
+    /**
+     * Submit the transaction
+     * @param args.senderAccount - Sender KeyPair
+     * @returns `TransactionResponse`
+     */
+    submitTransaction(args: {
+        senderAccount: SupraAccount,
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+    }): Promise<TransactionResponse> {
+        return submitSerializedRawTransactionInternal({
+            senderAccount: args.senderAccount,
+            serializedRawTransaction: BCS.bcsToBytes(this),
+            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+        }, this.config)
+    }
+
+    /**
+     * Submit the transaction with signature
+     * @param args.senderPubkey - Sender ed25519 pubkey
+     * @param args.signature - Ed25519 signature
+     * @returns `TransactionResponse`
+     */
+    submitTransactionAndSignature(args: {
+        senderPubkey: HexString,
+        signature: HexString,
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+    }): Promise<TransactionResponse> {
+        return submitSerializedRawTransactionAndSignatureInternal({
+            serializedRawTransaction: BCS.bcsToBytes(this),
+            senderPubkey: args.senderPubkey,
+            signature: args.signature,
+            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+        }, this.config)
+    }
+
+    /**
+     * Submit the sponsor transaction
+     * @param args.feePayerAddress - Fee payer address
+     * @param args.secondarySignersAccountAddress - Secondary signers address
+     * @param args.senderAuthenticator - Sender authenticator
+     * @param args.feePayerAuthenticator - Fee payer authenticator
+     * @param args.secondarySignersAuthenticator - Secondary signers authenticator
+     * @returns `TransactionResponse`
+     */
+    submitSponsorTransaction(
+        args: {
+            feePayerAddress: AccountAddressInput,
+            secondarySignersAccountAddress: Array<string>,
+            senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
+            feePayerAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
+            secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
+            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        }
+    ): Promise<TransactionResponse> {
+        return submitSponsorTransactionInternal({
+            feePayerAddress: args.feePayerAddress,
+            secondarySignersAccountAddress: args.secondarySignersAccountAddress,
+            senderAuthenticator: args.senderAuthenticator,
+            feePayerAuthenticator: args.feePayerAuthenticator,
+            secondarySignersAuthenticator: args.secondarySignersAuthenticator,
+            rawTxn: this,
+            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+        }, this.config)
+    }
+
+    /**
+     * Submit the multi agent transaction
+     * @param args.secondarySignersAccountAddress - Secondary signers address
+     * @param args.senderAuthenticator - Sender authenticator
+     * @param args.secondarySignersAuthenticator - Secondary signers authenticator
+     * @returns `TransactionResponse`
+     */
+    submitMultiAgentTransaction(
+        args: {
+            secondarySignersAccountAddress: Array<string>,
+            senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
+            secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
+            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        }
+    ): Promise<TransactionResponse> {
+        return submitMultiAgentTransactionInternal({
+            secondarySignersAccountAddress: args.secondarySignersAccountAddress,
+            senderAuthenticator: args.senderAuthenticator,
+            secondarySignersAuthenticator: args.secondarySignersAuthenticator,
+            rawTxn: this,
+            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+        }, this.config)
+    }
+
+    /**
+     * Sign the transaction
+     * @param senderAccount - Sender account
+     * @returns ed25519 signature in `HexString` or signer authenticator
+     */
+    signTransaction(senderAccount: SupraAccount): HexString | TxnBuilderTypes.AccountAuthenticatorEd25519 {
+        return signTransactionInternal({
+            senderAccount: senderAccount,
+            rawTxn: this
+        })
+    }
+}
+
+export function extendedRawTransaction(args: { rawTxn: TxnBuilderTypes.RawTransaction }, config: NetworkConfig): ExtendedRawTransaction {
+    return new ExtendedRawTransaction(
+        config,
+        args.rawTxn.sender,
+        args.rawTxn.sequence_number,
+        args.rawTxn.payload,
+        args.rawTxn.max_gas_amount,
+        args.rawTxn.gas_unit_price,
+        args.rawTxn.expiration_timestamp_secs,
+        args.rawTxn.chain_id,
+    )
 }
