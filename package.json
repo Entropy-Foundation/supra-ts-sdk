@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepare": "pnpm build",
     "clean": "rm -rf dist .turbo",
     "dev": "tsup --watch",
     "test": "jest",
