@@ -12,13 +12,26 @@ TypeScript SDK for the Supra L1 blockchain. Provides typed interfaces for accoun
 pnpm install          # Install dependencies (uses pnpm)
 pnpm build            # Build ESM + CJS via tsup
 pnpm dev              # Build in watch mode
-pnpm test             # Run Jest tests (173 tests across 14 suites)
+pnpm clean            # Remove dist/ and .turbo/
+pnpm test             # Run Jest tests
 pnpm test:watch       # Jest watch mode
-pnpm lint             # ESLint (zero warnings enforced)
+pnpm lint             # ESLint (zero warnings enforced: --max-warnings 0)
 pnpm format           # Prettier formatting
 pnpm typecheck        # tsc --noEmit
 pnpm doc              # Generate TypeDoc to docs/
 ```
+
+Running a single test file or subset:
+```bash
+npx jest src/helper                # Run tests in helper directory
+npx jest --testPathPattern=account # Run tests matching "account"
+```
+
+## Code Style
+
+- **Prettier**: double quotes, 4-space indent, 120 char line width, trailing commas (`.prettierrc.json`)
+- **TypeScript**: `verbatimModuleSyntax: true` — use `import type` for type-only imports
+- **ESLint**: zero warnings policy (`--max-warnings 0`)
 
 ## Architecture
 
@@ -39,17 +52,19 @@ src/index.ts      → Re-exports everything public
 
 **API ↔ Internal separation**: Each feature (account, transaction, coin, etc.) has a matching pair — `api/account.ts` defines the public class, `internal/account.ts` has the `*Internal()` functions that do the actual HTTP calls. Types live in `types/account.ts`.
 
-**Mixin composition**: `SupraClient` uses `applyMixins()` to merge all sub-module methods (Account, Transaction, Contract, etc.) onto a single client class. Sub-modules are also accessible as properties (`supra.account.getAccountInfo()`).
+**Mixin composition**: `SupraClient` uses `applyMixins()` to merge all sub-module methods (Account, Transaction, Contract, etc.) onto a single client class. Both access patterns work: `supra.getAccountInfo()` (mixed-in) and `supra.account.getAccountInfo()` (property).
 
-**Proxy-based ABI contracts**: `Contract.fromABI()` returns a Proxy object that maps Move module functions to typed TypeScript methods (`contracts.coin.view.balance(...)`).
+**Proxy-based ABI contracts**: `Contract.fromABI()` returns a Proxy object that maps Move module functions to typed TypeScript methods. Two sub-proxies: `contracts.coin.view.balance(...)` for view functions and `contracts.coin.entry.transfer(...)` for entry functions.
 
-**Network config**: `SupraConfig` is a discriminated union — either `{ network: Network.MAINNET | Network.TESTNET }` or `{ network?: Network.CUSTOM, rpcUrl, chainId }`. Defined in `src/utils/apiEndpoints.ts`.
+**Network config**: `SupraConfig` is a discriminated union — either `{ network: Network.MAINNET | Network.TESTNET }` (uses predefined config) or `{ rpcUrl, chainId }` for custom networks. Predefined: mainnet = chainId 8, testnet = chainId 6. Defined in `src/utils/apiEndpoints.ts`.
 
 **Pagination**: Cursor extracted from `x-supra-cursor` response header, returned as `PaginatedResponse<T>`.
 
 ### Transaction Lifecycle
 
 Build (`txnBuild.ts`) → Simulate (`txnSimulate.ts`) → Submit (`txnSubmit.ts`) → Wait (`transaction.ts:waitForTransaction`)
+
+Transaction sub-modules are accessible via `supra.transaction.build`, `supra.transaction.simulate`, `supra.transaction.submit`.
 
 ### Move Type Mapping
 
@@ -69,7 +84,7 @@ All RPC calls go through `src/client/get.ts` and `src/client/post.ts` using nati
 
 ## Testing
 
-Tests use Jest with ts-jest ESM support. Test files live in `__tests__/` directories adjacent to source.
+Tests use Jest with ts-jest ESM support. Test files live in `__tests__/` directories adjacent to source. Jest config uses `moduleNameMapper` to strip `.js` extensions for ESM compatibility.
 
 ```bash
 npx jest                           # Run all tests
@@ -81,5 +96,5 @@ Mock patterns: HTTP calls are mocked via `jest.mock("../../client/get")` or `glo
 
 ## Dependencies
 
-- `supra-l1-sdk-core` — Core blockchain types (TxnBuilderTypes, HexString, etc.)
+- `supra-l1-sdk-core` — Core blockchain types (TxnBuilderTypes, HexString, SupraAccount, BCS). `BCS` is re-exported from `src/index.ts`.
 - `js-sha3` — SHA3 hashing
