@@ -110,7 +110,8 @@
       "linkify-it": "^5.0.1",
       "markdown-it": "^14.2.0",
       "yaml": "^2.8.3",
-      "@babel/core": "^7.29.6"
+      "@babel/core": "^7.29.6",
+      "esbuild": "^0.28.1"
     }
   }
 }
