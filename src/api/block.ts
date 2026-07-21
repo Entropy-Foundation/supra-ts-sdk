@@ -1,6 +1,7 @@
 import { getBlockByHashInternal, getBlockByHeightInternal, getLatestBlockInternal, getTransactionsByBlockHashInternal } from "../internal/block";
 import type { FinalizedBlockHeader } from "../types/block";
 import type { NetworkConfig } from "../utils/apiEndpoints";
+import { validateBlockHeight, validateHexString } from "../helper/validation";
 
 /**
  * The Block class provides methods for querying block information on the Supra network.
@@ -77,6 +78,7 @@ export class Block {
      * @group Block
      */
     async getBlockByHeight(args: { height: number, options?: { withFinalizedTransactions?: boolean, type?: "user" | "auto" | "meta" } }): Promise<FinalizedBlockHeader> {
+        validateBlockHeight(args.height, "height");
         return getBlockByHeightInternal(args, this.networkInformation)
     }
 
@@ -101,6 +103,7 @@ export class Block {
      * @group Block
      */
     async getBlockByHash(args: { blockHash: string }): Promise<FinalizedBlockHeader> {
+        validateHexString(args.blockHash, "blockHash");
         return getBlockByHashInternal(args, this.networkInformation)
     }
 
@@ -127,6 +130,7 @@ export class Block {
      * @group Block
      */
     async getTransactionsByBlockHash(args: { blockHash: string, options?: { type?: "user" | "auto" | "meta" } }): Promise<string[]> {
+        validateHexString(args.blockHash, "blockHash");
         return getTransactionsByBlockHashInternal(args, this.networkInformation)
     }
 }

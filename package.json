@@ -6,6 +6,18 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Entropy-Foundation/supra-ts-sdk.git"
+  },
+  "homepage": "https://github.com/Entropy-Foundation/supra-ts-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/Entropy-Foundation/supra-ts-sdk/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -15,6 +27,7 @@
   },
   "files": [
     "dist",
+    ".claude/skills",
     "README.md",
     "LICENSE"
   ],
@@ -28,8 +41,7 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,json,md}\"",
     "typecheck": "tsc --noEmit",
-    "doc": "typedoc --out docs src/index.ts --sort source-order --sort instance-first --readme README.md",
-    "test:file": "npx tsx src/test.ts"
+    "doc": "typedoc --out docs src/index.ts --sort source-order --sort instance-first --readme README.md"
   },
   "keywords": [
     "supra",
@@ -83,7 +95,12 @@
       "@jest/transform": "^29.7.0",
       "babel-jest": "^29.7.0",
       "jest-util": "^29.7.0",
-      "@jest/types": "^29.6.3"
+      "@jest/types": "^29.6.3",
+      "handlebars": "^4.7.9",
+      "brace-expansion@1": "^1.1.12",
+      "brace-expansion@2": "^2.0.2",
+      "picomatch": "^4.0.4",
+      "flatted": "^3.4.2"
     }
   }
 }

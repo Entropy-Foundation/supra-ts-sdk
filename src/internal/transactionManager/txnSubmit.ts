@@ -6,6 +6,7 @@ import type { EnableTransactionWaitAndSimulationArgs } from "../../types/transac
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { DEFAULT_ENABLE_SIMULATION, DEFAULT_TXN_TIMEOUT_SEC } from "../../utils/constants";
 import { getTransactionByHashInternal, waitForTransactionInternal } from "../transaction";
+import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateTxnInternal } from "./txnSimulate";
 import { getRawTxnJSONInternal, sendTxnPayloadInternal } from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
@@ -22,13 +23,8 @@ export async function submitTxnInternal(
         (args.enableTransactionWaitAndSimulationArgs?.enableTransactionSimulation ??
             DEFAULT_ENABLE_SIMULATION) === true
     ) {
-        // eslint-disable-next-line no-console
-        console.log("Simulating transaction...");
         await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
     }
-
-    // eslint-disable-next-line no-console
-    console.log("Submitting transaction...");
 
     let txHash = await post<SendTxnPayload, string>({
         path: "/transactions/submit",
@@ -200,8 +196,8 @@ export function getED25519AuthenticatorJSON(
 ): Ed25519Signature {
     return {
         Ed25519: {
-            public_key: Buffer.from(authenticator.public_key.value).toString("hex"),
-            signature: Buffer.from(authenticator.signature.value).toString("hex"),
+            public_key: uint8ArrayToHexString(authenticator.public_key.value),
+            signature: uint8ArrayToHexString(authenticator.signature.value),
         },
     };
 }

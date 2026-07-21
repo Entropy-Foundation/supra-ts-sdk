@@ -147,7 +147,7 @@ export class Build {
     *     let supraCoinTransferSerializedScriptRawTransaction = supra.transaction.build.scriptRawTxnObject({
     *         senderAddress: account.address(),
     *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-    *         scriptCode: Uint8Array.from(Buffer.from(moveScriptCodeHex, "hex")),
+    *         scriptCode: new HexString(moveScriptCodeHex).toUint8Array(),
     *         scriptTypeArgs: [],
     *         scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(BigInt(1000))]
     *     }).toBytes();

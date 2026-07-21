@@ -5,6 +5,7 @@ import type { OptionalTransactionArgs } from "../types/transactionManager/transa
 import type { TransactionResponse } from "../types/transaction";
 import type { CoinInfo } from "../types/coin";
 import { getFungibleAssetMetadataInternal, transferFungibleAssetInternal } from "../internal/fungibleAsset";
+import { validateAddress, validateAmount } from "../helper/validation";
 
 /**
  * The FungibleAsset class provides methods for interacting with the FungibleAsset on the Supra network.
@@ -56,6 +57,7 @@ export class FungibleAsset {
      * @group FungibleAsset
      */
     async getFungibleAssetMetadata(args: { assetAddress: AccountAddressInput }): Promise<CoinInfo> {
+        validateAddress(args.assetAddress, "assetAddress");
         return getFungibleAssetMetadataInternal(args, this.networkInformation);
     }
 
@@ -91,6 +93,8 @@ export class FungibleAsset {
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
     ): Promise<TransactionResponse> {
+        validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
+        validateAmount(args.amount, "amount");
         return transferFungibleAssetInternal({
             ...args,
             assetAddress: "0x000000000000000000000000000000000000000000000000000000000000000a",
@@ -132,6 +136,9 @@ export class FungibleAsset {
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
     ): Promise<TransactionResponse> {
+        validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
+        validateAmount(args.amount, "amount");
+        validateAddress(args.assetAddress, "assetAddress");
         return transferFungibleAssetInternal(args, this.networkInformation);
     }
 }

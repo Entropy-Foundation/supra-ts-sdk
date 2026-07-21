@@ -6,6 +6,7 @@ import type { TransactionResponse } from "../types/transaction";
 import { getCoinInfoInternal, transferCoinInternal } from "../internal/coin";
 import type { MoveFunctionId } from "../types/move";
 import type { CoinInfo } from "../types/coin";
+import { validateAddress, validateAmount, validateStructId } from "../helper/validation";
 
 /**
  * The Coin class provides methods for interacting with the legacy coins on the Supra network.
@@ -57,6 +58,7 @@ export class Coin {
      * @group Coin
      */
     async getCoinInfo(args: { coinType: MoveFunctionId }): Promise<CoinInfo> {
+        validateStructId(args.coinType, "coinType");
         return getCoinInfoInternal(args, this.networkInformation);
     }
 
@@ -92,6 +94,8 @@ export class Coin {
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
     ): Promise<TransactionResponse> {
+        validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
+        validateAmount(args.amount, "amount");
         return transferCoinInternal({
             ...args,
             coinType: "0x1::supra_coin::SupraCoin",
@@ -133,6 +137,9 @@ export class Coin {
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
     ): Promise<TransactionResponse> {
+        validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
+        validateAmount(args.amount, "amount");
+        validateStructId(args.coinType, "coinType");
         return transferCoinInternal(args, this.networkInformation);
     }
 }

@@ -2,6 +2,7 @@ import type { PaginatedResponse } from "../types/account";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { Event, MoveFunctionId } from "../types/move";
 import { getEventsByTypeInternal } from "../internal/events";
+import { validatePaginationCount, validateStructId } from "../helper/validation";
 
 /**
  * The Events class provides methods for fetching events on the Supra network.
@@ -57,6 +58,8 @@ export class Events {
      * @group Events
      */
     async getEventsByType(args: { eventType: MoveFunctionId, options: { startHeight?: number, endHeight?: number, limit?: number, start?: number } }): Promise<PaginatedResponse<Event[]>> {
+        validateStructId(args.eventType, "eventType");
+        validatePaginationCount(args.options?.limit, "limit");
         return getEventsByTypeInternal(args, this.networkInformation);
     }
 }

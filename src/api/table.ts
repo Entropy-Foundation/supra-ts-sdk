@@ -2,6 +2,7 @@ import { getTableItemInternal } from "../internal/table";
 import type { AccountAddressInput } from "../types/account";
 import type { TableItemRequest } from "../types/table";
 import type { NetworkConfig } from "../utils/apiEndpoints";
+import { validateAddress } from "../helper/validation";
 
 /**
  * The Table class provides methods for querying table items on the Supra network.
@@ -58,6 +59,7 @@ export class Table {
      * @group Table
      */
     async getTableItem<T>(args: { handle: AccountAddressInput; data: TableItemRequest; }): Promise<T> {
+        validateAddress(args.handle, "handle");
         return getTableItemInternal<T>(args, this.networkInformation);
     }
 }

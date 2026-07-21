@@ -2,6 +2,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { InputViewFunctionData, InputViewRawFunctionData } from "../types/methods";
 import { viewInternal, viewRawInternal } from "../internal/methods";
 import type { MoveValue } from "../types/move";
+import { validateFunctionId } from "../helper/validation";
 
 
 /**
@@ -61,6 +62,7 @@ export class Methods {
      * @group Methods
      */
     async view<T extends Array<MoveValue>>(args: InputViewFunctionData): Promise<T> {
+        validateFunctionId(args.function, "function");
         return viewInternal(args, this.networkInformation);
     }
 
@@ -94,6 +96,7 @@ export class Methods {
      * @group Methods
      */
     async viewRaw<T extends Array<unknown>>(args: InputViewRawFunctionData): Promise<T> {
+        validateFunctionId(args.function, "function");
         return viewRawInternal(args, this.networkInformation);
     }
 }

@@ -1,6 +1,7 @@
 import type { RequestParams } from "./get";
 import { type NetworkConfig } from "../utils/apiEndpoints";
 import { SupraAPIError } from "../errors/apiError";
+import { parseJsonResponse } from "./parseResponse";
 import { DEFAULT_RPC_VERSION, DEFAULT_REQUEST_TIMEOUT_MS } from "../utils/constants";
 
 /**
@@ -21,7 +22,7 @@ export async function post<Req extends object, Res>(args: RequestParams, config:
         signal: AbortSignal.timeout(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS),
     });
 
-    const data = await response.json();
+    const data = await parseJsonResponse(response, url);
 
     if (response.ok) {
         return data as Res;
