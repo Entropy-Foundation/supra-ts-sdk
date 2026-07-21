@@ -1,7 +1,5 @@
-import { BCS, HexString } from 'supra-l1-sdk-core';
-import { SupraClient, Network } from '../src/index';
-import { MoveFunctionId } from '../src/types/move';
-import { account } from '../testAccount';
+import { SupraClient, Network, BCS, HexString, type MoveFunctionId } from "supra-ts-sdk";
+import { account } from "./account.setup";
 
 (async () => {
     const supra = new SupraClient({ network: Network.TESTNET });

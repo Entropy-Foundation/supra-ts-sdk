@@ -41,6 +41,7 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,json,md}\"",
     "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc -p examples/tsconfig.json",
     "doc": "typedoc --out docs src/index.ts --sort source-order --sort instance-first --readme README.md"
   },
   "keywords": [

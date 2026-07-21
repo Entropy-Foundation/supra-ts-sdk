@@ -22,6 +22,11 @@ The SDK requires Node.js >= 18 (uses native `fetch` and `AbortSignal.timeout()`)
 
 ## Key Import
 
+Import everything — including the `supra-l1-sdk-core` primitives (`SupraAccount`,
+`HexString`, `TxnBuilderTypes`, `TypeTagParser`, `BCS`) — from the single
+`supra-ts-sdk` package. The SDK re-exports them, so you never import
+`supra-l1-sdk-core` directly.
+
 ```typescript
 import {
   SupraClient,
@@ -35,9 +40,13 @@ import {
   type MoveFunctionId,
   type MoveStructId,
   type CoinInfo,
+  // re-exported from supra-l1-sdk-core:
   BCS,
+  SupraAccount,
+  HexString,
+  TxnBuilderTypes,
+  TypeTagParser,
 } from "supra-ts-sdk";
-import { SupraAccount, HexString, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 ```
 
 ## Client Initialization
@@ -535,10 +544,10 @@ const result = await supra.faucet.fundAccountWithFaucet({
 
 ## Account Creation
 
-`SupraAccount` comes from `supra-l1-sdk-core`:
+`SupraAccount` is re-exported by the SDK (originally from `supra-l1-sdk-core`):
 
 ```typescript
-import { SupraAccount } from "supra-l1-sdk-core";
+import { SupraAccount } from "supra-ts-sdk";
 
 // Generate new account
 const account = new SupraAccount();

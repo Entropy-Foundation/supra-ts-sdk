@@ -1,7 +1,4 @@
-import { SupraClient, Network } from '../src/index';
-import { TypeTagParser } from 'supra-l1-sdk-core';
-import { MoveValue } from '../src/types/move';
-import { isMoveStruct } from '../src/helper/general';
+import { SupraClient, Network, TypeTagParser } from "supra-ts-sdk";
 
 (async () => {
     const supra = new SupraClient({ network: Network.TESTNET });

@@ -1,7 +1,6 @@
-import { TypeTagParser } from 'supra-l1-sdk-core';
-import { SupraClient, Network } from '../src/index';
-import { account } from '../testAccount';
-import { COIN_ABI } from '../src/abi';
+import { SupraClient, Network, TypeTagParser } from "supra-ts-sdk";
+import { account } from "./account.setup";
+import { COIN_ABI } from "./abi";
 
 
 (async () => {
