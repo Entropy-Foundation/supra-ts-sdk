@@ -14,6 +14,19 @@ function mockFetchResponse(status: number, data: unknown, headers: Record<string
         status,
         statusText: status === 200 ? "OK" : status === 404 ? "Not Found" : "Error",
         json: jest.fn().mockResolvedValue(data),
+        text: jest.fn().mockResolvedValue(typeof data === "string" ? data : JSON.stringify(data)),
+        headers: {
+            get: (name: string) => headers[name.toLowerCase()] ?? null,
+        },
+    } as unknown as Response;
+}
+
+function mockRawResponse(status: number, body: string, headers: Record<string, string> = {}) {
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText: status === 200 ? "OK" : "Error",
+        text: jest.fn().mockResolvedValue(body),
         headers: {
             get: (name: string) => headers[name.toLowerCase()] ?? null,
         },
@@ -134,6 +147,37 @@ describe("client/get", () => {
         } catch (error) {
             const apiError = error as SupraAPIError;
             expect(apiError.url).toContain("/accounts/0x1");
+        }
+    });
+
+    it("should return undefined data for an empty body", async () => {
+        (global.fetch as jest.Mock).mockResolvedValue(mockRawResponse(200, ""));
+
+        const result = await get({ path: "/test" }, testConfig);
+        expect(result.data).toBeUndefined();
+    });
+
+    it("should throw SupraAPIError (not SyntaxError) on a non-JSON 2xx body", async () => {
+        (global.fetch as jest.Mock).mockResolvedValue(
+            mockRawResponse(200, "<html>502 Bad Gateway</html>"),
+        );
+
+        await expect(get({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
+    });
+
+    it("should wrap a non-JSON error body in SupraAPIError with the status", async () => {
+        (global.fetch as jest.Mock).mockResolvedValue(
+            mockRawResponse(504, "gateway timeout"),
+        );
+
+        try {
+            await get({ path: "/test" }, testConfig);
+            throw new Error("expected to throw");
+        } catch (error) {
+            const apiError = error as SupraAPIError;
+            expect(apiError).toBeInstanceOf(SupraAPIError);
+            expect(apiError.status).toBe(504);
+            expect(apiError.data).toBe("gateway timeout");
         }
     });
 });

@@ -48,9 +48,18 @@ export async function generateTransactionPayload(
 
     const serializer = new DynamicTransactionSerializer();
 
+    // Entry functions usually take a leading `&signer`/`signer` that is supplied by
+    // the VM, not by the caller. Only strip it when it is actually present so that
+    // functions without a signer parameter keep all their argument types.
+    const firstParam = funcABI.params[0];
+    const paramTypes =
+        firstParam === "&signer" || firstParam === "signer"
+            ? funcABI.params.slice(1)
+            : funcABI.params;
+
     const serializedArguments = serializer.prepareTransactionArgs(
         args.functionArgs,
-        funcABI.params.slice(1) // exclude signer 
+        paramTypes
     );
 
     return {

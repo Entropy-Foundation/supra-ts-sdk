@@ -1,4 +1,13 @@
-import { validateAddress, validateFunctionId, validateStructId, validateTransactionHash, validatePaginationCount } from "../validation";
+import {
+    validateAddress,
+    validateFunctionId,
+    validateStructId,
+    validateTransactionHash,
+    validatePaginationCount,
+    validateHexString,
+    validateAmount,
+    validateBlockHeight,
+} from "../validation";
 
 describe("validateAddress", () => {
     it("accepts valid hex addresses", () => {
@@ -116,5 +125,62 @@ describe("validatePaginationCount", () => {
     it("rejects non-integer values", () => {
         expect(() => validatePaginationCount(1.5)).toThrow("expected an integer between 1 and 100");
         expect(() => validatePaginationCount("10")).toThrow("expected an integer between 1 and 100");
+    });
+});
+
+describe("validateHexString", () => {
+    it("accepts 0x-prefixed hex", () => {
+        expect(() => validateHexString("0xabc123")).not.toThrow();
+        expect(() => validateHexString("0x1")).not.toThrow();
+    });
+
+    it("rejects non-hex / missing prefix / empty", () => {
+        expect(() => validateHexString("abc123")).toThrow("expected a 0x-prefixed hex string");
+        expect(() => validateHexString("0x")).toThrow("expected a 0x-prefixed hex string");
+        expect(() => validateHexString("0xZZ")).toThrow("expected a 0x-prefixed hex string");
+    });
+
+    it("rejects non-string types and uses custom paramName", () => {
+        expect(() => validateHexString(123, "blockHash")).toThrow("Invalid blockHash");
+    });
+});
+
+describe("validateAmount", () => {
+    it("accepts non-negative numbers and bigints", () => {
+        expect(() => validateAmount(0)).not.toThrow();
+        expect(() => validateAmount(100)).not.toThrow();
+        expect(() => validateAmount(10n)).not.toThrow();
+        expect(() => validateAmount(18446744073709551615n)).not.toThrow(); // > 2^53, valid as bigint
+    });
+
+    it("rejects negative amounts", () => {
+        expect(() => validateAmount(-1)).toThrow("non-negative");
+        expect(() => validateAmount(-1n)).toThrow("non-negative");
+    });
+
+    it("rejects fractional numbers", () => {
+        expect(() => validateAmount(1.5)).toThrow("non-negative integer");
+    });
+
+    it("rejects numbers above the safe integer range (must use bigint)", () => {
+        expect(() => validateAmount(Number.MAX_SAFE_INTEGER + 1)).toThrow("bigint");
+    });
+
+    it("rejects non-numeric types", () => {
+        expect(() => validateAmount("100")).toThrow("Invalid amount");
+        expect(() => validateAmount(null)).toThrow("Invalid amount");
+    });
+});
+
+describe("validateBlockHeight", () => {
+    it("accepts non-negative integers", () => {
+        expect(() => validateBlockHeight(0)).not.toThrow();
+        expect(() => validateBlockHeight(12345)).not.toThrow();
+    });
+
+    it("rejects negatives, fractions, and non-numbers", () => {
+        expect(() => validateBlockHeight(-1)).toThrow("non-negative integer");
+        expect(() => validateBlockHeight(1.5)).toThrow("non-negative integer");
+        expect(() => validateBlockHeight("1")).toThrow("non-negative integer");
     });
 });

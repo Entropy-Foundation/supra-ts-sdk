@@ -101,13 +101,10 @@ export function getTransactionSignatureMessageInternal(
     }
 ): Uint8Array {
     let preHash = Uint8Array.from(
-        Buffer.from(
-            sha3.sha3_256(
-                args.rawTxn instanceof TxnBuilderTypes.RawTransaction
-                    ? RAW_TRANSACTION_SALT
-                    : RAW_TRANSACTION_WITH_DATA_SALT,
-            ),
-            "hex",
+        sha3.sha3_256.array(
+            args.rawTxn instanceof TxnBuilderTypes.RawTransaction
+                ? RAW_TRANSACTION_SALT
+                : RAW_TRANSACTION_WITH_DATA_SALT,
         ),
     );
 

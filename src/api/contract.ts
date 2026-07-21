@@ -1,10 +1,11 @@
 import { viewInternal } from "../internal/methods";
 import type { DeepReadonly, ContractsFromABI } from "../types/contract";
-import type { MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
+import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { callContractInternal } from "../internal/contract";
 import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs } from "../types/transactionManager/transactionSubmit";
+import { validateFunctionId } from "../helper/validation";
 
 interface ViewProxyArgs {
     typeArguments?: Array<TypeArgument>;
@@ -89,8 +90,11 @@ export class Contract {
 
                                 return async (args: ViewProxyArgs = {}) => {
 
+                                    const functionId = `${target.address}::${target.name}::${prop}` as MoveFunctionId;
+                                    validateFunctionId(functionId, "function");
+
                                     return await viewInternal({
-                                        function: `${target.address}::${target.name}::${prop}`,
+                                        function: functionId,
                                         typeArguments: args.typeArguments ?? [],
                                         functionArguments: args.functionArguments ?? [],
                                         abi: abi as MoveModule
@@ -105,9 +109,12 @@ export class Contract {
 
                                 return async (args: EntryProxyArgs) => {
 
+                                    const functionId = `${target.address}::${target.name}::${prop}` as MoveFunctionId;
+                                    validateFunctionId(functionId, "function");
+
                                     return await callContractInternal({
                                         ...args,
-                                        function: `${target.address}::${target.name}::${prop}`,
+                                        function: functionId,
                                         abi: abi as MoveModule
                                     }, this.networkInformation);
 

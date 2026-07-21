@@ -14,6 +14,16 @@ function mockFetchResponse(status: number, data: unknown) {
         status,
         statusText: status === 200 ? "OK" : "Error",
         json: jest.fn().mockResolvedValue(data),
+        text: jest.fn().mockResolvedValue(typeof data === "string" ? data : JSON.stringify(data)),
+    } as unknown as Response;
+}
+
+function mockRawResponse(status: number, body: string) {
+    return {
+        ok: status >= 200 && status < 300,
+        status,
+        statusText: status === 200 ? "OK" : "Error",
+        text: jest.fn().mockResolvedValue(body),
     } as unknown as Response;
 }
 
@@ -101,5 +111,13 @@ describe("client/post", () => {
             expect(apiError.data).toEqual(errorData);
             expect(apiError.major_status).toBe("ABORTED");
         }
+    });
+
+    it("should throw SupraAPIError (not SyntaxError) on a non-JSON 2xx body", async () => {
+        (global.fetch as jest.Mock).mockResolvedValue(
+            mockRawResponse(200, "<html>502 Bad Gateway</html>"),
+        );
+
+        await expect(post({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
     });
 });

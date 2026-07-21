@@ -1,5 +1,6 @@
 import { type NetworkConfig } from "../utils/apiEndpoints";
 import { SupraAPIError } from "../errors/apiError";
+import { parseJsonResponse } from "./parseResponse";
 import { DEFAULT_RPC_VERSION, DEFAULT_REQUEST_TIMEOUT_MS } from "../utils/constants";
 
 export interface RequestParams {
@@ -34,8 +35,8 @@ export async function get<Res extends object>(args: RequestParams, config: Netwo
         signal: AbortSignal.timeout(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS),
     });
 
-    const data = await response.json();
     const cursor = response.headers.get("x-supra-cursor") ?? undefined;
+    const data = await parseJsonResponse(response, url.toString());
 
     if (response.ok) {
         return {

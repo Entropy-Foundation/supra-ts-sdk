@@ -20,7 +20,7 @@ describe("internal/table", () => {
     });
 
     describe("getTableItemInternal", () => {
-        it("should call post with correct path and body", async () => {
+        it("should call post with the standardized handle path and body", async () => {
             const mockResult = { key: "value" };
             mockPost.mockResolvedValue(mockResult);
 
@@ -31,13 +31,15 @@ describe("internal/table", () => {
             };
 
             const result = await getTableItemInternal(
-                { handle: "0xhandle", data: tableData },
+                { handle: "0x1", data: tableData },
                 testConfig,
             );
 
+            // The handle is standardized to a full 32-byte address and the path is
+            // rooted with a leading slash, consistent with every other client path.
             expect(mockPost).toHaveBeenCalledWith(
                 {
-                    path: "tables/0xhandle/item",
+                    path: "/tables/0x0000000000000000000000000000000000000000000000000000000000000001/item",
                     data: tableData,
                 },
                 testConfig,

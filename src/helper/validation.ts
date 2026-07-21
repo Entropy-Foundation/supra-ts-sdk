@@ -64,13 +64,52 @@ export function validateStructId(structId: unknown, paramName = "resourceType"):
 }
 
 /**
+ * Validates a generic 0x-prefixed hex string (e.g. a transaction or block hash).
+ * @throws Error if the value is not a non-empty 0x-prefixed hex string
+ */
+export function validateHexString(value: unknown, paramName = "value"): void {
+    if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) {
+        throw new Error(
+            `Invalid ${paramName}: expected a 0x-prefixed hex string, got ${JSON.stringify(value)}`
+        );
+    }
+}
+
+/**
  * Validates a transaction hash (0x-prefixed hex string).
  * @throws Error if the hash is invalid
  */
 export function validateTransactionHash(hash: unknown, paramName = "transactionHash"): void {
-    if (typeof hash !== "string" || !/^0x[0-9a-fA-F]+$/.test(hash)) {
+    validateHexString(hash, paramName);
+}
+
+/**
+ * Validates a coin / fungible-asset amount: a non-negative integer supplied as a
+ * `number` (must be a safe integer) or a `bigint` (for values beyond 2^53-1).
+ * @throws Error if the amount is negative, fractional, or not a number/bigint
+ */
+export function validateAmount(amount: unknown, paramName = "amount"): void {
+    if (typeof amount === "bigint") {
+        if (amount < 0n) {
+            throw new Error(`Invalid ${paramName}: must be non-negative, got ${amount}`);
+        }
+        return;
+    }
+    if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount < 0) {
         throw new Error(
-            `Invalid ${paramName}: expected a 0x-prefixed hex string, got ${JSON.stringify(hash)}`
+            `Invalid ${paramName}: expected a non-negative integer (use bigint for values above 2^53-1), got ${JSON.stringify(amount)}`
+        );
+    }
+}
+
+/**
+ * Validates a block height: a non-negative integer.
+ * @throws Error if the height is invalid
+ */
+export function validateBlockHeight(height: unknown, paramName = "height"): void {
+    if (typeof height !== "number" || !Number.isInteger(height) || height < 0) {
+        throw new Error(
+            `Invalid ${paramName}: expected a non-negative integer, got ${JSON.stringify(height)}`
         );
     }
 }

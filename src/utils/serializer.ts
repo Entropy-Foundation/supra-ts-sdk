@@ -16,12 +16,21 @@ export class DynamicTransactionSerializer {
             return this.serializeAddress(value, serializer);
         }
 
-        if (type.startsWith("0x1::option::Option<")) {
+        if (type === "0x1::string::String") {
+            if (typeof value !== "string") {
+                throw new Error(`Expected string for 0x1::string::String, got ${typeof value}`);
+            }
+            serializer.serializeStr(value);
+            return;
+        }
+
+        const optionPrefix = "0x1::option::Option<";
+        if (type.startsWith(optionPrefix)) {
             if (value === null || value === undefined) {
                 serializer.serializeU8(0);
             } else {
                 serializer.serializeU8(1);
-                const innerType = type.slice(19, -1);
+                const innerType = type.slice(optionPrefix.length, -1);
                 this.serializeValue(value, innerType, serializer);
             }
             return;
@@ -37,8 +46,17 @@ export class DynamicTransactionSerializer {
             case "address":
                 this.serializeAddress(value as string, serializer);
                 break;
+            case "bool":
+                this.serializeBool(value as boolean, serializer);
+                break;
             case "u8":
                 this.serializeU8(value as number | string, serializer);
+                break;
+            case "u16":
+                this.serializeU16(value as number | string, serializer);
+                break;
+            case "u32":
+                this.serializeU32(value as number | string, serializer);
                 break;
             case "u64":
                 this.serializeU64(value as number | string | bigint, serializer);
@@ -46,8 +64,8 @@ export class DynamicTransactionSerializer {
             case "u128":
                 this.serializeU128(value as number | string | bigint, serializer);
                 break;
-            case "bool":
-                this.serializeBool(value as boolean, serializer);
+            case "u256":
+                this.serializeU256(value as number | string | bigint, serializer);
                 break;
             default:
                 throw new Error(`Unsupported type: ${type}`);
@@ -89,59 +107,71 @@ export class DynamicTransactionSerializer {
         serializer.serializeFixedBytes(addressBytes);
     }
 
-    private serializeU8(
-        value: number | string,
-        serializer: BCS.Serializer
-    ): void {
-        const num = typeof value === "string" ? parseInt(value, 10) : value;
-        if (num < 0 || num > 255) {
-            throw new Error(`u8 value out of range: ${num}`);
+    /**
+     * Parse a small unsigned integer (u8/u16/u32) from number or string, rejecting
+     * non-integer / out-of-range / NaN input before handing it to the serializer.
+     */
+    private parseUint(value: number | string, bits: 8 | 16 | 32): number {
+        const num = typeof value === "string" ? Number(value) : value;
+        if (typeof num !== "number" || !Number.isInteger(num)) {
+            throw new Error(`u${bits} value must be an integer, got ${JSON.stringify(value)}`);
         }
-        serializer.serializeU8(num);
+        const max = 2 ** bits - 1;
+        if (num < 0 || num > max) {
+            throw new Error(`u${bits} value out of range (0-${max}): ${num}`);
+        }
+        return num;
     }
 
-    private serializeU64(
-        value: number | string | bigint,
-        serializer: BCS.Serializer
-    ): void {
+    /**
+     * Parse a large unsigned integer (u64/u128/u256) into a non-negative bigint.
+     * `BigInt()` throws on malformed input, so no NaN can slip through. Range is
+     * enforced by the underlying BCS serializer.
+     */
+    private parseBigUint(value: number | string | bigint, bits: 64 | 128 | 256): bigint {
         let num: bigint;
-        if (typeof value === "string") {
-            num = BigInt(value);
-        } else if (typeof value === "number") {
-            num = BigInt(value);
-        } else {
+        if (typeof value === "bigint") {
             num = value;
-        }
-
-        if (num < 0) {
-            throw new Error(`u64 value cannot be negative: ${num}`);
-        }
-
-        if (num <= BigInt(Number.MAX_SAFE_INTEGER)) {
-            serializer.serializeU64(Number(num));
+        } else if (typeof value === "number") {
+            if (!Number.isInteger(value)) {
+                throw new Error(`u${bits} value must be an integer, got ${value}`);
+            }
+            num = BigInt(value);
         } else {
-            serializer.serializeU128(num);
+            num = BigInt(value);
         }
+
+        if (num < 0n) {
+            throw new Error(`u${bits} value cannot be negative: ${num}`);
+        }
+        return num;
     }
 
-    private serializeU128(
-        value: number | string | bigint,
-        serializer: BCS.Serializer
-    ): void {
-        let num: bigint;
-        if (typeof value === "string") {
-            num = BigInt(value);
-        } else if (typeof value === "number") {
-            num = BigInt(value);
-        } else {
-            num = value;
-        }
+    private serializeU8(value: number | string, serializer: BCS.Serializer): void {
+        serializer.serializeU8(this.parseUint(value, 8));
+    }
 
-        if (num < 0) {
-            throw new Error(`u128 value cannot be negative: ${num}`);
-        }
+    private serializeU16(value: number | string, serializer: BCS.Serializer): void {
+        serializer.serializeU16(this.parseUint(value, 16));
+    }
 
-        serializer.serializeU128(num);
+    private serializeU32(value: number | string, serializer: BCS.Serializer): void {
+        serializer.serializeU32(this.parseUint(value, 32));
+    }
+
+    private serializeU64(value: number | string | bigint, serializer: BCS.Serializer): void {
+        // Pass the bigint directly — BCS.Serializer.serializeU64 accepts bigint and
+        // range-checks the full u64 domain. Do NOT branch to serializeU128 for large
+        // values: that would encode 16 bytes for a u64 and corrupt the payload.
+        serializer.serializeU64(this.parseBigUint(value, 64));
+    }
+
+    private serializeU128(value: number | string | bigint, serializer: BCS.Serializer): void {
+        serializer.serializeU128(this.parseBigUint(value, 128));
+    }
+
+    private serializeU256(value: number | string | bigint, serializer: BCS.Serializer): void {
+        serializer.serializeU256(this.parseBigUint(value, 256));
     }
 
     private serializeBool(value: boolean, serializer: BCS.Serializer): void {
