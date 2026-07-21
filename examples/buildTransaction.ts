@@ -1,8 +1,5 @@
-import { BCS, HexString, TxnBuilderTypes } from 'supra-l1-sdk-core';
-import { SupraClient, Network } from '../src/index';
-import { MoveFunctionId } from '../src/types/move';
-import { MILLISECONDS_PER_SECOND } from '../src/utils/constants';
-import { account } from '../testAccount';
+import { SupraClient, Network, MILLISECONDS_PER_SECOND, BCS, HexString, TxnBuilderTypes, type MoveFunctionId } from "supra-ts-sdk";
+import { account } from "./account.setup";
 
 (async () => {
     const supra = new SupraClient({ network: Network.TESTNET });
@@ -122,7 +119,7 @@ import { account } from '../testAccount';
     let supraCoinTransferSerializedScriptRawTransaction = supra.transaction.build.scriptRawTxnObject({
         senderAddress: account.address(),
         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-        scriptCode: Uint8Array.from(Buffer.from(moveScriptCodeHex, "hex")),
+        scriptCode: new HexString(moveScriptCodeHex).toUint8Array(),
         scriptTypeArgs: [],
         scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(BigInt(1000))]
     }).toBytes();

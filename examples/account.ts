@@ -1,5 +1,4 @@
-import { SupraClient, Network } from '../src/index';
-import { HexString } from 'supra-l1-sdk-core';
+import { SupraClient, Network, HexString } from "supra-ts-sdk";
 
 (async () => {
     const supra = new SupraClient({ network: Network.TESTNET });

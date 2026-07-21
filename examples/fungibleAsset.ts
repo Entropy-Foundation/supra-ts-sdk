@@ -1,5 +1,5 @@
-import { SupraClient, Network } from '../src/index';
-import { account } from '../testAccount';
+import { SupraClient, Network } from "supra-ts-sdk";
+import { account } from "./account.setup";
 
 
 (async () => {

@@ -41,6 +41,7 @@
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,json,md}\"",
     "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc -p examples/tsconfig.json",
     "doc": "typedoc --out docs src/index.ts --sort source-order --sort instance-first --readme README.md"
   },
   "keywords": [
@@ -100,7 +101,16 @@
       "brace-expansion@1": "^1.1.12",
       "brace-expansion@2": "^2.0.2",
       "picomatch": "^4.0.4",
-      "flatted": "^3.4.2"
+      "flatted": "^3.4.2",
+      "rollup": "^4.59.0",
+      "minimatch@3": "^3.1.4",
+      "minimatch@9": "^9.0.7",
+      "minimatch@10": "^10.2.3",
+      "js-yaml@3": "^3.15.0",
+      "linkify-it": "^5.0.1",
+      "markdown-it": "^14.2.0",
+      "yaml": "^2.8.3",
+      "@babel/core": "^7.29.6"
     }
   }
 }

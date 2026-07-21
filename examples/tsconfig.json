@@ -1,0 +1,21 @@
+{
+  // Type-checks the examples against the SDK source so they can't silently rot.
+  // The `supra-ts-sdk` path alias resolves the self-referencing imports to the
+  // local source (no build required). At runtime (tsx/node) the same specifier
+  // resolves via package.json "exports" to the built dist — run `pnpm build` first.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "composite": false,
+    "rootDir": "..",
+    "baseUrl": ".",
+    "paths": {
+      "supra-ts-sdk": ["../src/index.ts"]
+    }
+  },
+  "include": ["./**/*.ts", "../src/**/*.ts"],
+  "exclude": ["../node_modules", "../dist", "../**/*.test.ts"]
+}

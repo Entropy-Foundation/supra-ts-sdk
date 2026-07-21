@@ -1,4 +1,4 @@
-import { SupraClient, Network } from '../src/index';
+import { SupraClient, Network } from "supra-ts-sdk";
 
 
 (async () => {

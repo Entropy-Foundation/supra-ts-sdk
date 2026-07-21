@@ -42,6 +42,6 @@ export { addAddressPadding, getFunctionParts } from "./helper/general";
 //constants
 export * from "./utils/constants";
 
-// BCS
-export { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
+// Re-exported from supra-l1-sdk-core so consumers import everything from a single package
+export { BCS, HexString, SupraAccount, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 
