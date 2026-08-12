@@ -44,9 +44,12 @@ export const parseScriptArgs = (
         } else if (arg instanceof TxnBuilderTypes.TransactionArgumentU32) {
             parsedArgs.push({ U32: arg.value });
         } else if (arg instanceof TxnBuilderTypes.TransactionArgumentU64) {
-            parsedArgs.push({ U64: Number(arg.value) });
+            // Kept as `bigint`: `Number()` would silently round anything above
+            // `Number.MAX_SAFE_INTEGER`, so the emitted JSON would no longer match
+            // the transaction the caller built and signed.
+            parsedArgs.push({ U64: arg.value });
         } else if (arg instanceof TxnBuilderTypes.TransactionArgumentU128) {
-            parsedArgs.push({ U128: Number(arg.value) });
+            parsedArgs.push({ U128: arg.value });
         } else if (arg instanceof TxnBuilderTypes.TransactionArgumentU256) {
             parsedArgs.push({ U256: Array.from(BCS.bcsSerializeU256(arg.value)) });
         } else if (arg instanceof TxnBuilderTypes.TransactionArgumentAddress) {

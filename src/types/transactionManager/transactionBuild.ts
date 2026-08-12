@@ -15,13 +15,21 @@ export interface SendTxnPayload {
 }
 
 
+/**
+ * JSON form of a raw transaction, as sent to the submit and simulate endpoints.
+ *
+ * The `u64` fields are typed `bigint | number` and the SDK always emits `bigint`:
+ * these values are serialized to exact JSON number literals, so a value above
+ * `Number.MAX_SAFE_INTEGER` reaches the RPC intact instead of being rounded.
+ * `number` remains accepted for callers that build this object by hand.
+ */
 export interface RawTxnJSON {
     sender: string;
-    sequence_number: number;
+    sequence_number: bigint | number;
     payload: TransactionPayloadJSON;
-    max_gas_amount: number;
-    gas_unit_price: number;
-    expiration_timestamp_secs: number;
+    max_gas_amount: bigint | number;
+    gas_unit_price: bigint | number;
+    expiration_timestamp_secs: bigint | number;
     chain_id: number;
 }
 
@@ -75,8 +83,10 @@ export type ScriptArgumentJson =
     | { U8: number }
     | { U16: number }
     | { U32: number }
-    | { U64: number }
-    | { U128: number }
+    // `u64`/`u128` are emitted as `bigint` so large script arguments are not
+    // rounded on their way into the request body. See `RawTxnJSON`.
+    | { U64: bigint | number }
+    | { U128: bigint | number }
     | { U256: Array<number> }
     | { Address: string }
     | { U8Vector: Array<number> }
@@ -90,10 +100,11 @@ export interface AutomationRegistrationPayloadJSON {
 export interface AutomationRegistrationParamV1JSON {
     V1: {
         automated_function: EntryFunctionJSON;
-        max_gas_amount: number;
-        gas_price_cap: number;
-        automation_fee_cap_for_epoch: number;
-        expiration_timestamp_secs: number;
+        // `u64` fields, emitted as `bigint`. See `RawTxnJSON`.
+        max_gas_amount: bigint | number;
+        gas_price_cap: bigint | number;
+        automation_fee_cap_for_epoch: bigint | number;
+        expiration_timestamp_secs: bigint | number;
         aux_data: Array<Array<number>>;
     };
 }
