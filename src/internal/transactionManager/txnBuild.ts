@@ -250,14 +250,12 @@ export function getTransactionPayloadJSONInternal(
                                 txPayload.value.value.automated_function.args,
                             ),
                         },
-                        max_gas_amount: Number(txPayload.value.value.max_gas_amount),
-                        gas_price_cap: Number(txPayload.value.value.gas_price_cap),
-                        automation_fee_cap_for_epoch: Number(
+                        max_gas_amount: txPayload.value.value.max_gas_amount,
+                        gas_price_cap: txPayload.value.value.gas_price_cap,
+                        automation_fee_cap_for_epoch:
                             txPayload.value.value.automation_fee_cap_for_epoch,
-                        ),
-                        expiration_timestamp_secs: Number(
+                        expiration_timestamp_secs:
                             txPayload.value.value.expiration_timestamp_secs,
-                        ),
                         aux_data: fromUint8ArrayToJSArray(txPayload.value.value.aux_data),
                     },
                 },
@@ -299,14 +297,21 @@ export function getTransactionPayloadJSONInternal(
 }
 
 
+/**
+ * The `u64` fields are passed through as `bigint` rather than coerced with
+ * `Number()`. `post` serializes them to exact JSON number literals, so the body
+ * on the wire always matches the BCS transaction that was signed — a `Number()`
+ * round trip would round anything above `Number.MAX_SAFE_INTEGER` and invalidate
+ * the signature.
+ */
 export function getRawTxnJSONInternal(rawTxn: TxnBuilderTypes.RawTransaction): RawTxnJSON {
     return {
         sender: rawTxn.sender.toHexString().toString(),
-        sequence_number: Number(rawTxn.sequence_number),
+        sequence_number: rawTxn.sequence_number,
         payload: getTransactionPayloadJSONInternal(rawTxn.payload),
-        max_gas_amount: Number(rawTxn.max_gas_amount),
-        gas_unit_price: Number(rawTxn.gas_unit_price),
-        expiration_timestamp_secs: Number(rawTxn.expiration_timestamp_secs),
+        max_gas_amount: rawTxn.max_gas_amount,
+        gas_unit_price: rawTxn.gas_unit_price,
+        expiration_timestamp_secs: rawTxn.expiration_timestamp_secs,
         chain_id: rawTxn.chain_id.value,
     };
 }

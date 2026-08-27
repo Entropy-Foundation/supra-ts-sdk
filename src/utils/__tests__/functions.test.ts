@@ -1,4 +1,5 @@
-import { sleep, fromUint8ArrayToJSArray, convertMoveValueToJSONParsable, convertMoveValue } from "../functions";
+import { TxnBuilderTypes } from "supra-l1-sdk-core";
+import { sleep, fromUint8ArrayToJSArray, convertMoveValueToJSONParsable, convertMoveValue, parseScriptArgs } from "../functions";
 
 describe("sleep", () => {
     beforeEach(() => {
@@ -30,6 +31,50 @@ describe("fromUint8ArrayToJSArray", () => {
     it("should handle single-element arrays", () => {
         const input = [new Uint8Array([255])];
         expect(fromUint8ArrayToJSArray(input)).toEqual([[255]]);
+    });
+});
+
+describe("parseScriptArgs", () => {
+    const UNSAFE_U64 = 9007199254740993n; // 2^53 + 1
+    const MAX_U128 = 340282366920938463463374607431768211455n;
+
+    it("should keep a u64 above MAX_SAFE_INTEGER as an exact bigint", () => {
+        const result = parseScriptArgs([new TxnBuilderTypes.TransactionArgumentU64(UNSAFE_U64)]);
+        expect(result).toEqual([{ U64: UNSAFE_U64 }]);
+    });
+
+    it("should keep a u128 exact", () => {
+        const result = parseScriptArgs([new TxnBuilderTypes.TransactionArgumentU128(MAX_U128)]);
+        expect(result).toEqual([{ U128: MAX_U128 }]);
+    });
+
+    it("should keep small u64 values exact too", () => {
+        const result = parseScriptArgs([new TxnBuilderTypes.TransactionArgumentU64(1000n)]);
+        expect(result).toEqual([{ U64: 1000n }]);
+    });
+
+    it("should parse the small integer, address, vector and bool variants", () => {
+        const result = parseScriptArgs([
+            new TxnBuilderTypes.TransactionArgumentU8(7),
+            new TxnBuilderTypes.TransactionArgumentU32(70000),
+            new TxnBuilderTypes.TransactionArgumentAddress(
+                TxnBuilderTypes.AccountAddress.fromHex("0x1"),
+            ),
+            new TxnBuilderTypes.TransactionArgumentU8Vector(new Uint8Array([1, 2, 3])),
+            new TxnBuilderTypes.TransactionArgumentBool(true),
+        ]);
+
+        expect(result[0]).toEqual({ U8: 7 });
+        expect(result[1]).toEqual({ U32: 70000 });
+        expect(result[2]).toEqual({
+            Address: "0x0000000000000000000000000000000000000000000000000000000000000001",
+        });
+        expect(result[3]).toEqual({ U8Vector: [1, 2, 3] });
+        expect(result[4]).toEqual({ Bool: true });
+    });
+
+    it("should return an empty array for no arguments", () => {
+        expect(parseScriptArgs([])).toEqual([]);
     });
 });
 
