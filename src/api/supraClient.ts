@@ -7,7 +7,7 @@ import { Faucet } from "./faucet";
 import { Methods } from "./methods";
 import { Table } from "./table";
 import { Transaction } from "./transaction";
-import { getGasPriceInternal, getMinGasUnitPriceInternal } from "../internal/supraClient";
+import { getChainIdInternal, getGasPriceInternal, getMinGasUnitPriceInternal } from "../internal/supraClient";
 import { Coin } from "./coin";
 import { Events } from "./events";
 import { Block } from "./block";
@@ -142,6 +142,46 @@ export class SupraClient {
         this.events = new Events(this.networkInformation);
         this.block = new Block(this.networkInformation);
         this.fungibleAsset = new FungibleAsset(this.networkInformation);
+    }
+
+
+    /**
+     * Creates a SupraClient and verifies its chainId against the network's real chain_id
+     * (`GET /rpc/v3/transactions/chain_id`). On mismatch, the fetched chain_id is used and
+     * a warning is logged. Pass `skipChainIdVerification: true` in the config to skip the
+     * RPC call and trust the configured/default chainId as-is (e.g. offline usage).
+     * @param config - A SupraConfig object that contains information about the network on which the Supra client is running.
+     * @returns A Promise that resolves to a SupraClient instance with a verified chainId.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * async function runExample() {
+     *    const supra = await SupraClient.init({ network: Network.TESTNET });
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group SupraClient
+     */
+    static async init(config: SupraConfig): Promise<SupraClient> {
+        const client = new SupraClient(config);
+
+        if (config.skipChainIdVerification) {
+            return client;
+        }
+
+        const actualChainId = await getChainIdInternal(client.networkInformation);
+
+        if (actualChainId !== client.networkInformation.chainId) {
+            // eslint-disable-next-line no-console
+            console.warn(
+                `SupraClient: configured chainId (${client.networkInformation.chainId}) does not match the network's chainId (${actualChainId}). Using ${actualChainId}.`,
+            );
+            client.networkInformation.chainId = actualChainId;
+        }
+
+        return client;
     }
 
 

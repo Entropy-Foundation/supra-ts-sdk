@@ -12,6 +12,13 @@ import { Events } from "../events";
 import { Block } from "../block";
 import { FungibleAsset } from "../fungibleAsset";
 
+jest.mock("../../client/get", () => ({
+    get: jest.fn(),
+}));
+
+import { get } from "../../client/get";
+const mockGet = get as jest.MockedFunction<typeof get>;
+
 describe("SupraClient", () => {
     describe("constructor", () => {
         it("should initialize with TESTNET config", () => {
@@ -105,6 +112,48 @@ describe("SupraClient", () => {
             });
             const chainId = client.getChainId();
             expect(chainId.value).toBe(42);
+        });
+    });
+
+    describe("init", () => {
+        beforeEach(() => {
+            jest.clearAllMocks();
+        });
+
+        it("should keep the configured chainId when it matches the network", async () => {
+            mockGet.mockResolvedValueOnce({ data: 6 });
+            const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+            const client = await SupraClient.init({ network: Network.TESTNET });
+
+            expect(client.networkInformation.chainId).toBe(6);
+            expect(warnSpy).not.toHaveBeenCalled();
+            warnSpy.mockRestore();
+        });
+
+        it("should auto-correct and warn on chainId mismatch", async () => {
+            mockGet.mockResolvedValueOnce({ data: 6 });
+            const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+            const client = await SupraClient.init({
+                rpcUrl: "https://custom-rpc.example.com",
+                chainId: 99,
+            });
+
+            expect(client.networkInformation.chainId).toBe(6);
+            expect(warnSpy).toHaveBeenCalledTimes(1);
+            warnSpy.mockRestore();
+        });
+
+        it("should skip the RPC call and keep the configured chainId when skipChainIdVerification is true", async () => {
+            const client = await SupraClient.init({
+                rpcUrl: "https://custom-rpc.example.com",
+                chainId: 99,
+                skipChainIdVerification: true,
+            });
+
+            expect(client.networkInformation.chainId).toBe(99);
+            expect(mockGet).not.toHaveBeenCalled();
         });
     });
 
