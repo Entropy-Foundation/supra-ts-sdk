@@ -1,6 +1,6 @@
 {
   "name": "supra-ts-sdk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "A TypeScript SDK for interacting with the Supra blockchain and Move smart contracts. Provides type-safe utilities for transactions, contract calls, and on-chain data.",
   "type": "module",
   "main": "./dist/index.cjs",
