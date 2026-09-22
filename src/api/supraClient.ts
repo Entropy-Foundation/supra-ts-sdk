@@ -7,7 +7,7 @@ import { Faucet } from "./faucet";
 import { Methods } from "./methods";
 import { Table } from "./table";
 import { Transaction } from "./transaction";
-import { getGasPriceInternal, getMinGasUnitPriceInternal } from "../internal/supraClient";
+import { getChainIdInternal, getGasPriceInternal, getMinGasUnitPriceInternal } from "../internal/supraClient";
 import { Coin } from "./coin";
 import { Events } from "./events";
 import { Block } from "./block";
@@ -142,6 +142,38 @@ export class SupraClient {
         this.events = new Events(this.networkInformation);
         this.block = new Block(this.networkInformation);
         this.fungibleAsset = new FungibleAsset(this.networkInformation);
+    }
+
+
+    /**
+     * Verifies the configured chainId against the network's real chain_id
+     * (`GET /rpc/v3/transactions/chain_id`). Throws if they don't match, since a mismatch
+     * means either misconfiguration or a Byzantine RPC reporting a chain_id different from
+     * the one it accepts transactions for. Call this explicitly before submitting
+     * transactions if you want that guarantee; the constructor never calls it.
+     * @throws {Error} If the RPC's chain_id does not match the configured chainId.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    await supra.validateChainId();
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group SupraClient
+     */
+    async validateChainId(): Promise<void> {
+        const actualChainId = await getChainIdInternal(this.networkInformation);
+
+        if (actualChainId !== this.networkInformation.chainId) {
+            throw new Error(
+                `SupraClient: configured chainId (${this.networkInformation.chainId}) does not match the network's chainId (${actualChainId}).`,
+            );
+        }
     }
 
 

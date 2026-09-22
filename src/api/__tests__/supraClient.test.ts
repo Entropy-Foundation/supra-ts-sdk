@@ -12,6 +12,13 @@ import { Events } from "../events";
 import { Block } from "../block";
 import { FungibleAsset } from "../fungibleAsset";
 
+jest.mock("../../client/get", () => ({
+    get: jest.fn(),
+}));
+
+import { get } from "../../client/get";
+const mockGet = get as jest.MockedFunction<typeof get>;
+
 describe("SupraClient", () => {
     describe("constructor", () => {
         it("should initialize with TESTNET config", () => {
@@ -105,6 +112,35 @@ describe("SupraClient", () => {
             });
             const chainId = client.getChainId();
             expect(chainId.value).toBe(42);
+        });
+    });
+
+    describe("validateChainId", () => {
+        beforeEach(() => {
+            jest.clearAllMocks();
+        });
+
+        it("should resolve without throwing when the configured chainId matches the network", async () => {
+            mockGet.mockResolvedValueOnce({ data: 6 });
+
+            const client = new SupraClient({ network: Network.TESTNET });
+
+            await expect(client.validateChainId()).resolves.toBeUndefined();
+            expect(client.networkInformation.chainId).toBe(6);
+        });
+
+        it("should throw on chainId mismatch without mutating networkInformation", async () => {
+            mockGet.mockResolvedValueOnce({ data: 6 });
+
+            const client = new SupraClient({
+                rpcUrl: "https://custom-rpc.example.com",
+                chainId: 99,
+            });
+
+            await expect(client.validateChainId()).rejects.toThrow(
+                "SupraClient: configured chainId (99) does not match the network's chainId (6).",
+            );
+            expect(client.networkInformation.chainId).toBe(99);
         });
     });
 
