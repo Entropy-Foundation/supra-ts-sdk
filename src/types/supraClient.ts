@@ -9,7 +9,6 @@ export type SupraConfig =
         network: Network.MAINNET | Network.TESTNET;
         maxGas?: bigint;
         minGasUnitPrice?: bigint;
-        skipChainIdVerification?: boolean;
     }
     | {
         network?: Network.CUSTOM;
@@ -17,7 +16,6 @@ export type SupraConfig =
         chainId: number;
         maxGas?: bigint;
         minGasUnitPrice?: bigint;
-        skipChainIdVerification?: boolean;
     };
 
 

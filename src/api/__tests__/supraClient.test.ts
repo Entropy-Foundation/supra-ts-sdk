@@ -115,45 +115,32 @@ describe("SupraClient", () => {
         });
     });
 
-    describe("init", () => {
+    describe("validateChainId", () => {
         beforeEach(() => {
             jest.clearAllMocks();
         });
 
-        it("should keep the configured chainId when it matches the network", async () => {
+        it("should resolve without throwing when the configured chainId matches the network", async () => {
             mockGet.mockResolvedValueOnce({ data: 6 });
-            const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
-            const client = await SupraClient.init({ network: Network.TESTNET });
+            const client = new SupraClient({ network: Network.TESTNET });
 
+            await expect(client.validateChainId()).resolves.toBeUndefined();
             expect(client.networkInformation.chainId).toBe(6);
-            expect(warnSpy).not.toHaveBeenCalled();
-            warnSpy.mockRestore();
         });
 
-        it("should auto-correct and warn on chainId mismatch", async () => {
+        it("should throw on chainId mismatch without mutating networkInformation", async () => {
             mockGet.mockResolvedValueOnce({ data: 6 });
-            const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
-            const client = await SupraClient.init({
+            const client = new SupraClient({
                 rpcUrl: "https://custom-rpc.example.com",
                 chainId: 99,
             });
 
-            expect(client.networkInformation.chainId).toBe(6);
-            expect(warnSpy).toHaveBeenCalledTimes(1);
-            warnSpy.mockRestore();
-        });
-
-        it("should skip the RPC call and keep the configured chainId when skipChainIdVerification is true", async () => {
-            const client = await SupraClient.init({
-                rpcUrl: "https://custom-rpc.example.com",
-                chainId: 99,
-                skipChainIdVerification: true,
-            });
-
+            await expect(client.validateChainId()).rejects.toThrow(
+                "SupraClient: configured chainId (99) does not match the network's chainId (6).",
+            );
             expect(client.networkInformation.chainId).toBe(99);
-            expect(mockGet).not.toHaveBeenCalled();
         });
     });
 
