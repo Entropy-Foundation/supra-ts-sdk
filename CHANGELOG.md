@@ -49,7 +49,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `publishPackage` and the entry functions of `Contract.fromABI` read the sender's SUPRA balance, simulate the
   transaction with the largest max gas that balance pays for (at most `MAX_GAS_UNITS_PER_TRANSACTION`), and submit it
   with `ceil(gas used × 1.5)`, at least `MIN_ESTIMATED_MAX_GAS_UNITS` (1,500) and at most what the balance pays for.
-  `SupraConfig.maxGasEstimateMultiplier` replaces the factor (`DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`).
+  `SupraConfig.maxGasEstimateMultiplier` replaces the factor (`DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`). The simulation
+  runs against committed state: for a transaction sent while an earlier transaction of the account has not committed,
+  it uses the account's sequence number on the chain, so pipelined transactions work with the default gas settings; a
+  transaction that depends on an earlier uncommitted one fails its estimate and needs `maxGas`.
 - **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
   without a request.
 - **Per-account sequence-number counter.** Each `SupraClient` keeps the next sequence number of every account that its
