@@ -430,6 +430,27 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(accountReads).toBe(2);
     });
 
+    it("does not use a number for a call whose waitTimeoutMs is invalid", async () => {
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
+        const sender = new SupraAccount();
+
+        await expect(
+            supra.coin.transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: RECEIVER,
+                amount: 1n,
+                optionalTransactionArgs: {
+                    optionalTransactionPayloadArgs: GAS,
+                    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true, waitTimeoutMs: -1 },
+                },
+            }),
+        ).rejects.toThrow(RangeError);
+        expect(accountReads).toBe(0);
+        await transfer(supra, sender);
+
+        expect(submitted).toEqual([7]);
+    });
+
     it("keeps the counter after an executed transaction that failed", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();

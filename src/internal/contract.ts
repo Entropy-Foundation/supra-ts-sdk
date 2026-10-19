@@ -3,7 +3,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal } from "./transactionManager/txnBuild";
 import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
-import { submitTxnInternal } from "./transactionManager/txnSubmit";
+import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs, SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 
@@ -43,6 +43,7 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
     }
 
     const explicitSequenceNumber = args.optionalTransactionPayloadArgs?.sequenceNumber;
+    validateSubmitOptions(args.enableTransactionWaitAndSimulationArgs ?? {});
     const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({
         address: senderAccount.address(),
         sequenceNumber: explicitSequenceNumber,

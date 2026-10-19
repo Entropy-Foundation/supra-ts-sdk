@@ -9,7 +9,7 @@ import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../type
 import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { MoveFunctionId } from "../types/move";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
-import { submitTxnInternal } from "./transactionManager/txnSubmit";
+import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 
 export async function getFungibleAssetMetadataInternal(args: { assetAddress: AccountAddressInput }, config: NetworkConfig): Promise<FungibleAssetMetadata> {
     return await getAccountResourceInternal<FungibleAssetMetadata>({
@@ -48,6 +48,7 @@ export async function transferFungibleAssetInternal(
     }
 
     const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
+    validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
     const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: explicitSequenceNumber }, config);
 
     // Fungible Asset Transfer Payload

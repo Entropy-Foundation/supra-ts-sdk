@@ -14,6 +14,16 @@ import { getRawTxnJSONInternal, sendTxnPayloadInternal } from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
 
+/**
+ * Validates the options of a submission. The helpers that reserve a sequence number call it before reserving, so
+ * that an invalid option does not use a number.
+ */
+export function validateSubmitOptions(options: EnableTransactionWaitAndSimulationArgs): void {
+    if (options.waitTimeoutMs !== undefined) {
+        validateWaitTimeoutMs(options.waitTimeoutMs, "waitTimeoutMs");
+    }
+}
+
 export async function submitTxnInternal(
     args: {
         sendTxJsonPayload: SendTxnPayload,
@@ -22,9 +32,7 @@ export async function submitTxnInternal(
     config: NetworkConfig
 ): Promise<SubmitTransactionResponse> {
     const options = args.enableTransactionWaitAndSimulationArgs ?? {};
-    if (options.waitTimeoutMs !== undefined) {
-        validateWaitTimeoutMs(options.waitTimeoutMs, "waitTimeoutMs");
-    }
+    validateSubmitOptions(options);
 
     // A sequence number taken from the client's counter is settled by the outcome of the submission.
     const reservation = reservationOf(args.sendTxJsonPayload);

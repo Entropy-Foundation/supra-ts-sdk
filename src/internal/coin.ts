@@ -8,7 +8,7 @@ import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberIn
 import type { MoveFunctionId } from "../types/move";
 import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
-import { submitTxnInternal } from "./transactionManager/txnSubmit";
+import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { CoinInfo } from "../types/coin";
 
 export async function transferCoinInternal(
@@ -40,6 +40,7 @@ export async function transferCoinInternal(
     }
 
     const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
+    validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
     const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: explicitSequenceNumber }, config);
 
     // Coin Transfer Payload

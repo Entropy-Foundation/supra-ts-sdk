@@ -11,7 +11,7 @@ import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../type
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
 import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
-import { submitTxnInternal } from "./transactionManager/txnSubmit";
+import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import { checkChainIdBeforeSigningInternal } from "./chainId";
 import sha3 from 'js-sha3';
 
@@ -215,6 +215,7 @@ export async function publishPackageInternal(
 
     const senderAddress = args.senderAccount.address();
     const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
+    validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
     const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({ address: senderAddress, sequenceNumber: explicitSequenceNumber }, config);
 
     let sendTxPayload: SendTxnPayload;
