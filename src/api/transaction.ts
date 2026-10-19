@@ -2,6 +2,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { CommittedTransactionResponse, TransactionQueryType, TransactionResponse, WaitForTransactionOptions } from "../types/transaction";
 import { getTransactionByHashInternal, getTransactionSignatureMessageInternal, isPendingTransactionInternal, publishPackageInternal, signTransactionInternal, waitForTransactionInternal } from "../internal/transaction";
 
+import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
 import { Build } from "./transactionManager/txnBuild";
 import { BCS, TxnBuilderTypes, type AnyRawTransaction, type HexString, type SupraAccount } from "supra-l1-sdk-core";
 import { Simulate } from "./transactionManager/txnSimulate";
@@ -286,7 +287,10 @@ export class Transaction {
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
     ): Promise<SubmitTransactionResponse> {
-        return publishPackageInternal(args, this.networkInformation);
+        return retryWithFreshSequenceNumber(
+            args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
+            () => publishPackageInternal(args, this.networkInformation),
+        );
     }
 
 }

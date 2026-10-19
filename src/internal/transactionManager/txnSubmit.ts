@@ -1,6 +1,8 @@
 import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import type { WaitForTransactionOptions } from "../../types/transaction";
+import { SupraTransactionFailedError } from "../../errors/transactionError";
+import { TransactionStatus, type WaitForTransactionOptions } from "../../types/transaction";
+import { reservationOf, sequenceNumberTrackerOf, settleRefusedSubmission } from "../sequenceNumber";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
@@ -24,15 +26,29 @@ export async function submitTxnInternal(
         validateWaitTimeoutMs(options.waitTimeoutMs, "waitTimeoutMs");
     }
 
-    // A failed simulation throws, so the transaction is not submitted.
-    if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
-        await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
-    }
+    // A sequence number taken from the client's counter is settled by the outcome of the submission.
+    const reservation = reservationOf(args.sendTxJsonPayload, config);
 
-    const txHash = await post<SendTxnPayload, string>({
-        path: "/transactions/submit",
-        data: args.sendTxJsonPayload,
-    }, config);
+    let txHash: string;
+    try {
+        // A failed simulation throws, so the transaction is not submitted.
+        if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
+            await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
+        }
+
+        txHash = await post<SendTxnPayload, string>({
+            path: "/transactions/submit",
+            data: args.sendTxJsonPayload,
+        }, config);
+    } catch (error) {
+        if (reservation !== undefined) {
+            settleRefusedSubmission(reservation, error, config);
+        }
+        throw error;
+    }
+    if (reservation !== undefined) {
+        sequenceNumberTrackerOf(config).accepted(reservation.address, reservation.sequenceNumber);
+    }
 
     // From here on the node has accepted the transaction: the errors of the wait carry `txHash`, and a failed read
     // returns it.
@@ -41,7 +57,19 @@ export async function submitTxnInternal(
         if (options.waitTimeoutMs !== undefined) {
             waitOptions.timeoutMs = options.waitTimeoutMs;
         }
-        return await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
+        try {
+            return await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
+        } catch (error) {
+            // A discarded transaction does not use its sequence number, so the counter may be ahead of the chain.
+            if (
+                reservation !== undefined &&
+                error instanceof SupraTransactionFailedError &&
+                error.status === TransactionStatus.Invalid
+            ) {
+                sequenceNumberTrackerOf(config).invalidate(reservation.address);
+            }
+            throw error;
+        }
     }
 
     try {

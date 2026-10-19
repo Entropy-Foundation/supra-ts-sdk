@@ -9,7 +9,7 @@ import { DEFAULT_TXN_WAIT_TIMEOUT_MS, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH
 import { sleep } from "../utils/functions";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
-import { getAccountInfoInternal } from "./account";
+import { reserveSequenceNumberInternal } from "./sequenceNumber";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
 import { checkChainIdBeforeSigningInternal } from "./chainId";
 import sha3 from 'js-sha3';
@@ -216,7 +216,7 @@ export async function publishPackageInternal(
         senderAccount: args.senderAccount,
         rawTxn: await rawTxnObjectInternal({
             senderAddress: args.senderAccount.address(),
-            senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: args.senderAccount.address() }, config)).sequence_number,
+            senderSequenceNumber: await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber }, config),
             function: `${SUPRA_FRAMEWORK_ADDRESS}::code::publish_package_txn`,
             functionTypeArgs: [],
             functionArgs: [BCS.bcsSerializeBytes(args.packageMetadata), codeSerializer.getBytes()],

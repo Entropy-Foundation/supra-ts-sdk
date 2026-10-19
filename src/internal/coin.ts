@@ -3,7 +3,8 @@ import type { AccountAddressInput } from "../types/account";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
-import { getAccountInfoInternal, getAccountResourceInternal, isAccountExistsInternal } from "./account";
+import { getAccountResourceInternal, isAccountExistsInternal } from "./account";
+import { reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId } from "../types/move";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
@@ -40,7 +41,7 @@ export async function transferCoinInternal(
     // Coin Transfer Payload
     let supraTransferPayload = {
         senderAddress: args.senderAccount.address(),
-        senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: args.senderAccount.address() }, config)).sequence_number,
+        senderSequenceNumber: await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber }, config),
         function: `${SUPRA_FRAMEWORK_ADDRESS}::supra_account::transfer_coins` as MoveFunctionId,
         functionTypeArgs: [new TypeTagParser(args.coinType).parseTypeTag()],
         functionArgs: [receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]

@@ -1,7 +1,7 @@
 import { BCS, SupraAccount } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { simpleInternal } from "./transactionManager/txnBuild";
-import { getAccountInfoInternal } from "./account";
+import { releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { submitSerializedRawTransactionInternal } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
@@ -42,15 +42,27 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
         throw new Error("Sender account must be SupraAccount");
     }
 
-    const simpleRawTxn = await simpleInternal({
-        senderAddress: senderAccount.address(),
-        senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: senderAccount.address() }, config)).sequence_number,
-        function: args.function,
-        functionTypeArgs: args.typeArguments ?? [],
-        functionArgs: functionArguments,
-        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-        abi: args.abi as MoveModule
+    const senderSequenceNumber = await reserveSequenceNumberInternal({
+        address: senderAccount.address(),
+        sequenceNumber: args.optionalTransactionPayloadArgs?.sequenceNumber,
     }, config);
+
+    let simpleRawTxn;
+    try {
+        simpleRawTxn = await simpleInternal({
+            senderAddress: senderAccount.address(),
+            senderSequenceNumber,
+            function: args.function,
+            functionTypeArgs: args.typeArguments ?? [],
+            functionArgs: functionArguments,
+            optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+            abi: args.abi as MoveModule
+        }, config);
+    } catch (error) {
+        // The transaction was not built, so its number is not used.
+        releaseSequenceNumberInternal({ address: senderAccount.address(), sequenceNumber: senderSequenceNumber }, config);
+        throw error;
+    }
 
     return await submitSerializedRawTransactionInternal({
         senderAccount: senderAccount,

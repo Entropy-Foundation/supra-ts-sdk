@@ -3,7 +3,8 @@ import type { AccountAddressInput } from "../types/account";
 import type { FungibleAssetMetadata } from "../types/fungibleAsset";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
-import { getAccountInfoInternal, getAccountResourceInternal, isAccountExistsInternal } from "./account";
+import { getAccountResourceInternal, isAccountExistsInternal } from "./account";
+import { reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { MoveFunctionId } from "../types/move";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
@@ -48,7 +49,7 @@ export async function transferFungibleAssetInternal(
     // Fungible Asset Transfer Payload
     let supraTransferPayload = {
         senderAddress: args.senderAccount.address(),
-        senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: args.senderAccount.address() }, config)).sequence_number,
+        senderSequenceNumber: await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber }, config),
         function: `${SUPRA_FRAMEWORK_ADDRESS}::primary_fungible_store::transfer` as MoveFunctionId,
         functionTypeArgs: [new TypeTagParser("0x1::fungible_asset::Metadata").parseTypeTag()],
         functionArgs: [assetAddress.toUint8Array(), receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]
