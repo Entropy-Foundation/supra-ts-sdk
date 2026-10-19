@@ -9,7 +9,7 @@ import { DEFAULT_TXN_WAIT_TIMEOUT_MS, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH
 import { sleep } from "../utils/functions";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
-import { releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
+import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
 import { checkChainIdBeforeSigningInternal } from "./chainId";
@@ -215,7 +215,7 @@ export async function publishPackageInternal(
 
     const senderAddress = args.senderAccount.address();
     const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
-    const senderSequenceNumber = await reserveSequenceNumberInternal({ address: senderAddress, sequenceNumber: explicitSequenceNumber }, config);
+    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({ address: senderAddress, sequenceNumber: explicitSequenceNumber }, config);
 
     let sendTxPayload: SendTxnPayload;
     try {
@@ -232,10 +232,13 @@ export async function publishPackageInternal(
         }, config);
     } catch (error) {
         // The transaction was not submitted, so a number from the counter is not used.
-        if (explicitSequenceNumber === undefined) {
-            releaseSequenceNumberInternal({ address: senderAddress, sequenceNumber: senderSequenceNumber }, config);
+        if (reservation !== undefined) {
+            releaseSequenceNumberInternal(reservation, config);
         }
         throw error;
+    }
+    if (reservation !== undefined) {
+        bindReservation(sendTxPayload, reservation);
     }
 
     return await submitTxnInternal({

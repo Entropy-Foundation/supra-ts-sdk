@@ -1,7 +1,7 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal } from "./transactionManager/txnBuild";
-import { releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
+import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs, SendTxnPayload } from "../types/transactionManager/transactionBuild";
@@ -43,7 +43,7 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
     }
 
     const explicitSequenceNumber = args.optionalTransactionPayloadArgs?.sequenceNumber;
-    const senderSequenceNumber = await reserveSequenceNumberInternal({
+    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({
         address: senderAccount.address(),
         sequenceNumber: explicitSequenceNumber,
     }, config);
@@ -62,10 +62,13 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
         sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: simpleRawTxn }, config);
     } catch (error) {
         // The transaction was not submitted, so a number from the counter is not used.
-        if (explicitSequenceNumber === undefined) {
-            releaseSequenceNumberInternal({ address: senderAccount.address(), sequenceNumber: senderSequenceNumber }, config);
+        if (reservation !== undefined) {
+            releaseSequenceNumberInternal(reservation, config);
         }
         throw error;
+    }
+    if (reservation !== undefined) {
+        bindReservation(sendTxPayload, reservation);
     }
 
     return await submitTxnInternal({

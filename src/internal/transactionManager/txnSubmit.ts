@@ -27,7 +27,7 @@ export async function submitTxnInternal(
     }
 
     // A sequence number taken from the client's counter is settled by the outcome of the submission.
-    const reservation = reservationOf(args.sendTxJsonPayload, config);
+    const reservation = reservationOf(args.sendTxJsonPayload);
 
     let txHash: string;
     try {
@@ -47,7 +47,7 @@ export async function submitTxnInternal(
         throw error;
     }
     if (reservation !== undefined) {
-        sequenceNumberTrackerOf(config).accepted(reservation.address, reservation.sequenceNumber);
+        sequenceNumberTrackerOf(config).accepted(reservation);
     }
 
     // From here on the node has accepted the transaction: the errors of the wait carry `txHash`, and a failed read

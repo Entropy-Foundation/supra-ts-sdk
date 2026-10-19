@@ -3,7 +3,8 @@ import { SupraClient } from "../../api/supraClient";
 import { SupraAPIError } from "../../errors/apiError";
 import { SupraTransactionFailedError } from "../../errors/transactionError";
 import { TransactionStatus } from "../../types/transaction";
-import { SequenceNumberTracker } from "../sequenceNumber";
+import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
+import { SequenceNumberTracker, bindReservation, reservationOf } from "../sequenceNumber";
 
 const RPC_URL = "http://node.test";
 const HASH = "0x" + "5e".repeat(32);
@@ -115,23 +116,25 @@ function transfer(supra: SupraClient, sender: SupraAccount, sequenceNumber?: big
 
 describe("SequenceNumberTracker", () => {
     const fetchSeven = async () => 7n;
+    const next = async (tracker: SequenceNumberTracker, address: string, fetchChain: () => Promise<bigint>) =>
+        (await tracker.reserve(address, fetchChain)).sequenceNumber;
 
     it("hands out distinct consecutive numbers to concurrent callers with one read of the chain", async () => {
         const tracker = new SequenceNumberTracker();
         const fetchChain = jest.fn(fetchSeven);
 
-        const numbers = await Promise.all(Array.from({ length: 5 }, () => tracker.reserve("0x1", fetchChain)));
+        const reservations = await Promise.all(Array.from({ length: 5 }, () => tracker.reserve("0x1", fetchChain)));
 
-        expect(numbers).toEqual([7n, 8n, 9n, 10n, 11n]);
+        expect(reservations.map((reservation) => reservation.sequenceNumber)).toEqual([7n, 8n, 9n, 10n, 11n]);
         expect(fetchChain).toHaveBeenCalledTimes(1);
     });
 
     it("keeps the counters of accounts apart", async () => {
         const tracker = new SequenceNumberTracker();
 
-        expect(await tracker.reserve("0x1", async () => 3n)).toBe(3n);
-        expect(await tracker.reserve("0x2", async () => 40n)).toBe(40n);
-        expect(await tracker.reserve("0x1", async () => 99n)).toBe(4n);
+        expect(await next(tracker, "0x1", async () => 3n)).toBe(3n);
+        expect(await next(tracker, "0x2", async () => 40n)).toBe(40n);
+        expect(await next(tracker, "0x1", async () => 99n)).toBe(4n);
     });
 
     it("hands out the latest number again when its submission is released", async () => {
@@ -139,9 +142,9 @@ describe("SequenceNumberTracker", () => {
         await tracker.reserve("0x1", fetchSeven);
         const second = await tracker.reserve("0x1", fetchSeven);
 
-        tracker.release("0x1", second);
+        tracker.release(second);
 
-        expect(await tracker.reserve("0x1", fetchSeven)).toBe(second);
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(second.sequenceNumber);
     });
 
     it("fills a gap left by a released number before it hands out a new one", async () => {
@@ -151,43 +154,66 @@ describe("SequenceNumberTracker", () => {
             tracker.reserve("0x1", fetchSeven),
             tracker.reserve("0x1", fetchSeven),
         ]);
-        expect([first, second, third]).toEqual([7n, 8n, 9n]);
+        expect([first, second, third].map((reservation) => reservation.sequenceNumber)).toEqual([7n, 8n, 9n]);
 
-        tracker.release("0x1", 8n);
+        tracker.release(second);
 
-        expect(await tracker.reserve("0x1", fetchSeven)).toBe(8n);
-        expect(await tracker.reserve("0x1", fetchSeven)).toBe(10n);
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(10n);
     });
 
     it("lowers the counter past every released number at its end", async () => {
         const tracker = new SequenceNumberTracker();
-        await Promise.all([tracker.reserve("0x1", fetchSeven), tracker.reserve("0x1", fetchSeven), tracker.reserve("0x1", fetchSeven)]);
+        const [, second, third] = await Promise.all([
+            tracker.reserve("0x1", fetchSeven),
+            tracker.reserve("0x1", fetchSeven),
+            tracker.reserve("0x1", fetchSeven),
+        ]);
 
-        tracker.release("0x1", 8n);
-        tracker.release("0x1", 9n);
+        tracker.release(second);
+        tracker.release(third);
 
-        expect(await tracker.reserve("0x1", fetchSeven)).toBe(8n);
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
     });
 
-    it("ignores the release and acceptance of a number it did not hand out", async () => {
+    it("ignores the release and acceptance of a reservation it did not hand out", async () => {
         const tracker = new SequenceNumberTracker();
         await tracker.reserve("0x1", fetchSeven);
 
-        tracker.release("0x1", 42n);
-        tracker.accepted("0x1", 43n);
+        tracker.release({ address: "0x1", sequenceNumber: 42n });
+        tracker.accepted({ address: "0x1", sequenceNumber: 43n });
+        // The number of a handed-out reservation, without the reservation itself.
+        tracker.release({ address: "0x1", sequenceNumber: 7n });
 
-        expect(await tracker.reserve("0x1", fetchSeven)).toBe(8n);
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
     });
 
-    it("reads the chain again after invalidate and ignores releases of earlier numbers", async () => {
+    it("reads the chain again after invalidate and ignores releases of earlier reservations", async () => {
         const tracker = new SequenceNumberTracker();
         const stale = await tracker.reserve("0x1", fetchSeven);
 
         tracker.invalidate("0x1");
-        tracker.release("0x1", stale);
+        tracker.release(stale);
 
-        expect(await tracker.reserve("0x1", async () => 20n)).toBe(20n);
-        expect(await tracker.reserve("0x1", async () => 99n)).toBe(21n);
+        expect(await next(tracker, "0x1", async () => 20n)).toBe(20n);
+        expect(await next(tracker, "0x1", async () => 99n)).toBe(21n);
+    });
+
+    it("does not let an earlier reservation settle a later reservation of the same number", async () => {
+        const tracker = new SequenceNumberTracker();
+        const older = await tracker.reserve("0x1", fetchSeven);
+
+        tracker.invalidate("0x1");
+        const newer = await tracker.reserve("0x1", fetchSeven);
+        expect(newer.sequenceNumber).toBe(older.sequenceNumber);
+
+        tracker.release(older);
+        tracker.accepted(older);
+
+        // `newer` still holds the number, so it is neither handed out again nor settled twice.
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
+        tracker.release(newer);
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(7n);
     });
 
     it("reads the chain again when invalidate happens during a read", async () => {
@@ -203,7 +229,7 @@ describe("SequenceNumberTracker", () => {
 
         const result = await Promise.race([pending, new Promise<string>((resolve) => setTimeout(() => resolve("blocked"), 200))]);
         // The first read is discarded and the number is read again; the slow read resolves for every attempt here.
-        expect(result).toBe(5n);
+        expect(result).toMatchObject({ sequenceNumber: 5n });
     });
 
     it("keeps serving callers after a failed read of the chain", async () => {
@@ -211,7 +237,7 @@ describe("SequenceNumberTracker", () => {
 
         await expect(tracker.reserve("0x1", async () => Promise.reject(new Error("offline")))).rejects.toThrow("offline");
 
-        expect(await tracker.reserve("0x1", fetchSeven)).toBe(7n);
+        expect(await next(tracker, "0x1", fetchSeven)).toBe(7n);
     });
 });
 
@@ -434,5 +460,21 @@ describe("sequence numbers of the transfer helpers", () => {
 
         expect(submitted).toEqual([7, 8]);
         expect(accountReads).toBe(1);
+    });
+});
+
+describe("the reservation of a submission", () => {
+    const payload = (): SendTxnPayload =>
+        ({ Move: { raw_txn: { sender: "0x" + "cd".repeat(32), sequence_number: 7 } } }) as unknown as SendTxnPayload;
+
+    it("belongs only to the payload it was bound to", async () => {
+        const tracker = new SequenceNumberTracker();
+        const reservation = await tracker.reserve("0x" + "cd".repeat(32), async () => 7n);
+        const bound = payload();
+        bindReservation(bound, reservation);
+
+        expect(reservationOf(bound)).toBe(reservation);
+        // The same sender and number without the binding, as with an explicit sequence number.
+        expect(reservationOf(payload())).toBeUndefined();
     });
 });

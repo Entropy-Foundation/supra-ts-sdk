@@ -4,7 +4,7 @@ import type { FungibleAssetMetadata } from "../types/fungibleAsset";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
 import { getAccountResourceInternal, isAccountExistsInternal } from "./account";
-import { releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
+import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { MoveFunctionId } from "../types/move";
@@ -48,11 +48,12 @@ export async function transferFungibleAssetInternal(
     }
 
     const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
+    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: explicitSequenceNumber }, config);
 
     // Fungible Asset Transfer Payload
     let supraTransferPayload = {
         senderAddress: args.senderAccount.address(),
-        senderSequenceNumber: await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: explicitSequenceNumber }, config),
+        senderSequenceNumber,
         function: `${SUPRA_FRAMEWORK_ADDRESS}::primary_fungible_store::transfer` as MoveFunctionId,
         functionTypeArgs: [new TypeTagParser("0x1::fungible_asset::Metadata").parseTypeTag()],
         functionArgs: [assetAddress.toUint8Array(), receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]
@@ -64,10 +65,13 @@ export async function transferFungibleAssetInternal(
         sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn }, config);
     } catch (error) {
         // The transaction was not submitted, so a number from the counter is not used.
-        if (explicitSequenceNumber === undefined) {
-            releaseSequenceNumberInternal({ address: supraTransferPayload.senderAddress, sequenceNumber: supraTransferPayload.senderSequenceNumber }, config);
+        if (reservation !== undefined) {
+            releaseSequenceNumberInternal(reservation, config);
         }
         throw error;
+    }
+    if (reservation !== undefined) {
+        bindReservation(sendTxPayload, reservation);
     }
 
     return await submitTxnInternal({

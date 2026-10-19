@@ -14,13 +14,23 @@ const STALE_SEQUENCE_NUMBER_STATUSES: ReadonlySet<string> = new Set([
     "SEQUENCE_NUMBER_TOO_NEW",
 ]);
 
+/**
+ * A sequence number handed out by the counter. The object is the identity of the reservation: it settles the number
+ * only while it is the reservation the counter holds, so a call whose reservation was dropped by a resynchronisation
+ * cannot settle a later reservation of the same number.
+ */
+export interface SequenceNumberReservation {
+    readonly address: string;
+    readonly sequenceNumber: bigint;
+}
+
 interface AccountState {
     /** The next number to hand out, or `undefined` when it has to be read from the chain. */
     next: bigint | undefined;
     /** Numbers below `next` that were handed out and not used by the node, ascending. They are handed out first. */
     freed: bigint[];
-    /** Numbers handed out whose submission has not yet been accepted or refused. */
-    reserved: Set<bigint>;
+    /** Reservations handed out whose submission has not yet been accepted or refused, by number. */
+    reserved: Map<bigint, SequenceNumberReservation>;
     /** Incremented by every resynchronisation; a reservation of an earlier generation is ignored. */
     generation: number;
     /** Serialises the reads and increments of `next`. */
@@ -41,24 +51,29 @@ export class SequenceNumberTracker {
      * Hands out the next sequence number of `address`. The first use of an account, and the first use after
      * `invalidate`, reads the number from the chain with `fetchChain`. Concurrent calls get distinct numbers.
      */
-    reserve(address: string, fetchChain: () => Promise<bigint>): Promise<bigint> {
+    reserve(address: string, fetchChain: () => Promise<bigint>): Promise<SequenceNumberReservation> {
         const state = this.stateOf(address);
-        const taken = state.tail.then(() => this.take(state, fetchChain));
+        const taken = state.tail.then(() => this.take(state, address, fetchChain));
         state.tail = taken.catch(() => undefined);
         return taken;
     }
 
-    /** The node accepted the transaction with this number. */
-    accepted(address: string, sequenceNumber: bigint): void {
-        this.accounts.get(address)?.reserved.delete(sequenceNumber);
+    /** The node accepted the transaction of this reservation. */
+    accepted(reservation: SequenceNumberReservation): void {
+        const state = this.accounts.get(reservation.address);
+        if (state?.reserved.get(reservation.sequenceNumber) === reservation) {
+            state.reserved.delete(reservation.sequenceNumber);
+        }
     }
 
-    /** The node did not accept the transaction with this number, so the number is handed out again. */
-    release(address: string, sequenceNumber: bigint): void {
-        const state = this.accounts.get(address);
-        if (state === undefined || !state.reserved.delete(sequenceNumber) || state.next === undefined) {
+    /** The node did not accept the transaction of this reservation, so its number is handed out again. */
+    release(reservation: SequenceNumberReservation): void {
+        const { sequenceNumber } = reservation;
+        const state = this.accounts.get(reservation.address);
+        if (state === undefined || state.reserved.get(sequenceNumber) !== reservation || state.next === undefined) {
             return;
         }
+        state.reserved.delete(sequenceNumber);
         if (sequenceNumber + 1n === state.next) {
             state.next = sequenceNumber;
             while (state.freed.length > 0 && state.freed[state.freed.length - 1] === state.next - 1n) {
@@ -83,18 +98,13 @@ export class SequenceNumberTracker {
         state.generation += 1;
     }
 
-    /** Whether `sequenceNumber` was handed out for `address` and its submission is not settled. */
-    isReserved(address: string, sequenceNumber: bigint): boolean {
-        return this.accounts.get(address)?.reserved.has(sequenceNumber) ?? false;
-    }
-
     private stateOf(address: string): AccountState {
         let state = this.accounts.get(address);
         if (state === undefined) {
             state = {
                 next: undefined,
                 freed: [],
-                reserved: new Set(),
+                reserved: new Map(),
                 generation: 0,
                 tail: Promise.resolve(),
             };
@@ -103,7 +113,11 @@ export class SequenceNumberTracker {
         return state;
     }
 
-    private async take(state: AccountState, fetchChain: () => Promise<bigint>): Promise<bigint> {
+    private async take(
+        state: AccountState,
+        address: string,
+        fetchChain: () => Promise<bigint>,
+    ): Promise<SequenceNumberReservation> {
         for (;;) {
             let next = state.next;
             if (next === undefined) {
@@ -123,8 +137,9 @@ export class SequenceNumberTracker {
                 sequenceNumber = next;
                 state.next = next + 1n;
             }
-            state.reserved.add(sequenceNumber);
-            return sequenceNumber;
+            const reservation: SequenceNumberReservation = { address, sequenceNumber };
+            state.reserved.set(sequenceNumber, reservation);
+            return reservation;
         }
     }
 }
@@ -143,27 +158,26 @@ export function sequenceNumberTrackerOf(config: NetworkConfig): SequenceNumberTr
 
 /**
  * The sequence number for a transaction of `address`: `sequenceNumber` when the caller passes one (the counter is
- * not used or changed), otherwise the next number of the client's counter.
+ * not used or changed and there is no reservation), otherwise the next number of the client's counter with the
+ * reservation that settles it.
  */
 export async function reserveSequenceNumberInternal(
     args: { address: AccountAddressInput; sequenceNumber?: bigint | number | undefined },
     config: NetworkConfig,
-): Promise<bigint> {
+): Promise<{ sequenceNumber: bigint; reservation: SequenceNumberReservation | undefined }> {
     if (args.sequenceNumber !== undefined) {
-        return validateSequenceNumber(args.sequenceNumber);
+        return { sequenceNumber: validateSequenceNumber(args.sequenceNumber), reservation: undefined };
     }
     const address = standardizeAddress(args.address);
-    return sequenceNumberTrackerOf(config).reserve(address, async () =>
+    const reservation = await sequenceNumberTrackerOf(config).reserve(address, async () =>
         BigInt((await getAccountInfoInternal({ accountAddress: address }, config)).sequence_number),
     );
+    return { sequenceNumber: reservation.sequenceNumber, reservation };
 }
 
-/** Hands a reserved number out again when the transaction could not be built or submitted. */
-export function releaseSequenceNumberInternal(
-    args: { address: AccountAddressInput; sequenceNumber: bigint },
-    config: NetworkConfig,
-): void {
-    sequenceNumberTrackerOf(config).release(standardizeAddress(args.address), args.sequenceNumber);
+/** Hands the number of a reservation out again when its transaction could not be built or submitted. */
+export function releaseSequenceNumberInternal(reservation: SequenceNumberReservation, config: NetworkConfig): void {
+    sequenceNumberTrackerOf(config).release(reservation);
 }
 
 /** Forgets the counter of `address`; the next transaction reads its sequence number from the chain. */
@@ -225,21 +239,19 @@ export async function retryWithFreshSequenceNumber<T>(
     }
 }
 
-interface Reservation {
-    address: string;
-    sequenceNumber: bigint;
+const reservations = new WeakMap<SendTxnPayload, SequenceNumberReservation>();
+
+/** Marks `payload`, built with the number of `reservation`, so that its submission settles the reservation. */
+export function bindReservation(payload: SendTxnPayload, reservation: SequenceNumberReservation): void {
+    reservations.set(payload, reservation);
 }
 
-/** The sender and sequence number of a submission, when they came from the client's counter. */
-export function reservationOf(payload: SendTxnPayload, config: NetworkConfig): Reservation | undefined {
-    const tracker = trackers.get(config);
-    if (tracker === undefined) {
-        return undefined;
-    }
-    const raw = payload.Move.raw_txn;
-    const address = standardizeAddress(raw.sender);
-    const sequenceNumber = BigInt(raw.sequence_number);
-    return tracker.isReserved(address, sequenceNumber) ? { address, sequenceNumber } : undefined;
+/**
+ * The reservation of a submission, when its payload was built with a number from the client's counter. A payload
+ * built with an explicit number has none.
+ */
+export function reservationOf(payload: SendTxnPayload): SequenceNumberReservation | undefined {
+    return reservations.get(payload);
 }
 
 /**
@@ -251,14 +263,18 @@ export function reservationOf(payload: SendTxnPayload, config: NetworkConfig): R
  * - Any other error (a timeout, a connection failure, a 5xx other than 503): the node may have accepted the
  *   transaction, so the counter is read from the chain again.
  */
-export function settleRefusedSubmission(reservation: Reservation, error: unknown, config: NetworkConfig): void {
+export function settleRefusedSubmission(
+    reservation: SequenceNumberReservation,
+    error: unknown,
+    config: NetworkConfig,
+): void {
     const tracker = sequenceNumberTrackerOf(config);
     if (isStaleSequenceNumberError(error)) {
         tracker.invalidate(reservation.address);
     } else if (error instanceof SupraSimulationFailedError) {
-        tracker.release(reservation.address, reservation.sequenceNumber);
+        tracker.release(reservation);
     } else if (error instanceof SupraAPIError && (error.status < 500 || error.status === 503)) {
-        tracker.release(reservation.address, reservation.sequenceNumber);
+        tracker.release(reservation);
     } else {
         tracker.invalidate(reservation.address);
     }
