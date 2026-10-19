@@ -301,6 +301,14 @@ describe("client request handling", () => {
             expect((network.cause as Error).message).toBe("terminated");
         });
 
+        it("does not retry a GET that is marked as not retryable", async () => {
+            fetchMock.mockResolvedValue(response(503, { message: "unavailable" }));
+            await expect(get({ path: "/x", retryable: false }, retrying)).rejects.toBeInstanceOf(
+                SupraServiceUnavailableError,
+            );
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        });
+
         it("does not retry other error statuses", async () => {
             fetchMock.mockResolvedValue(response(400, { message: "bad" }));
             await expect(get({ path: "/x" }, retrying)).rejects.toBeInstanceOf(SupraAPIError);

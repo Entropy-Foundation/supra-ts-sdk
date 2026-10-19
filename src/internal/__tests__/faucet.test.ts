@@ -34,7 +34,7 @@ describe("internal/faucet", () => {
         it.each(configs)("sends the faucet request on %s", async (_name, config) => {
             mockGet.mockResolvedValue({ data: { Accepted: "0xtxhash" } });
             const result = await fundAccountWithFaucetInternal({ accountAddress: "0x1" }, config);
-            expect(mockGet).toHaveBeenCalledWith({ path: `/wallet/faucet/${fullAddress}` }, config);
+            expect(mockGet).toHaveBeenCalledWith({ path: `/wallet/faucet/${fullAddress}`, retryable: false }, config);
             expect(result).toEqual({ hash: "0xtxhash" });
         });
 

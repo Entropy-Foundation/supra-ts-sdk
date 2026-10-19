@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`) turns on retries of GET requests that fail with 429, 503 or a
   connection failure, honouring the node's `retry_after_seconds` / `Retry-After`. It is off by default; POST requests
-  are never retried.
+  and the faucet request are never retried.
 - **`SupraAPIError.sub_status`** is the abort code of an `ABORTED` status. `parseVmStatus` is exported.
 - `MoveVmError` lists the validation, verification, invariant and runtime statuses that clients commonly handle,
   including `ABORTED`, `MISSING_DATA`, `TYPE_RESOLUTION_FAILURE`, `LOOKUP_FAILED` and `MAX_GAS_UNITS_*`.

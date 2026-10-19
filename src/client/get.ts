@@ -8,6 +8,11 @@ export interface RequestParams {
     path: string;
     query?: Record<string, string | number | boolean | undefined>;
     data?: unknown;
+    /**
+     * Whether `get` may repeat the request under the client's retry policy (default true). A request that has an
+     * effect on the node, such as the faucet's, is sent once.
+     */
+    retryable?: boolean;
 }
 
 /**
@@ -33,7 +38,7 @@ export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVe
         headers: {
             "Content-Type": "application/json",
         },
-    }, config, true);
+    }, config, args.retryable ?? true);
 
     const cursor = response.headers.get("x-supra-cursor") ?? undefined;
     const data = await parseJsonResponse(response, url.toString(), config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
