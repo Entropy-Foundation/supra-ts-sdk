@@ -1,7 +1,9 @@
-import { SupraClient } from "../src/index";
+import { SupraClient, TransactionStatus } from "../src/index";
+import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
-import { rawGet } from "./helpers/raw";
+import { rawGet, rawSupraBalance } from "./helpers/raw";
+import { explicitGas } from "./helpers/transfers";
 
 describeE2E("client", () => {
     let ctx: E2EContext;
@@ -36,5 +38,25 @@ describeE2E("client", () => {
         const response = await rawGet<unknown>(ctx, "/rpc/v3/version");
         expect(response.status).toBe(200);
         expect(JSON.stringify(response.body)).toMatch(/\d+\.\d+/);
+    });
+
+    test.each(["/", "//"])("a client whose rpcUrl ends in %j reads the chain and sends a transfer", async (suffix) => {
+        const supra = new SupraClient({ rpcUrl: `${ctx.rpcUrl}${suffix}`, chainId: ctx.chainId });
+        await expect(supra.validateChainId()).resolves.toBeUndefined();
+
+        const sender = await createFundedAccount(ctx);
+        const receiver = createUnfundedAccount().address().toString();
+        const txn = await supra.coin.transferSupraCoin({
+            senderAccount: sender,
+            receiverAccountAddress: receiver,
+            amount: 1_000n,
+            optionalTransactionArgs: {
+                optionalTransactionPayloadArgs: await explicitGas(ctx),
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+            },
+        });
+
+        expect(txn.status).toBe(TransactionStatus.Success);
+        expect(await rawSupraBalance(ctx, receiver)).toBe(1_000n);
     });
 });

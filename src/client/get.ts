@@ -3,6 +3,7 @@ import { createSupraAPIError } from "../errors/apiError";
 import { parseJsonResponse } from "./parseResponse";
 import { sendRequest } from "./request";
 import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RPC_VERSION } from "../utils/constants";
+import { buildRpcUrl } from "./url";
 
 export interface RequestParams {
     path: string;
@@ -22,9 +23,7 @@ export interface RequestParams {
 */
 export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVersion: string = DEFAULT_RPC_VERSION): Promise<{ data: Res, cursor?: string | undefined }> {
 
-    const baseURL = `${config.rpcUrl}/rpc/${rpcVersion}${args.path}`;
-
-    const url = new URL(baseURL);
+    const url = buildRpcUrl(config.rpcUrl, rpcVersion, args.path);
     if (args.query) {
         for (const [key, value] of Object.entries(args.query)) {
             if (value !== undefined) {

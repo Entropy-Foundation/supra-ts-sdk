@@ -4,6 +4,7 @@ import { createSupraAPIError } from "../errors/apiError";
 import { parseJsonResponse } from "./parseResponse";
 import { sendRequest } from "./request";
 import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RPC_VERSION } from "../utils/constants";
+import { buildRpcUrl } from "./url";
 import { stringifyWithBigInt } from "../utils/json";
 
 /**
@@ -13,7 +14,7 @@ import { stringifyWithBigInt } from "../utils/json";
 */
 export async function post<Req extends object, Res>(args: RequestParams, config: NetworkConfig, rpcVersion: string = DEFAULT_RPC_VERSION): Promise<Res> {
 
-    const url = `${config.rpcUrl}/rpc/${rpcVersion}${args.path}`;
+    const url = buildRpcUrl(config.rpcUrl, rpcVersion, args.path).toString();
 
     const response = await sendRequest(url, {
         method: "POST",

@@ -14,6 +14,7 @@ import { Block } from "./block";
 import { FungibleAsset } from "./fungibleAsset";
 import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../utils/constants";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
+import { validateRpcUrl } from "../client/url";
 import { validateWaitTimeoutMs } from "../internal/transaction";
 
 
@@ -109,7 +110,8 @@ export class SupraClient {
     */
     constructor(config: SupraConfig) {
 
-        this.config = config;
+        // The client keeps its own copy of the configuration.
+        this.config = { ...config };
 
         // Set network
         // use default network configuration if network is mainnet, testnet or devnet
@@ -118,7 +120,7 @@ export class SupraClient {
             this.networkInformation = {
                 name: Network.CUSTOM,
                 chainId: config.chainId,
-                rpcUrl: config.rpcUrl
+                rpcUrl: validateRpcUrl(config.rpcUrl)
             };
 
         } else {
@@ -264,13 +266,22 @@ export class SupraClient {
 
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
-export interface SupraClient extends Account, Transaction, Contract, Methods, Faucet, Table, Coin, Events, Block, FungibleAsset { };
+export interface SupraClient extends Account, Omit<Transaction, TransactionInstanceMembers>, Contract, Methods, Faucet, Table, Coin, Events, Block, FungibleAsset { };
+
+/**
+ * Members of `Transaction` that are instance properties: `build`, `simulate` and `submit` are reached through
+ * `supra.transaction`. Only prototype methods are mixed into the client.
+ */
+type TransactionInstanceMembers = "build" | "simulate" | "submit";
 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyMixins(derivedCtor: any, constructors: any[]) {
     constructors.forEach((baseCtor) => {
         Object.getOwnPropertyNames(baseCtor.prototype).forEach((name) => {
+            if (name === "constructor") {
+                return;
+            }
             Object.defineProperty(
                 derivedCtor.prototype,
                 name,
