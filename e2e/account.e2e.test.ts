@@ -1,4 +1,5 @@
 import type { SupraAccount } from "../src/index";
+import { SupraClient } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
@@ -59,10 +60,15 @@ describeE2E("account", () => {
         expect(resource.type).toBe(SUPRA_COIN_STORE);
     });
 
-    // Expected: the value matches the declared type `bigint`.
-    test.failing("getAccountInfo returns the sequence number as a bigint", async () => {
+    test("getAccountInfo returns the sequence number as a bigint", async () => {
         const info = await ctx.supra.account.getAccountInfo({ accountAddress: address });
         expect(typeof info.sequence_number).toBe("bigint");
+        expect(info.sequence_number + 1n).toBe(2n);
+    });
+
+    test("isAccountExists throws when the node cannot be reached", async () => {
+        const unreachable = new SupraClient({ rpcUrl: "http://localhost:1", chainId: ctx.chainId });
+        await expect(unreachable.account.isAccountExists({ accountAddress: address })).rejects.toThrow();
     });
 
     test("getAccountResources lists the account's resources with a SUPRA coin store", async () => {

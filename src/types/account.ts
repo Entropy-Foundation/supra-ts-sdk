@@ -5,7 +5,7 @@ import type { HexString } from "supra-l1-sdk-core";
  */
 export interface AccountData{
     /**
-     * The sequence number of the account.
+     * The sequence number of the account, a `u64`. The node sends it as a JSON number; the SDK converts it.
      */
     sequence_number: bigint;
     /**

@@ -58,7 +58,6 @@ export class Transaction {
 
     /**
     * Queries on-chain transactions by their transaction hash, returning both pending and committed transactions.
-    * @template {TransactionResponse} T - The type of the transaction to be returned.
     * @param args - The arguments for querying the transaction.
     * @param args.transactionHash - The transaction hash should be a hex-encoded bytes string with a 0x prefix.
     * @param args.type - The type of transaction to query. `"settlement"` requires a node from v12 onwards; older
@@ -84,9 +83,9 @@ export class Transaction {
     * ```
     * @group Transaction
     */
-    async getTransactionByHash<T extends TransactionResponse>(args: { transactionHash: string, type?: TransactionQueryType, exclude_uncommitted?: boolean }): Promise<TransactionResponse> {
+    async getTransactionByHash(args: { transactionHash: string, type?: TransactionQueryType, exclude_uncommitted?: boolean }): Promise<TransactionResponse> {
         validateTransactionHash(args.transactionHash);
-        return getTransactionByHashInternal<T>(args, this.networkInformation);
+        return getTransactionByHashInternal(args, this.networkInformation);
     }
 
 
@@ -208,7 +207,8 @@ export class Transaction {
      * signer authenticator to be used to submit the transaction.
      * @param args.senderAccount the account to sign on the transaction
      * @param args.rawTxn a RawTransaction, MultiAgentRawTransaction or FeePayerRawTransaction
-     * @returns ed25519 signature in `HexString` or signer authenticator
+     * @returns A promise of the ed25519 signature as a `HexString` for a `RawTransaction`, and of the signer's
+     * `AccountAuthenticatorEd25519` for a `MultiAgentRawTransaction` or `FeePayerRawTransaction`.
      * @throws `SupraChainIdMismatchError` before signing when the client's chain ID or the chain ID of `rawTxn` is not
      * the node's. The node's chain ID is read before the first signature of the client; with `verifyChainId: false`
      * nothing is read or checked and no request is sent.
@@ -232,6 +232,16 @@ export class Transaction {
      * ```
      * @group Transaction
      */
+    signTransaction(args: { senderAccount: SupraAccount, rawTxn: TxnBuilderTypes.RawTransaction }): Promise<HexString>;
+    signTransaction(
+        args: {
+            senderAccount: SupraAccount,
+            rawTxn: TxnBuilderTypes.MultiAgentRawTransaction | TxnBuilderTypes.FeePayerRawTransaction,
+        }
+    ): Promise<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+    signTransaction(
+        args: { senderAccount: SupraAccount, rawTxn: AnyRawTransaction }
+    ): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519>;
     signTransaction(
         args: {
             senderAccount: SupraAccount,
@@ -245,7 +255,8 @@ export class Transaction {
     /**
      * Derives the transaction hash from a signed transaction.
      * @param args.signedTransaction - The signed transaction.
-     * @returns The transaction hash.
+     * @returns The transaction hash as a `0x`-prefixed hex string, the form `getTransactionByHash` and
+     * `waitForTransaction` accept.
      * @group Transaction
      */
     deriveTransactionHash(
@@ -253,7 +264,7 @@ export class Transaction {
             signedTransaction: TxnBuilderTypes.SignedTransaction,
         }
     ): string {
-        return sha3.keccak256(BCS.bcsToBytes(args.signedTransaction));
+        return `0x${sha3.keccak256(BCS.bcsToBytes(args.signedTransaction))}`;
     }
 
     /**

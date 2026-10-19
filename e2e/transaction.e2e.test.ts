@@ -73,8 +73,31 @@ describeE2E("transactions", () => {
         });
 
         const submitted = await rawTxn.submitTransaction({ senderAccount: sender });
+        expect(derived).toMatch(/^0x[0-9a-f]{64}$/);
         expect(submitted.hash.replace(/^0x/, "")).toBe(derived.replace(/^0x/, ""));
         await rawWaitForCommit(ctx, submitted.hash);
+    });
+
+    test("waitForTransaction accepts the hash derived from the signed transaction", async () => {
+        const rawTxn = ctx.supra.transaction.build.rawTxnObject({
+            senderAddress: sender.address(),
+            senderSequenceNumber: await nextSequenceNumber(sender),
+            function: SUPRA_ACCOUNT_TRANSFER,
+            functionTypeArgs: [],
+            functionArgs: [createUnfundedAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_002n)],
+            optionalTransactionPayloadArgs: await explicitGas(ctx),
+        });
+        const transactionHash = ctx.supra.transaction.deriveTransactionHash({
+            signedTransaction: rawTxn.signedTransaction(sender),
+        });
+
+        await rawTxn.submitTransaction({ senderAccount: sender });
+        const committed = await ctx.supra.transaction.waitForTransaction({ transactionHash });
+
+        expect(committed.status).toBe(TransactionStatus.Success);
+        expect(await ctx.supra.transaction.getTransactionByHash({ transactionHash })).toMatchObject({
+            status: TransactionStatus.Success,
+        });
     });
 
     test("a signature produced by signTransaction is accepted by the node", async () => {
@@ -86,7 +109,7 @@ describeE2E("transactions", () => {
             functionArgs: [createUnfundedAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_001n)],
             optionalTransactionPayloadArgs: await explicitGas(ctx),
         });
-        const signature = (await ctx.supra.transaction.signTransaction({ senderAccount: sender, rawTxn })) as HexString;
+        const signature = await ctx.supra.transaction.signTransaction({ senderAccount: sender, rawTxn });
 
         const submitted = await rawTxn.submitTransactionAndSignature({
             senderPubkey: sender.pubKey(),

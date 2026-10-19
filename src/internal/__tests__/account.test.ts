@@ -1,4 +1,5 @@
 import { getAccountLegacyCoins, getAccountInfoInternal, getAccountModulesInternal, getAccountModuleInternal, getAccountResourcesInternal, getAccountResourceInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../account";
+import { SupraAPIError } from "../../errors/apiError";
 import type { MoveResource } from "../../types/move";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 
@@ -63,8 +64,7 @@ describe("internal/account", () => {
 
     describe("getAccountInfoInternal", () => {
         it("should call get with correct path", async () => {
-            const mockData = { sequence_number: 5n, authentication_key: "0xabc" };
-            mockGet.mockResolvedValue({ data: mockData });
+            mockGet.mockResolvedValue({ data: { sequence_number: 5, authentication_key: "0xabc" } });
 
             const result = await getAccountInfoInternal(
                 { accountAddress: "0x1" },
@@ -75,7 +75,24 @@ describe("internal/account", () => {
                 { path: `/accounts/${fullAddress}` },
                 testConfig,
             );
-            expect(result).toEqual(mockData);
+            expect(result).toEqual({ sequence_number: 5n, authentication_key: "0xabc" });
+        });
+
+        it("should return the sequence number as a bigint", async () => {
+            mockGet.mockResolvedValue({ data: { sequence_number: 7, authentication_key: "0xabc" } });
+
+            const result = await getAccountInfoInternal({ accountAddress: "0x1" }, testConfig);
+
+            expect(typeof result.sequence_number).toBe("bigint");
+            expect(result.sequence_number + 1n).toBe(8n);
+        });
+
+        it("should accept a sequence number sent as a decimal string", async () => {
+            mockGet.mockResolvedValue({ data: { sequence_number: "18446744073709551615", authentication_key: "0xabc" } });
+
+            const result = await getAccountInfoInternal({ accountAddress: "0x1" }, testConfig);
+
+            expect(result.sequence_number).toBe(18446744073709551615n);
         });
     });
 
@@ -195,10 +212,48 @@ describe("internal/account", () => {
             expect(result).toBe(true);
         });
 
-        it("should return false when account does not exist", async () => {
-            mockGet.mockRejectedValue(new Error("Not found"));
+        const apiError = (status: number, message?: string) =>
+            new SupraAPIError({
+                status,
+                statusText: `status ${status}`,
+                url: "http://node/rpc/v3/accounts/0x1",
+                data: message === undefined ? undefined : { message },
+            });
+
+        it("should return false when a v12 node answers HTTP 404", async () => {
+            mockGet.mockRejectedValue(apiError(404, "Not Found: Resource not found: 0x1::account::Account"));
             const result = await isAccountExistsInternal({ accountAddress: "0x999" }, testConfig);
             expect(result).toBe(false);
+        });
+
+        it("should return false when a v11 node answers HTTP 400 with Resource not found", async () => {
+            mockGet.mockRejectedValue(apiError(400, "Bad Request: Resource not found: 0x1::account::Account"));
+            const result = await isAccountExistsInternal({ accountAddress: "0x999" }, testConfig);
+            expect(result).toBe(false);
+        });
+
+        it("should rethrow HTTP 400 without a Resource not found message", async () => {
+            const error = apiError(400, "Bad Request: storage error");
+            mockGet.mockRejectedValue(error);
+            await expect(isAccountExistsInternal({ accountAddress: "0x999" }, testConfig)).rejects.toBe(error);
+        });
+
+        it.each([429, 500, 503])("should rethrow HTTP %i", async (status) => {
+            const error = apiError(status);
+            mockGet.mockRejectedValue(error);
+            await expect(isAccountExistsInternal({ accountAddress: "0x999" }, testConfig)).rejects.toBe(error);
+        });
+
+        it("should rethrow a network failure", async () => {
+            const error = new TypeError("fetch failed");
+            mockGet.mockRejectedValue(error);
+            await expect(isAccountExistsInternal({ accountAddress: "0x999" }, testConfig)).rejects.toBe(error);
+        });
+
+        it("should rethrow a timeout", async () => {
+            const error = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+            mockGet.mockRejectedValue(error);
+            await expect(isAccountExistsInternal({ accountAddress: "0x999" }, testConfig)).rejects.toBe(error);
         });
     });
 });
