@@ -108,8 +108,10 @@ export function resolveRetry(retry: { attempts?: number; maxDelayMs?: number }):
     if (!Number.isInteger(attempts) || attempts < 1) {
         throw new RangeError(`retry.attempts must be an integer of at least 1, got ${attempts}`);
     }
-    if (!Number.isFinite(maxDelayMs) || maxDelayMs < 0) {
-        throw new RangeError(`retry.maxDelayMs must be a non-negative number, got ${maxDelayMs}`);
+    if (!Number.isFinite(maxDelayMs) || maxDelayMs < 0 || maxDelayMs > MAX_TIMER_MS) {
+        throw new RangeError(
+            `retry.maxDelayMs must be a number of milliseconds from 0 to ${MAX_TIMER_MS}, got ${maxDelayMs}`,
+        );
     }
     return { attempts, maxDelayMs };
 }

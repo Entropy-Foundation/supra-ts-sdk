@@ -91,6 +91,17 @@ describe("SupraClient", () => {
             expect(() => new SupraClient({ network: Network.TESTNET, retry: { maxDelayMs: -1 } })).toThrow(RangeError);
         });
 
+        it("should accept a retry delay up to 2^31 - 1 ms and reject a longer one", () => {
+            const longest = new SupraClient({ network: Network.TESTNET, retry: { maxDelayMs: 2 ** 31 - 1 } });
+            expect(longest.networkInformation.retry?.maxDelayMs).toBe(2 ** 31 - 1);
+
+            for (const maxDelayMs of [2 ** 31, 2 ** 32, Number.POSITIVE_INFINITY, Number.NaN]) {
+                expect(() => new SupraClient({ network: Network.TESTNET, retry: { maxDelayMs } })).toThrow(
+                    `retry.maxDelayMs must be a number of milliseconds from 0 to 2147483647, got ${maxDelayMs}`,
+                );
+            }
+        });
+
         it("should initialize with explicit Network.CUSTOM", () => {
             const client = new SupraClient({
                 network: Network.CUSTOM,

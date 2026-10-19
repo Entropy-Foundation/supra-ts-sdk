@@ -10,7 +10,7 @@ import type { Network } from "../utils/apiEndpoints";
 export interface RetryConfig {
     /** Requests to send in total, the first included. Default 3. */
     attempts?: number;
-    /** Longest wait before a retry, in milliseconds. Default 10000. */
+    /** Longest wait before a retry, in milliseconds, from 0 to 2147483647. Default 10000. */
     maxDelayMs?: number;
 }
 
