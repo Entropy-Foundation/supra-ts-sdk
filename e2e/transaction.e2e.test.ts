@@ -88,7 +88,7 @@ describeE2E("transactions", () => {
             optionalTransactionPayloadArgs: await explicitGas(ctx),
         });
         const transactionHash = ctx.supra.transaction.deriveTransactionHash({
-            signedTransaction: rawTxn.signedTransaction(sender),
+            signedTransaction: await rawTxn.signedTransaction(sender),
         });
 
         await rawTxn.submitTransaction({ senderAccount: sender });

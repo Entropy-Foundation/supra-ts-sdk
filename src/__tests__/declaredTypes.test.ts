@@ -51,6 +51,8 @@ function buildRawTransaction(account: SupraAccount): TxnBuilderTypes.RawTransact
 }
 
 const supra = new SupraClient({ rpcUrl: "http://localhost:1", chainId: 255 });
+// Signs without reading the node's chain ID, so the signing tests send no request.
+const offlineSigner = new SupraClient({ rpcUrl: "http://localhost:1", chainId: 255, verifyChainId: false });
 const { AccountAddress } = TxnBuilderTypes;
 const SUPRA_FA ="0x000000000000000000000000000000000000000000000000000000000000000a";
 
@@ -133,31 +135,32 @@ describe("declared types that do not depend on a recorded response", () => {
         expectTypeOf(supra.transaction.getTransactionByHash).returns.resolves.toEqualTypeOf<TransactionResponse>();
     });
 
-    test("signTransaction returns the signature for a RawTransaction and the authenticator for the other kinds", () => {
+    test("signTransaction resolves to the signature for a RawTransaction and the authenticator for the other kinds", async () => {
         const account = new SupraAccount();
         const rawTxn = buildRawTransaction(account);
         const sender = AccountAddress.fromHex(account.address());
 
-        const signature = supra.transaction.signTransaction({ senderAccount: account, rawTxn });
-        expectTypeOf(signature).toEqualTypeOf<HexString>();
-        expect(signature).toBeInstanceOf(HexString);
+        const signature = offlineSigner.transaction.signTransaction({ senderAccount: account, rawTxn });
+        expectTypeOf(signature).toEqualTypeOf<Promise<HexString>>();
+        expect(await signature).toBeInstanceOf(HexString);
 
-        const feePayerAuthenticator = supra.transaction.signTransaction({
+        const feePayerAuthenticator = offlineSigner.transaction.signTransaction({
             senderAccount: account,
             rawTxn: new TxnBuilderTypes.FeePayerRawTransaction(rawTxn, [], sender),
         });
-        expectTypeOf(feePayerAuthenticator).toEqualTypeOf<TxnBuilderTypes.AccountAuthenticatorEd25519>();
-        expect(feePayerAuthenticator).toBeInstanceOf(TxnBuilderTypes.AccountAuthenticatorEd25519);
+        expectTypeOf(feePayerAuthenticator).toEqualTypeOf<Promise<TxnBuilderTypes.AccountAuthenticatorEd25519>>();
+        expect(await feePayerAuthenticator).toBeInstanceOf(TxnBuilderTypes.AccountAuthenticatorEd25519);
 
-        const multiAgentAuthenticator = supra.transaction.signTransaction({
+        const multiAgentAuthenticator = offlineSigner.transaction.signTransaction({
             senderAccount: account,
             rawTxn: new TxnBuilderTypes.MultiAgentRawTransaction(rawTxn, []),
         });
-        expectTypeOf(multiAgentAuthenticator).toEqualTypeOf<TxnBuilderTypes.AccountAuthenticatorEd25519>();
-        expect(multiAgentAuthenticator).toBeInstanceOf(TxnBuilderTypes.AccountAuthenticatorEd25519);
+        expectTypeOf(multiAgentAuthenticator).toEqualTypeOf<Promise<TxnBuilderTypes.AccountAuthenticatorEd25519>>();
+        expect(await multiAgentAuthenticator).toBeInstanceOf(TxnBuilderTypes.AccountAuthenticatorEd25519);
 
-        const signAnyKind = (rawTxn: AnyRawTransaction) => supra.transaction.signTransaction({ senderAccount: account, rawTxn });
-        expectTypeOf(signAnyKind).returns.toEqualTypeOf<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519>();
+        const signAnyKind = (rawTxn: AnyRawTransaction) =>
+            offlineSigner.transaction.signTransaction({ senderAccount: account, rawTxn });
+        expectTypeOf(signAnyKind).returns.toEqualTypeOf<Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519>>();
     });
 
     test("deriveTransactionHash returns a 0x-prefixed hash that the hash validators accept", async () => {
@@ -168,7 +171,7 @@ describe("declared types that do not depend on a recorded response", () => {
             new TxnBuilderTypes.AccountAuthenticatorEd25519(
                 new TxnBuilderTypes.Ed25519PublicKey(account.pubKey().toUint8Array()),
                 new TxnBuilderTypes.Ed25519Signature(
-                    supra.transaction.signTransaction({ senderAccount: account, rawTxn }).toUint8Array(),
+                    (await offlineSigner.transaction.signTransaction({ senderAccount: account, rawTxn })).toUint8Array(),
                 ),
             ),
         );
