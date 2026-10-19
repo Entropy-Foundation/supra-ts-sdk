@@ -46,10 +46,11 @@ export interface OptionalTransactionPayloadArgs {
     estimateMaxGas?: boolean;
     /**
      * The sequence number of the transaction. Used by the helpers that build and submit the transaction
-     * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `publishPackage`
-     * and the entry functions of `Contract.fromABI`). When it is set, the helper uses it as given and does not use or
-     * change the client's counter. When it is absent, the helper takes the next number of the client's counter.
-     * The builders of `transaction.build` take `senderSequenceNumber` and ignore this field.
+     * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
+     * `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI`). When it is set,
+     * the helper uses it as given and does not use or change the client's counter. When it is absent, the helper takes
+     * the next number of the client's counter. The builders of `transaction.build` take `senderSequenceNumber` and
+     * ignore this field.
      */
     sequenceNumber?: bigint | number;
 }

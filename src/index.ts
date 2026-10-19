@@ -37,6 +37,7 @@ export * from "./errors/apiError";
 export * from "./errors/faucetError";
 export * from "./errors/transactionError";
 export * from "./errors/chainIdError";
+export * from "./errors/fungibleAssetError";
 export * from "./errors/moveVmErrors";
 export { parseVmStatus, type ParsedVmStatus } from "./errors/vmStatus";
 

@@ -270,8 +270,8 @@ try {
 
 A transaction carries the sender's sequence number, and the node executes a transaction only when its number is the
 account's next number. `transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
-`publishPackage` and the entry functions of `Contract.fromABI` take the number from a counter that the `SupraClient`
-keeps for each account:
+`migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the number from a
+counter that the `SupraClient` keeps for each account:
 
 - The first use reads the account's sequence number from the chain. Each transaction the node accepts advances the
   counter, so transactions sent without waiting for the previous one to commit get consecutive numbers, also when they

@@ -62,7 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   number from the chain.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
-  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI`.
+  `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage` and
+  the entry functions of `Contract.fromABI`.
   The helper uses it as given and does not use or change the counter.
 - The transaction examples read `SUPRA_RPC_URL` and `SUPRA_CHAIN_ID` to run against another node, and
   `SUPRA_EXAMPLES_FUND=1` to fund their accounts from that node's faucet.
@@ -78,6 +79,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without a request.
 - **`stringifyWithBigInt`** is exported. It serializes a value whose `bigint` fields (for example the result of
   `transaction.build.sendTxnPayload`) `JSON.stringify` rejects, writing them as exact JSON numbers.
+- **`fungibleAsset.migrateCoinToFungibleStore({ senderAccount, coinType?, optionalTransactionArgs? })`** submits
+  `0x1::coin::migrate_to_fungible_store`, which moves the sender's balance of a coin type (default SUPRA) from its
+  `CoinStore` to the primary fungible store of the paired fungible asset.
+- **`SupraInsufficientFungibleAssetBalanceError`** (`senderAddress`, `assetAddress`, `amount`, `fungibleAssetBalance`,
+  `coinBalance`), thrown by the SUPRA fungible asset transfers described under Changed.
+- **`account.getAccountSupraBalance`** returns `{ total, coin, fungibleAsset }` (`SupraBalance`): the SUPRA balance in
+  quants and the parts held in the `CoinStore` and in the fungible asset store.
+- **`SUPRA_FUNGIBLE_ASSET_ADDRESS`** is the address of the SUPRA fungible asset (`0xa`, padded to 64 digits).
 
 ### Changed
 
@@ -102,6 +111,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rpcUrl` may end in slashes and may carry a path prefix (`https://host/prefix/`); every request goes to the same
   URL whichever form is configured.
 - `SupraConfig` documents which settings belong to a client: all of them.
+
+- **Breaking:** `fungibleAsset.transferSupraFungibleAsset`, and `fungibleAsset.transferFungibleAsset` with the SUPRA
+  fungible asset address, read the sender's fungible asset balance first and throw
+  `SupraInsufficientFungibleAssetBalanceError` without submitting a transaction when it is below `amount`. The transfer
+  moves only the fungible asset store; SUPRA that an account received as a coin (for example from the faucet) is in its
+  `CoinStore` until `fungibleAsset.migrateCoinToFungibleStore` moves it. Before, the transaction was submitted and
+  aborted on chain. `coin.transferSupraCoin` moves SUPRA held in either form.
+- `account.getAccountSupraCoinBalance` and `account.getAccountCoinBalance` with a coin type return the total SUPRA
+  balance (`CoinStore` plus the paired fungible asset store); `getAccountCoinBalance` with a fungible asset address
+  returns that asset's primary store only, so it is 0 for SUPRA that has not been migrated. The behaviour is unchanged;
+  the documentation now states it.
+- **Breaking:** `account.getAccountCoinsCount` also counts SUPRA held as a fungible asset when the account has no
+  `CoinStore<SupraCoin>`, so a migrated account returns 1 where it returned 0. Fungible assets other than SUPRA are not
+  counted: the node has no listing of an account's fungible asset stores.
 
 - **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
   none when the estimate is turned off or the estimating simulation could not run to a result (a request error, a
@@ -169,8 +192,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `getTransactionByHash`, `waitForTransaction` and `isPendingTransaction` require a transaction hash of
   `0x` followed by exactly 64 hex digits. A longer or shorter value is rejected before any request.
 - **Breaking:** `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
-  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI` take
-  the sequence number from the client's counter instead of reading it from the chain on every call. Transactions sent
+  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI` (and
+  the new `fungibleAsset.migrateCoinToFungibleStore`) take the sequence number from the client's counter instead of reading it from the chain on every call. Transactions sent
   by other means from the same account (another client or process, a wallet, a transaction built with an explicit
   number) make the counter stale; the next helper call then costs one refused submission and a read of the chain, and
   succeeds. After a `SupraTransactionTimeoutError` for a transaction that will not commit, call

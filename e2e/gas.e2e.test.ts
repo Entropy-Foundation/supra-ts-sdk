@@ -6,7 +6,7 @@ import type {
 } from "../src/index";
 import { MoveVmError, SupraSimulationFailedError, TransactionStatus, TypeTagParser } from "../src/index";
 import { COIN_ABI } from "./helpers/abi";
-import { createFundedAccount, createUnfundedAccount, waitForBalance } from "./helpers/accounts";
+import { createFundedAccount, createMigratedAccount, createUnfundedAccount, waitForBalance } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import { fixtureModuleFor, fixturePackageMetadata } from "./helpers/fixturePackage";
@@ -251,12 +251,12 @@ describeE2E("gas settings", () => {
 
         test("fungibleAsset.transferSupraFungibleAsset", async () => {
             const txn = await ctx.supra.fungibleAsset.transferSupraFungibleAsset({
-                senderAccount: sender,
+                senderAccount: await createMigratedAccount(ctx),
                 receiverAccountAddress: createUnfundedAccount().address().toString(),
                 amount: 1n,
                 optionalTransactionArgs: {
                     optionalTransactionPayloadArgs: settings,
-                    enableTransactionWaitAndSimulationArgs: { ...WAIT, checkSuccess: false },
+                    enableTransactionWaitAndSimulationArgs: WAIT,
                 },
             });
             expectSettings(txn);
@@ -264,13 +264,24 @@ describeE2E("gas settings", () => {
 
         test("fungibleAsset.transferFungibleAsset", async () => {
             const txn = await ctx.supra.fungibleAsset.transferFungibleAsset({
-                senderAccount: sender,
+                senderAccount: await createMigratedAccount(ctx),
                 receiverAccountAddress: createUnfundedAccount().address().toString(),
                 amount: 1n,
                 assetAddress: SUPRA_FA,
                 optionalTransactionArgs: {
                     optionalTransactionPayloadArgs: settings,
-                    enableTransactionWaitAndSimulationArgs: { ...WAIT, checkSuccess: false },
+                    enableTransactionWaitAndSimulationArgs: WAIT,
+                },
+            });
+            expectSettings(txn);
+        });
+
+        test("fungibleAsset.migrateCoinToFungibleStore", async () => {
+            const txn = await ctx.supra.fungibleAsset.migrateCoinToFungibleStore({
+                senderAccount: await createFundedAccount(ctx),
+                optionalTransactionArgs: {
+                    optionalTransactionPayloadArgs: settings,
+                    enableTransactionWaitAndSimulationArgs: WAIT,
                 },
             });
             expectSettings(txn);

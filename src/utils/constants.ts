@@ -33,6 +33,9 @@ export const MILLISECONDS_PER_SECOND = 1000;
 export const SUPRA_FRAMEWORK_ADDRESS =
     "0x0000000000000000000000000000000000000000000000000000000000000001";
 export const SUPRA_COIN_TYPE = "0x1::supra_coin::SupraCoin";
+/** The address of the SUPRA fungible asset: the fungible asset that `0x1::supra_coin::SupraCoin` is paired with. */
+export const SUPRA_FUNGIBLE_ASSET_ADDRESS =
+    "0x000000000000000000000000000000000000000000000000000000000000000a";
 export const OBJECT_CORE = "0x1::object::ObjectCore";
 
 export const DEFAULT_ENABLE_SIMULATION = false;

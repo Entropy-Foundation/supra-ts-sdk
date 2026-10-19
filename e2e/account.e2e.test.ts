@@ -134,16 +134,27 @@ describeE2E("account", () => {
         ).resolves.toBe(await rawSupraBalance(ctx, address));
     });
 
-    // Expected: the SUPRA balance read through the fungible asset address equals the coin balance.
-    test.failing("getAccountCoinBalance reads the SUPRA balance through the fungible asset address", async () => {
+    test("getAccountCoinBalance of the fungible asset address reads the fungible asset store only", async () => {
+        // The faucet funds the account as a coin, so its fungible asset store is empty.
         await expect(ctx.supra.account.getAccountCoinBalance({ accountAddress: address, asset: "0xa" })).resolves.toBe(
-            await rawSupraBalance(ctx, address),
+            0n,
         );
     });
 
-    test("getAccountCoinsCount counts the legacy coin stores of the account", async () => {
+    test("getAccountSupraBalance splits the SUPRA balance by form without counting it twice", async () => {
+        const balance = await ctx.supra.account.getAccountSupraBalance({ accountAddress: address });
+        expect(balance.total).toBe(await rawSupraBalance(ctx, address));
+        expect(balance.fungibleAsset).toBe(0n);
+        expect(balance.coin).toBe(balance.total);
+    });
+
+    test("getAccountCoinsCount counts the SUPRA coin store of a funded account", async () => {
+        await expect(ctx.supra.account.getAccountCoinsCount({ accountAddress: address })).resolves.toBe(1);
+    });
+
+    test("getAccountCoinsCount is 0 for an account that does not exist", async () => {
         await expect(
-            ctx.supra.account.getAccountCoinsCount({ accountAddress: address }),
-        ).resolves.toBeGreaterThanOrEqual(0);
+            ctx.supra.account.getAccountCoinsCount({ accountAddress: createUnfundedAccount().address().toString() }),
+        ).resolves.toBe(0);
     });
 });

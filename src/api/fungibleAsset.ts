@@ -3,9 +3,11 @@ import type { AccountAddressInput } from "../types/account";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { CoinInfo } from "../types/coin";
-import { getFungibleAssetMetadataInternal, transferFungibleAssetInternal } from "../internal/fungibleAsset";
+import type { MoveFunctionId } from "../types/move";
+import { getFungibleAssetMetadataInternal, migrateCoinToFungibleStoreInternal, transferFungibleAssetInternal } from "../internal/fungibleAsset";
 import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
-import { validateAddress, validateAmount } from "../helper/validation";
+import { validateAddress, validateAmount, validateStructId } from "../helper/validation";
+import { SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
 
 /**
  * The FungibleAsset class provides methods for interacting with the FungibleAsset on the Supra network.
@@ -62,10 +64,16 @@ export class FungibleAsset {
     }
 
     /**
-     * Transfer supra fungible asset from one account to another.
-     * @param args.senderAccount - The account sending the SupraCoin.
-     * @param args.receiverAccountAddress - The address of the account receiving the SupraCoin.
-     * @param args.amount - The amount of SupraCoin to transfer.
+     * Transfer the SUPRA fungible asset from one account to another (`0x1::primary_fungible_store::transfer`).
+     *
+     * The transfer moves SUPRA held in the sender's primary fungible store only; SUPRA held in a `CoinStore` is not
+     * part of it. The sender's fungible asset balance is read first, and when it is below `amount` the method throws
+     * {@link SupraInsufficientFungibleAssetBalanceError}, naming the fungible asset balance and the coin balance,
+     * without submitting a transaction. {@link migrateCoinToFungibleStore} moves the coin balance into the fungible
+     * store; `supra.coin.transferSupraCoin` transfers SUPRA held in either form.
+     * @param args.senderAccount - The account sending the SUPRA.
+     * @param args.receiverAccountAddress - The address of the account receiving the SUPRA.
+     * @param args.amount - The amount of SUPRA to transfer, in quants.
      * @param args.optionalTransactionArgs - Optional transaction arguments. The gas settings in
      * `optionalTransactionPayloadArgs` apply to the transaction; without `maxGas` it is estimated
      * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
@@ -102,13 +110,62 @@ export class FungibleAsset {
             args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
             () => transferFungibleAssetInternal({
                 ...args,
-                assetAddress: "0x000000000000000000000000000000000000000000000000000000000000000a",
+                assetAddress: SUPRA_FUNGIBLE_ASSET_ADDRESS,
             }, this.networkInformation),
         );
     }
 
     /**
-     * Transfer a fungible asset from one account to another.
+     * Migrates the sender's balance of a coin type from its `CoinStore` resource to the primary fungible store of the
+     * paired fungible asset (`0x1::coin::migrate_to_fungible_store`). The coin store is removed; the balance is
+     * unchanged as reported by `0x1::coin::balance` and is available to fungible asset transfers afterwards. The
+     * transaction aborts when the chain has the migration disabled or the coin type has no coin info.
+     * @param args.senderAccount - The account whose balance is migrated.
+     * @param args.coinType - The coin type to migrate. Defaults to SUPRA, `0x1::supra_coin::SupraCoin`.
+     * @param args.optionalTransactionArgs - Optional transaction arguments. The gas settings in
+     * `optionalTransactionPayloadArgs` apply to the transaction; without `maxGas` it is estimated
+     * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
+     * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
+     * errors of a submission.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    const transactionResponse = await supra.fungibleAsset.migrateCoinToFungibleStore({
+     *        senderAccount: senderAccount,
+     *        optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+     *    });
+     *    console.log(transactionResponse);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group FungibleAsset
+     */
+    async migrateCoinToFungibleStore(
+        args: {
+            senderAccount: SupraAccount,
+            coinType?: MoveFunctionId,
+            optionalTransactionArgs?: OptionalTransactionArgs,
+        }
+    ): Promise<SubmitTransactionResponse> {
+        if (args.coinType !== undefined) {
+            validateStructId(args.coinType, "coinType");
+        }
+        return retryWithFreshSequenceNumber(
+            args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
+            () => migrateCoinToFungibleStoreInternal(args, this.networkInformation),
+        );
+    }
+
+    /**
+     * Transfer a fungible asset from one account to another (`0x1::primary_fungible_store::transfer`). When
+     * `assetAddress` is the SUPRA fungible asset (`0xa`) the method behaves as {@link transferSupraFungibleAsset}:
+     * it throws {@link SupraInsufficientFungibleAssetBalanceError} without submitting when the sender's fungible
+     * asset balance is below `amount`.
      * @param args.senderAccount - The account sending the coin.
      * @param args.receiverAccountAddress - The address of the account receiving the coin.
      * @param args.amount - The amount of the coin to transfer.

@@ -287,12 +287,10 @@ const SUBMIT_PATHS: Array<
             }),
     ],
     [
-        "fungibleAsset.transferSupraFungibleAsset",
+        "fungibleAsset.migrateCoinToFungibleStore",
         (options) =>
-            supra.fungibleAsset.transferSupraFungibleAsset({
+            supra.fungibleAsset.migrateCoinToFungibleStore({
                 senderAccount: new SupraAccount(),
-                receiverAccountAddress: new SupraAccount().address().toString(),
-                amount: 1n,
                 optionalTransactionArgs: {
                     optionalTransactionPayloadArgs: GAS,
                     enableTransactionWaitAndSimulationArgs: options,
@@ -300,13 +298,14 @@ const SUBMIT_PATHS: Array<
             }),
     ],
     [
+        // Not the SUPRA fungible asset: a transfer of SUPRA reads the sender's balances before it submits.
         "fungibleAsset.transferFungibleAsset",
         (options) =>
             supra.fungibleAsset.transferFungibleAsset({
                 senderAccount: new SupraAccount(),
                 receiverAccountAddress: new SupraAccount().address().toString(),
                 amount: 1n,
-                assetAddress: "0x" + "0".repeat(63) + "a",
+                assetAddress: "0x" + "0".repeat(63) + "b",
                 optionalTransactionArgs: {
                     optionalTransactionPayloadArgs: GAS,
                     enableTransactionWaitAndSimulationArgs: options,
