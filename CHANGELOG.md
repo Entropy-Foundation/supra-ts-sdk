@@ -263,6 +263,11 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   SUPRA fungible asset address, and `resetSequenceNumber` finds the counter of such an address.
 - **Breaking:** `getTransactionByHash`, `waitForTransaction` and `isPendingTransaction` require a transaction hash of
   `0x` followed by exactly 64 hex digits. A longer or shorter value is rejected before any request.
+- **Breaking:** `getAccountModule` requires `moduleName` to be a Move identifier, and the resource, event and coin
+  type arguments of the account, event, coin and fungible asset methods require the module and struct names of the
+  type to be Move identifiers (a letter or underscore, then letters, digits and underscores). Other values are
+  rejected before any request. The resource and event type and the module name are percent-encoded in the request
+  path.
 
 ### Fixed
 
