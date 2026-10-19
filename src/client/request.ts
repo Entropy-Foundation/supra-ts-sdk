@@ -85,10 +85,15 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Validates the request timeout of a client configuration. */
+/** The largest delay that a timer, and so `AbortSignal.timeout`, honours: 2^31 - 1 milliseconds. */
+const MAX_TIMER_MS = 2_147_483_647;
+
+/** Validates the request timeout of a client configuration: an integer from 1 to 2^31 - 1 milliseconds. */
 export function validateTimeoutMs(timeoutMs: number): number {
-    if (!Number.isInteger(timeoutMs) || timeoutMs < 1) {
-        throw new RangeError(`timeoutMs must be a positive integer number of milliseconds, got ${timeoutMs}`);
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMER_MS) {
+        throw new RangeError(
+            `timeoutMs must be an integer number of milliseconds from 1 to ${MAX_TIMER_MS}, got ${timeoutMs}`,
+        );
     }
     return timeoutMs;
 }

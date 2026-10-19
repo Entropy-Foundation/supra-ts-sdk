@@ -17,7 +17,7 @@ export interface RetryConfig {
 /**
  * The SupraConfig interface is used to configure the SupraClient class.
  * You can set maxGas and minGasUnitPrice if you want to override global default values.
- * `timeoutMs` sets the timeout of each request (default 30000 ms); a request that exceeds it throws
+ * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`. `retry` turns on retries of GET requests; it is off by default.
  */
 export type SupraConfig =

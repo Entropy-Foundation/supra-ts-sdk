@@ -22,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SupraTimeoutError` and `SupraNetworkError` replace the raw `DOMException` and `TypeError` of a request that times
   out or fails before the node answers; the original error is their `cause`. `SupraError` is the base class of all of
   them and of the faucet errors.
-- **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms) for predefined networks and custom
-  configurations.
+- **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms; an integer up to 2147483647) for predefined
+  networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`) turns on retries of GET requests that fail with 429, 503 or a
   connection failure, honouring the node's `retry_after_seconds` / `Retry-After`. It is off by default; POST requests
   are never retried.

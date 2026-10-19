@@ -73,8 +73,8 @@ describe("SupraClient", () => {
             expect(plain.networkInformation.retry).toBeUndefined();
         });
 
-        it("should reject a timeout that is not a positive integer", () => {
-            for (const timeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        it("should reject a timeout that is not an integer from 1 to 2^31 - 1", () => {
+            for (const timeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 31, 2 ** 32]) {
                 expect(() => new SupraClient({ network: Network.TESTNET, timeoutMs })).toThrow(RangeError);
             }
         });
