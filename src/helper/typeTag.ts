@@ -138,12 +138,32 @@ function describeToken(token: TypeToken | undefined): string {
  * followed by 1 to 64 hex digits; whitespace between tokens is allowed, and so is a comma after the last type
  * parameter. A struct type keeps its address, module, name and type parameters, so
  * `0x1::object::Object<0x1::fungible_asset::Metadata>` is the struct `Object` with the type parameter `Metadata`.
+ * The SDK parses type argument strings with this function; use it to build the `TypeTag`s of builders that take
+ * `TypeTag`s, such as `transaction.build.rawTxnObject`. `TypeTagParser` of `supra-l1-sdk-core` parses
+ * `0x1::object::Object<T>` as `address` and refuses names that contain `T` followed by digits, such as `USDT0`.
  *
  * @param input - The type string, for example `0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>`.
  * @returns The `TypeTag` of the type.
  * @throws Error when the string is not exactly one type: text after the type, an unknown type name, a generic type
  *   parameter such as `T0` (type arguments are concrete types), an address of more than 64 hex digits, or nesting
  *   deeper than nodes accept.
+ * @example
+ * ```typescript
+ * import { BCS, Network, SupraAccount, SupraClient, parseTypeArgument } from "supra-ts-sdk";
+ *
+ * const supra = new SupraClient({ network: Network.TESTNET });
+ * const sender = new SupraAccount(); // the signing account
+ *
+ * const rawTxn = supra.transaction.build.rawTxnObject({
+ *     senderAddress: sender.address(),
+ *     senderSequenceNumber: 0n, // the account's sequence number, obtained separately
+ *     function: "0x1::supra_account::transfer_coins",
+ *     functionTypeArgs: [parseTypeArgument("0x1::supra_coin::SupraCoin")],
+ *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
+ *     optionalTransactionPayloadArgs: { maxGas: 5_000n },
+ * });
+ * const metadata = parseTypeArgument("0x1::object::Object<0x1::fungible_asset::Metadata>"); // a struct type tag
+ * ```
  */
 export function parseTypeArgument(input: string): TxnBuilderTypes.TypeTag {
     const fail = (reason: string): never => {

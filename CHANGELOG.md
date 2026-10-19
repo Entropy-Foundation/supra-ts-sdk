@@ -77,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction that depends on an earlier uncommitted one fails its estimate and needs `maxGas`.
 - **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
   without a request.
+- **`parseTypeArgument`** is exported. It parses a Move type string into a `TypeTag` with the grammar of the node's type
+  parser, as the SDK does for type argument strings: `0x1::object::Object<T>` stays the struct `Object<T>`, and names
+  that contain `T` followed by digits are accepted. Use it for the `TypeTag`s of `transaction.build.rawTxnObject` and
+  the other builders that take `TypeTag`s, where `TypeTagParser` turns `Object<T>` into `address`.
 - **`stringifyWithBigInt`** is exported. It serializes a value whose `bigint` fields (for example the result of
   `transaction.build.sendTxnPayload`) `JSON.stringify` rejects, writing them as exact JSON numbers.
 - **`fungibleAsset.migrateCoinToFungibleStore({ senderAccount, coinType?, optionalTransactionArgs? })`** submits

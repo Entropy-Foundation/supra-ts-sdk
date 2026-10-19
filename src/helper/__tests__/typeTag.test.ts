@@ -1,4 +1,5 @@
 import { BCS, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import * as packageRoot from "../../index";
 import { parseTypeArgument, typeTagToJSON, typeTagToString } from "../typeTag";
 
 const LONG_ONE = "0x0000000000000000000000000000000000000000000000000000000000000001";
@@ -124,6 +125,12 @@ describe("typeTagToJSON", () => {
 describe("parseTypeArgument", () => {
     const bcs = (tag: TxnBuilderTypes.TypeTag) => Array.from(BCS.bcsToBytes(tag));
     const nested = (levels: number) => `${"vector<".repeat(levels)}u8${">".repeat(levels)}`;
+
+    it("is exported from the package root", () => {
+        expect(packageRoot.parseTypeArgument).toBe(parseTypeArgument);
+        const tag = packageRoot.parseTypeArgument("0x1::object::Object<0x1::fungible_asset::Metadata>");
+        expect(tag).toBeInstanceOf(TxnBuilderTypes.TypeTagStruct);
+    });
 
     it.each(PRIMITIVES)("parses %s", (type, tag) => {
         expect(parseTypeArgument(type)).toBeInstanceOf(tag.constructor);
