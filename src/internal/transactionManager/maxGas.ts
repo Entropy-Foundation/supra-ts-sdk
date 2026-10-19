@@ -181,8 +181,9 @@ function isSequenceNumberTooNew(error: SupraSimulationFailedError): boolean {
  * with the same payload, gas unit price, expiry and chain ID. When the chain moved between the read and the
  * simulation, the number is read again, once more. An earlier transaction that committed since the balance was read
  * lowers the balance below `max gas × gas unit price`; the simulation then runs with the largest max gas that the new
- * balance pays for. Returns `undefined` when the result says nothing about the transaction (the sequence number is
- * stale both times, the account or the balance cannot be read, the request fails). A simulation that fails for another
+ * balance pays for. Returns `undefined` when the result says nothing about the transaction (the chain's number is
+ * above the transaction's, the sequence number is stale both times, the account or the balance cannot be read, the
+ * request fails). A simulation that fails for another
  * reason throws its `SupraSimulationFailedError`.
  */
 async function simulateAtChainSequenceNumber(
@@ -206,10 +207,11 @@ async function simulateAtChainSequenceNumber(
         } catch {
             return undefined;
         }
-        if (chainSequenceNumber >= BigInt(rawTxn.sequence_number)) {
-            // The chain has reached the transaction's number: this simulation says nothing about the transaction.
+        if (chainSequenceNumber > BigInt(rawTxn.sequence_number)) {
+            // The chain has passed the transaction's number: a simulation says nothing about the transaction.
             return undefined;
         }
+        // At an equal number the transaction is the account's next one, and the simulation runs with its own number.
         const atChainNumber = new TxnBuilderTypes.RawTransaction(
             rawTxn.sender,
             chainSequenceNumber,

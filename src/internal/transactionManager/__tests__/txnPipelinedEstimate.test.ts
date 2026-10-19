@@ -242,6 +242,45 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         expect(submissions.at(-1)).toMatchObject({ sequenceNumber: 4, maxGas: 6_000 });
     });
 
+    it("simulates at the transaction's own number when the chain reached it after the first simulation", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        simulations = [];
+        submissions = [];
+        // The first simulation of the second transaction (number 4) is too new; the earlier transaction then commits
+        // and the chain's number is 4.
+        let calls = 0;
+        simulate = (sequenceNumber) => {
+            calls += 1;
+            if (calls === 1) {
+                return tooNew();
+            }
+            return sequenceNumber === 4 ? gasUsed(4_000) : tooOld();
+        };
+        chainSequenceNumbers = [4];
+
+        await transfer(supra, sender);
+
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 4]);
+        expect(submissions.at(-1)).toMatchObject({ sequenceNumber: 4, maxGas: 6_000 });
+    });
+
+    it("falls back to DEFAULT_MAX_GAS_UNITS when the chain's number is above the transaction's", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        simulations = [];
+        submissions = [];
+        simulate = () => tooNew();
+        chainSequenceNumbers = [5];
+
+        await transfer(supra, sender);
+
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4]);
+        expect(submissions.at(-1)).toMatchObject({ sequenceNumber: 4, maxGas: Number(DEFAULT_MAX_GAS_UNITS) });
+    });
+
     it("simulates with what the new balance pays for when an earlier transaction committed after the balance was read", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
