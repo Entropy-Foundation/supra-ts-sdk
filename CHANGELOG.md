@@ -96,6 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the transaction and the read that follows fails, they return `{ hash, status: "NotReadBack", readError }`; they threw
   the read's error, which did not carry the hash.
 - **Breaking:** `isPendingTransaction` returns true for `PendingAfterExecution` as well as `Pending`.
+- **Breaking:** `getTransactionByHash`, `waitForTransaction` and `isPendingTransaction` require a transaction hash of
+  `0x` followed by exactly 64 hex digits. A longer or shorter value is rejected before any request.
 
 ### Fixed
 
