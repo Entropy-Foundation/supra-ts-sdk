@@ -57,16 +57,22 @@ export async function submitTxnInternal(
         if (options.waitTimeoutMs !== undefined) {
             waitOptions.timeoutMs = options.waitTimeoutMs;
         }
-        try {
-            return await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
-        } catch (error) {
-            // A discarded transaction does not use its sequence number, so the counter may be ahead of the chain.
-            if (
-                reservation !== undefined &&
-                error instanceof SupraTransactionFailedError &&
-                error.status === TransactionStatus.Invalid
-            ) {
+        // A discarded transaction does not use its sequence number, so the counter may be ahead of the chain. The
+        // outcome is `Invalid` whether the wait returns the transaction (`checkSuccess: false`) or throws.
+        const invalidated = () => {
+            if (reservation !== undefined) {
                 sequenceNumberTrackerOf(config).invalidate(reservation.address);
+            }
+        };
+        try {
+            const transaction = await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
+            if (transaction.status === TransactionStatus.Invalid) {
+                invalidated();
+            }
+            return transaction;
+        } catch (error) {
+            if (error instanceof SupraTransactionFailedError && error.status === TransactionStatus.Invalid) {
+                invalidated();
             }
             throw error;
         }

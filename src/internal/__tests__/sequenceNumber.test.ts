@@ -408,6 +408,28 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(accountReads).toBe(2);
     });
 
+    it("reads the chain again after a discarded transaction that checkSuccess false returns", async () => {
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
+        const sender = new SupraAccount();
+        finalStatus = TransactionStatus.Invalid;
+
+        const result = await supra.coin.transferSupraCoin({
+            senderAccount: sender,
+            receiverAccountAddress: RECEIVER,
+            amount: 1n,
+            optionalTransactionArgs: {
+                optionalTransactionPayloadArgs: GAS,
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true, checkSuccess: false },
+            },
+        });
+        expect(result.status).toBe(TransactionStatus.Invalid);
+        finalStatus = TransactionStatus.Success;
+        await transfer(supra, sender);
+
+        expect(submitted).toEqual([7, 7]);
+        expect(accountReads).toBe(2);
+    });
+
     it("keeps the counter after an executed transaction that failed", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
