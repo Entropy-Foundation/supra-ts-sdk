@@ -1,13 +1,12 @@
 import { BCS, HexString, TypeTagParser, type SupraAccount } from "supra-l1-sdk-core";
 import type { AccountAddressInput } from "../types/account";
-import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
+import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
 import { getAccountInfoInternal, getAccountResourceInternal, isAccountExistsInternal } from "./account";
 import type { MoveFunctionId } from "../types/move";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
-import type { TransactionResponse } from "../types/transaction";
 import type { CoinInfo } from "../types/coin";
 
 export async function transferCoinInternal(
@@ -19,7 +18,7 @@ export async function transferCoinInternal(
         optionalTransactionArgs?: OptionalTransactionArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
+): Promise<SubmitTransactionResponse> {
 
     let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
 

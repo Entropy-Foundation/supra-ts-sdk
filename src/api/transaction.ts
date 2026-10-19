@@ -6,7 +6,7 @@ import { Build } from "./transactionManager/txnBuild";
 import { BCS, TxnBuilderTypes, type AnyRawTransaction, type HexString, type SupraAccount } from "supra-l1-sdk-core";
 import { Simulate } from "./transactionManager/txnSimulate";
 import { Submit } from "./transactionManager/txnSubmit";
-import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
+import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import sha3 from "js-sha3";
 import { validateTransactionHash } from "../helper/validation";
 
@@ -86,10 +86,11 @@ export class Transaction {
 
 
     /**
-    * Queries on-chain transactions by their transaction hash, returning both transactions status.
+    * Reads a transaction by its hash and tells whether it has no final status yet.
     * @param args - The arguments for querying the transaction.
     * @param args.transactionHash - The transaction hash should be a hex-encoded bytes string with a 0x prefix.
-    * @returns A Promise that resolves to a boolean.
+    * @returns A Promise that resolves to true when the status is `Pending` or `PendingAfterExecution`, and to false
+    * when it is `Success`, `Fail` or `Invalid`.
     * @example
     * ```typescript
     * import {Supra, Network} from "supra-l1-sdk";
@@ -112,11 +113,33 @@ export class Transaction {
     }
 
     /**
-     * Queries on-chain transactions by their transaction hash, returning both pending and committed transactions.
+     * Waits until a transaction has a final status and returns it.
+     *
+     * Statuses of a transaction:
+     * - `Pending`: the RPC node accepted the transaction and it is not executed yet. Not final.
+     * - `PendingAfterExecution`: the transaction was executed and discarded with a status that may change in a later
+     *   execution (for example `SEQUENCE_NUMBER_TOO_NEW`). Not final. A transaction that keeps this status does not
+     *   commit; it can be submitted again once the cause is resolved.
+     * - `Success`: executed successfully. Final.
+     * - `Fail`: executed and failed (for example a Move abort or `Out of gas`); the sequence number was incremented and
+     *   the gas was charged. Final.
+     * - `Invalid`: discarded, and discarded on every execution; the sequence number was not incremented. Final.
+     *
+     * The transaction is read again while its status is not final and while a read fails, including HTTP 404 for a
+     * transaction the node has not seen yet. The timeout is wall-clock time from the start of the call.
+     *
      * @param args.transactionHash - The transaction hash should be a hex-encoded bytes string with a 0x prefix.
-     * @param args.options.timeoutSecs - The maximum number of seconds to wait for the transaction to be committed. default: 20 seconds
-     * @param args.options.checkSuccess - Whether to check the success of the transaction.
-     * @returns A Promise that resolves to a CommittedTransactionResponse object.
+     * @param args.options.timeoutMs - The longest time to wait for a final status, in milliseconds. Default
+     * `waitTimeoutMs` of `SupraConfig`, else 60000.
+     * @param args.options.timeoutSecs - Deprecated: the same timeout in seconds. `timeoutMs` takes precedence.
+     * @param args.options.checkSuccess - Throw `SupraTransactionFailedError` for a final status other than `Success`.
+     * Default true.
+     * @returns A Promise that resolves to the transaction with its final status: `Success`, or any final status when
+     * `checkSuccess` is false.
+     * @throws `SupraTransactionFailedError` (with `hash`, `status`, `vm_status`, `major_status`, `sub_status` and
+     * `transaction`) when the final status is `Fail` or `Invalid` and `checkSuccess` is not false.
+     * @throws `SupraTransactionTimeoutError` (with `hash` and `lastStatus`) when there is no final status within the
+     * timeout.
      * @example
      * ```typescript
      * import {Supra, Network} from "supra-l1-sdk";
@@ -231,7 +254,7 @@ export class Transaction {
    * @param args.packageMetadata - Package Metadata
    * @param args.modulesCode - module code
    * @param args.optionalTransactionArgs optional arguments for transaction
-   * @returns `TransactionResponse`
+   * @returns `SubmitTransactionResponse`; {@link Submit} describes the statuses and errors of a submission
    * @example
    * ```typescript
    * import { SupraClient,Network } from "supra-ts-sdk";
@@ -259,7 +282,7 @@ export class Transaction {
             modulesCode: Uint8Array[],
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         return publishPackageInternal(args, this.networkInformation);
     }
 

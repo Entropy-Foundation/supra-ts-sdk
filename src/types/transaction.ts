@@ -342,7 +342,17 @@ export type TransactionQueryType = "user" | "auto" | "meta" | "record";
  * Options for configuring the behavior of the waitForTransaction() function.
  */
 export type WaitForTransactionOptions = {
+    /**
+     * The longest time to wait for a final status, in seconds.
+     * @deprecated Use `timeoutMs`, which takes precedence when both are set.
+     */
     timeoutSecs?: number;
+    /**
+     * The longest time to wait for a final status, in milliseconds. Default `waitTimeoutMs` of `SupraConfig`, else
+     * 60000.
+     */
+    timeoutMs?: number;
+    /** Throw `SupraTransactionFailedError` for a final status other than `Success`. Default true. */
     checkSuccess?: boolean;
 };
 

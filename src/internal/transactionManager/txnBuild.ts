@@ -14,7 +14,7 @@ import { DynamicTransactionSerializer } from "../../utils/serializer";
 import type { TransactionResponse } from "../../types/transaction";
 import { simulateSerializedTxnInternal, simulateTxnInternal } from "./txnSimulate";
 import { submitMultiAgentTransactionInternal, submitSerializedRawTransactionAndSignatureInternal, submitSerializedRawTransactionInternal, submitSponsorTransactionInternal } from "./txnSubmit";
-import type { EnableTransactionWaitAndSimulationArgs } from "../../types/transactionManager/transactionSubmit";
+import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import sha3 from "js-sha3";
 
 
@@ -539,7 +539,8 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     /**
      * Simulate the transaction
      * @param args.senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
-     * @returns `TransactionResponse`
+     * @returns `TransactionResponse` of the simulation, whose status is `Success`
+     * @throws `SupraSimulationFailedError` when the simulated status is not `Success`
      */
     simulate(senderAccountOrAuthenticator: SupraAccount | MoveInnerAuthenticator): Promise<TransactionResponse> {
 
@@ -562,12 +563,12 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     /**
      * Submit the transaction
      * @param args.senderAccount - Sender KeyPair
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      */
     submitTransaction(args: {
         senderAccount: SupraAccount,
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-    }): Promise<TransactionResponse> {
+    }): Promise<SubmitTransactionResponse> {
         return submitSerializedRawTransactionInternal({
             senderAccount: args.senderAccount,
             serializedRawTransaction: BCS.bcsToBytes(this),
@@ -579,13 +580,13 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * Submit the transaction with signature
      * @param args.senderPubkey - Sender ed25519 pubkey
      * @param args.signature - Ed25519 signature
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      */
     submitTransactionAndSignature(args: {
         senderPubkey: HexString,
         signature: HexString,
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-    }): Promise<TransactionResponse> {
+    }): Promise<SubmitTransactionResponse> {
         return submitSerializedRawTransactionAndSignatureInternal({
             serializedRawTransaction: BCS.bcsToBytes(this),
             senderPubkey: args.senderPubkey,
@@ -601,7 +602,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.senderAuthenticator - Sender authenticator
      * @param args.feePayerAuthenticator - Fee payer authenticator
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      */
     submitSponsorTransaction(
         args: {
@@ -612,7 +613,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
             secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
             enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         return submitSponsorTransactionInternal({
             feePayerAddress: args.feePayerAddress,
             secondarySignersAccountAddress: args.secondarySignersAccountAddress,
@@ -629,7 +630,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.secondarySignersAccountAddress - Secondary signers address
      * @param args.senderAuthenticator - Sender authenticator
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      */
     submitMultiAgentTransaction(
         args: {
@@ -638,7 +639,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
             secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
             enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         return submitMultiAgentTransactionInternal({
             secondarySignersAccountAddress: args.secondarySignersAccountAddress,
             senderAuthenticator: args.senderAuthenticator,

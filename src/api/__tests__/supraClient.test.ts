@@ -102,6 +102,21 @@ describe("SupraClient", () => {
             }
         });
 
+        it("should set the wait timeout of a predefined network and of a custom network", () => {
+            const predefined = new SupraClient({ network: Network.DEVNET, waitTimeoutMs: 15_000 });
+            const custom = new SupraClient({ rpcUrl: "https://custom.example.com", chainId: 42, waitTimeoutMs: 0 });
+            const plain = new SupraClient({ network: Network.DEVNET });
+            expect(predefined.networkInformation.waitTimeoutMs).toBe(15_000);
+            expect(custom.networkInformation.waitTimeoutMs).toBe(0);
+            expect(plain.networkInformation.waitTimeoutMs).toBeUndefined();
+        });
+
+        it("should reject a wait timeout that is negative or not finite", () => {
+            for (const waitTimeoutMs of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+                expect(() => new SupraClient({ network: Network.TESTNET, waitTimeoutMs })).toThrow(RangeError);
+            }
+        });
+
         it("should initialize with explicit Network.CUSTOM", () => {
             const client = new SupraClient({
                 network: Network.CUSTOM,

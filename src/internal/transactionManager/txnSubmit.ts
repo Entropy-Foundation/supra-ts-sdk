@@ -1,11 +1,11 @@
 import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import type { TransactionResponse } from "../../types/transaction";
+import type { WaitForTransactionOptions } from "../../types/transaction";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
-import type { EnableTransactionWaitAndSimulationArgs } from "../../types/transactionManager/transactionSubmit";
+import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import { DEFAULT_ENABLE_SIMULATION, DEFAULT_TXN_TIMEOUT_SEC } from "../../utils/constants";
-import { getTransactionByHashInternal, waitForTransactionInternal } from "../transaction";
+import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../../utils/constants";
+import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateTxnInternal } from "./txnSimulate";
 import { getRawTxnJSONInternal, sendTxnPayloadInternal } from "./txnBuild";
@@ -18,31 +18,37 @@ export async function submitTxnInternal(
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
-    if (
-        (args.enableTransactionWaitAndSimulationArgs?.enableTransactionSimulation ??
-            DEFAULT_ENABLE_SIMULATION) === true
-    ) {
+): Promise<SubmitTransactionResponse> {
+    const options = args.enableTransactionWaitAndSimulationArgs ?? {};
+    if (options.waitTimeoutMs !== undefined) {
+        validateWaitTimeoutMs(options.waitTimeoutMs, "waitTimeoutMs");
+    }
+
+    // A failed simulation throws, so the transaction is not submitted.
+    if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
         await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
     }
 
-    let txHash = await post<SendTxnPayload, string>({
+    const txHash = await post<SendTxnPayload, string>({
         path: "/transactions/submit",
         data: args.sendTxJsonPayload,
-    }, config).then(res => res);
+    }, config);
 
-    // wait for transaction
-    if (!args.enableTransactionWaitAndSimulationArgs?.enableWaitForTransaction) {
-        return await getTransactionByHashInternal({ transactionHash: txHash, exclude_uncommitted: false }, config);
+    // From here on the node has accepted the transaction: the errors of the wait carry `txHash`, and a failed read
+    // returns it.
+    if ((options.enableWaitForTransaction ?? DEFAULT_WAIT_FOR_TX_COMPLETION) === true) {
+        const waitOptions: WaitForTransactionOptions = { checkSuccess: options.checkSuccess ?? true };
+        if (options.waitTimeoutMs !== undefined) {
+            waitOptions.timeoutMs = options.waitTimeoutMs;
+        }
+        return await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
     }
 
-    return await waitForTransactionInternal({
-        transactionHash: txHash,
-        options: {
-            timeoutSecs: DEFAULT_TXN_TIMEOUT_SEC,
-            checkSuccess: false,
-        },
-    }, config);
+    try {
+        return await getTransactionByHashInternal({ transactionHash: txHash, exclude_uncommitted: false }, config);
+    } catch (readError) {
+        return { hash: txHash, status: "NotReadBack", readError };
+    }
 }
 
 
@@ -53,7 +59,7 @@ export async function submitSerializedRawTransactionInternal(
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
+): Promise<SubmitTransactionResponse> {
     let sendTxPayload = sendTxnPayloadInternal(
         {
             senderAccount: args.senderAccount,
@@ -81,7 +87,7 @@ export async function submitSerializedRawTransactionAndSignatureInternal(
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
+): Promise<SubmitTransactionResponse> {
     let sendTxPayload = {
         Move: {
             raw_txn: getRawTxnJSONInternal(
@@ -119,7 +125,7 @@ export async function submitSponsorTransactionInternal(
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
+): Promise<SubmitTransactionResponse> {
     let secondarySignersAuthenticatorJSON: Array<Ed25519Signature> = [];
     args.secondarySignersAuthenticator.forEach((authenticator) => {
         secondarySignersAuthenticatorJSON.push(
@@ -161,7 +167,7 @@ export async function submitMultiAgentTransactionInternal(
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
+): Promise<SubmitTransactionResponse> {
     let secondarySignersAuthenticatorJSON: Array<Ed25519Signature> = [];
     args.secondarySignersAuthenticator.forEach((authenticator) => {
         secondarySignersAuthenticatorJSON.push(

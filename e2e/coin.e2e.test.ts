@@ -1,4 +1,4 @@
-import type { SupraAccount, TransactionResponse } from "../src/index";
+import type { SubmitTransactionResponse, SupraAccount } from "../src/index";
 import { TransactionStatus } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
@@ -9,7 +9,10 @@ import { explicitGas } from "./helpers/transfers";
 const AMOUNT = 12_345n;
 
 /** The Quants the transaction cost its sender, from the node's report of it. */
-function feeOf(txn: TransactionResponse): bigint {
+function feeOf(txn: SubmitTransactionResponse): bigint {
+    if (txn.status === "NotReadBack") {
+        throw new Error("The transaction was not read back");
+    }
     const output = txn.output;
     if (output === null || !("Move" in output)) {
         throw new Error("The transaction has no Move output");

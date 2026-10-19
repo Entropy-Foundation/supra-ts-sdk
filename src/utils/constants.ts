@@ -20,7 +20,11 @@ export const DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS = 1020;
 export const RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 export const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 export const DEFAULT_RPC_VERSION = "v3"
-export const DEFAULT_TXN_TIMEOUT_SEC = 20;
+/**
+ * Longest time, in milliseconds, that a wait for a transaction's final status lasts when neither the call nor
+ * `SupraConfig.waitTimeoutMs` sets one.
+ */
+export const DEFAULT_TXN_WAIT_TIMEOUT_MS = 60000;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 /** Requests (the first included) a retrying client sends before it gives up, when `retry.attempts` is not set. */
 export const DEFAULT_RETRY_ATTEMPTS = 3;

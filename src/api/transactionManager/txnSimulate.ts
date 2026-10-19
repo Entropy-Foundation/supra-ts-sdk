@@ -34,9 +34,13 @@ export class Simulate {
 
 
     /**
-     * Simulate a transaction using the provided transaction payload
-     * @param args.sendTxPayload -  Transaction payload 
-     * @returns Transaction simulation result
+     * Simulate a transaction using the provided transaction payload.
+     * The request carries a copy of the payload with zero signatures; `args.sendTxPayload` is not modified.
+     * @param args.sendTxPayload -  Transaction payload
+     * @returns Transaction simulation result, whose status is `Success`
+     * @throws `SupraSimulationFailedError` when the simulated status is `Fail`, `PendingAfterExecution` (validation
+     * failed, for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or `SEQUENCE_NUMBER_TOO_NEW`) or `Invalid`; the error
+     * carries the simulated transaction and its `vm_status`
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -63,7 +67,8 @@ export class Simulate {
      * Simulate a transaction using the provided Serialized raw transaction data
      * @param args.txAuthenticator - Transaction authenticator
      * @param args.serializedRawTransaction - Serialized raw transaction data
-     * @returns Transaction simulation result
+     * @returns Transaction simulation result, whose status is `Success`
+     * @throws `SupraSimulationFailedError` when the simulated status is not `Success`, as for {@link Simulate.simple}
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";

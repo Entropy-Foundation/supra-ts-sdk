@@ -30,14 +30,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SupraAPIError.sub_status`** is the abort code of an `ABORTED` status. `parseVmStatus` is exported.
 - `MoveVmError` lists the validation, verification, invariant and runtime statuses that clients commonly handle,
   including `ABORTED`, `MISSING_DATA`, `TYPE_RESOLUTION_FAILURE`, `LOOKUP_FAILED` and `MAX_GAS_UNITS_*`.
+- **Transaction outcome errors.** `SupraTransactionFailedError` (a transaction the SDK waited for ended with `Fail` or
+  `Invalid`; carries `hash`, `status`, `vm_status`, `major_status`, `sub_status` and `transaction`),
+  `SupraSimulationFailedError` (a simulation returned a status other than `Success`; carries `status`, `vm_status`,
+  `major_status`, `sub_status` and `transaction`) and `SupraTransactionTimeoutError` (no final status within the wait
+  timeout; carries `hash`, `timeoutMs`, `lastStatus`, `transaction` and the last read error as `cause`). All three
+  extend `SupraError`.
+- **`SupraConfig.waitTimeoutMs`** sets how long `waitForTransaction` and submissions with `enableWaitForTransaction`
+  wait for a final status (default `DEFAULT_TXN_WAIT_TIMEOUT_MS`, 60000 ms).
+- **`enableTransactionWaitAndSimulationArgs.waitTimeoutMs`** and **`checkSuccess`** set the wait timeout of one
+  submission and whether a `Fail` or `Invalid` outcome throws (default true).
+- **`WaitForTransactionOptions.timeoutMs`** sets the wait timeout of one `waitForTransaction` call in milliseconds.
+  `timeoutSecs` is deprecated and still honoured; `timeoutMs` takes precedence.
+- **`SubmitTransactionResponse`** and **`NotReadBackTransactionResponse`** types.
 
 ### Changed
 
 - **Breaking:** `SupraAPIError.message` is the node's `message` when the error body has one (for example
   `General err: MoveTransactionValidationFailed(0x…, 0, SEQUENCE_NUMBER_TOO_OLD)`), otherwise the HTTP status text.
   It was always the status text. `statusText` and `data` are unchanged.
-- **Breaking:** `SupraAPIError.major_status` is the name of the Move VM status that the message reports (view errors,
-  submit validation errors, and the `vm_status` of a failed simulation), and `undefined` when the message names none.
+- **Breaking:** `SupraAPIError.major_status` is the name of the Move VM status that the message reports (view errors
+  and submit validation errors), and `undefined` when the message names none.
   It was `"unknown"` for every error. `toJSON()` also returns `message` and `sub_status`.
 - **Breaking:** `MoveVmError` follows the Move VM `StatusCode` names: `MOVE_ABORT`, which is not a VM status, is
   removed (`ABORTED` replaces it), the description of `OUT_OF_GAS` is corrected, and the link to an unrelated
@@ -63,6 +76,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `fundAccountWithFaucet` throws `SupraFaucetUnavailableError` or `SupraFaucetResponseError` where it
   returned `{ hash: undefined }`.
 - The `SupraConfig` type accepts `Network.DEVNET` alongside `Network.MAINNET` and `Network.TESTNET`.
+
+- **Breaking:** a submission with `enableWaitForTransaction: true` throws `SupraTransactionFailedError` when the
+  transaction ends with `Fail` or `Invalid`, unless `checkSuccess: false` is passed. It resolved with the failed
+  transaction. This applies to every submit helper: `transaction.submit.*`, the submit methods of a built transaction,
+  `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
+  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI`.
+- **Breaking:** a simulation throws `SupraSimulationFailedError` for every status other than `Success`, including
+  `PendingAfterExecution` (for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or `SEQUENCE_NUMBER_TOO_NEW`) and `Invalid`.
+  It threw a `SupraAPIError` with status 400 for `Fail` only. With `enableTransactionSimulation: true`, a failed
+  simulation means the transaction is not submitted.
+- **Breaking:** `waitForTransaction` and submissions with `enableWaitForTransaction` keep waiting while the status is
+  `Pending` or `PendingAfterExecution` and while a read fails (including HTTP 404 for a transaction the node has not
+  seen yet), until the wait timeout measured in wall-clock time. A timeout throws `SupraTransactionTimeoutError`, and a
+  `Fail` or `Invalid` outcome throws `SupraTransactionFailedError`; both threw a `SupraAPIError` with status 500. The
+  default timeout is 60 seconds; submissions used 20 seconds.
+- **Breaking:** the submit helpers listed above return `SubmitTransactionResponse`
+  (`TransactionResponse | NotReadBackTransactionResponse`). Without `enableWaitForTransaction`, when the node accepts
+  the transaction and the read that follows fails, they return `{ hash, status: "NotReadBack", readError }`; they threw
+  the read's error, which did not carry the hash.
+- **Breaking:** `isPendingTransaction` returns true for `PendingAfterExecution` as well as `Pending`.
+
+### Fixed
+
+- `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
+  signatures were replaced with zeros when the simulation request failed.
+
+### Removed
+
+- **Breaking:** `DEFAULT_TXN_TIMEOUT_SEC`; `DEFAULT_TXN_WAIT_TIMEOUT_MS` replaces it.
 
 ## [1.2.0] - 2026-09-22
 

@@ -1,8 +1,7 @@
 import type { SupraAccount } from "supra-l1-sdk-core";
 import type { AccountAddressInput } from "../types/account";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
-import type { TransactionResponse } from "../types/transaction";
+import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { getCoinInfoInternal, transferCoinInternal } from "../internal/coin";
 import type { MoveFunctionId } from "../types/move";
 import type { CoinInfo } from "../types/coin";
@@ -68,7 +67,8 @@ export class Coin {
      * @param args.receiverAccountAddress - The address of the account receiving the SupraCoin.
      * @param args.amount - The amount of SupraCoin to transfer.
      * @param args.optionalTransactionArgs - Optional transaction arguments.
-     * @returns A Promise that resolves to a TransactionResponse object.
+     * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
+     * errors of a submission.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -93,7 +93,7 @@ export class Coin {
             amount: number | bigint,
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
         return transferCoinInternal({
@@ -109,7 +109,8 @@ export class Coin {
      * @param args.amount - The amount of the coin to transfer.
      * @param args.coinType - The type of the coin to transfer.
      * @param args.optionalTransactionArgs - Optional transaction arguments.
-     * @returns A Promise that resolves to a TransactionResponse object.
+     * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
+     * errors of a submission.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -136,7 +137,7 @@ export class Coin {
             coinType: MoveFunctionId,
             optionalTransactionArgs?: OptionalTransactionArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
         validateStructId(args.coinType, "coinType");
