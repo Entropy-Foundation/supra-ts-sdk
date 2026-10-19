@@ -14,6 +14,11 @@ jest.mock("../../client/get", () => ({
     get: jest.fn(),
 }));
 
+// getAccountCoinsCount checks for a SUPRA primary fungible store when the account has no SUPRA coin store.
+jest.mock("../methods", () => ({
+    viewInternal: jest.fn().mockResolvedValue([false]),
+}));
+
 import { get } from "../../client/get";
 const mockGet = get as jest.MockedFunction<typeof get>;
 
