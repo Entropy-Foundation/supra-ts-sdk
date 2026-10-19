@@ -39,9 +39,10 @@
     "dev": "tsup --watch",
     "test": "jest",
     "test:watch": "jest --watch",
-    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
+    "test:e2e": "jest --config jest.e2e.config.js",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"e2e/**/*.ts\" \"scripts/**/*.ts\" --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,json,md}\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
     "typecheck:examples": "tsc -p examples/tsconfig.json",
     "doc": "typedoc --out docs src/index.ts --sort source-order --sort instance-first --readme README.md"
   },
