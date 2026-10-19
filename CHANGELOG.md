@@ -130,7 +130,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   repository is removed.
 - **Breaking:** `SupraFaucetUnavailableError` and `SupraFaucetResponseError` extend `SupraError`; they are still not
   `SupraAPIError`s and keep their names.
-- **Breaking:** a request that times out or fails before the node answers rejects with `SupraTimeoutError` or
+- **Breaking:** a request that times out or fails before the node answers, or whose response body cannot be read,
+  rejects with `SupraTimeoutError` or
   `SupraNetworkError` instead of a raw `DOMException` or `TypeError`.
 - **Breaking:** a submission with `enableWaitForTransaction: true` throws `SupraTransactionFailedError` when the
   transaction ends with `Fail` or `Invalid`, unless `checkSuccess: false` is passed. It resolved with the failed
