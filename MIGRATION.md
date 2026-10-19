@@ -309,6 +309,13 @@ async function senderOf(transactionHash: string): Promise<string | undefined> {
 }
 ```
 
+### `standardizeAddress` lower-cases and throws `RangeError`
+
+`standardizeAddress` returns the hex digits in lower case. Code that compares its result with an upper-case address
+must lower-case the other side. An address of more than 64 hex digits throws a `RangeError`; it threw a
+`SupraAPIError` with status 400 and an empty `url`. Code that caught the `SupraAPIError` of an invalid address must
+catch `RangeError`.
+
 ## Gas
 
 ### The max gas is estimated

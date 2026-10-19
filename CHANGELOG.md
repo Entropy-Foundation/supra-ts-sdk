@@ -258,6 +258,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - The examples `buildTransaction.ts` and `submitTransaction.ts` read a fresh sequence number for each transaction
   (they reused the number of the first one), use the client's RPC URL for the raw HTTP request, and take the
   automation gas price cap from the network's minimum gas unit price.
+- **Breaking:** `standardizeAddress` returns lower-case hex, and throws a `RangeError` for an address of more than 64
+  hex digits instead of a `SupraAPIError` with status 400 that no node sent. An address in upper case now matches the
+  SUPRA fungible asset address, and `resetSequenceNumber` finds the counter of such an address.
 
 ### Fixed
 
