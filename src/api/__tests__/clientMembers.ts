@@ -39,6 +39,7 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     getAccountCoinsCount: true,
     getAccountSupraCoinBalance: true,
     getAccountCoinBalance: true,
+    getAccountSupraBalance: true,
     isPendingTransaction: true,
     waitForTransaction: true,
     getTransactionSignatureMessage: true,
@@ -59,6 +60,7 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     getFungibleAssetMetadata: true,
     transferSupraFungibleAsset: true,
     transferFungibleAsset: true,
+    migrateCoinToFungibleStore: true,
 };
 
 /** `build`, `simulate` and `submit` are members of `supra.transaction`, not of the client. */
