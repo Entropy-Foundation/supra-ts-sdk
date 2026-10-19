@@ -482,6 +482,8 @@ console.log((await offline.getChainId()).value);
   throw before any request. Pass a `number`, a `bigint` or a trimmed decimal string.
 - `methods.view` sends an `Option<u8>` argument as the hex of the byte, which is what the node reads. Pass the number
   (`16`); code that converted it to a string to work around the old encoding passes the number instead.
+- A `bool` argument of a view is a boolean, `"true"` or `"false"`. Other values, such as `0`, `1` or `"0"`, throw
+  before any request; `"false"` and `"0"` were sent as `true`. Pass a boolean.
 - `address` and `0x1::object::Object<T>` arguments of entry functions and views are a string or a `HexString` with
   1 to 64 hex digits after an optional `0x`. `""` and `"0x"`, which entry functions encoded as the address `0x0`, and
   values of other types throw before any request. Pass `"0x0"` for the zero address.
