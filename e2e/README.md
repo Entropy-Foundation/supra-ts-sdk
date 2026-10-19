@@ -20,7 +20,7 @@ every test is skipped and the run prints a message saying so.
 | `SUPRA_E2E_RPC_URL` | Base URL of the RPC service. Required. |
 | `SUPRA_E2E_ALLOW_PUBLIC` | Set to `1` to run against Devnet (chain ID 50). |
 | `SUPRA_E2E_FAUCET_PATH` | Faucet path, with `{address}` for the account. Default `/rpc/v3/wallet/faucet/{address}`. |
-| `SUPRA_E2E_TEST_TIMEOUT_MS` | Timeout of each test in milliseconds. Default 90000. |
+| `SUPRA_E2E_TEST_TIMEOUT_MS` | Timeout of each test in milliseconds. Default 240000. Funding and commit waits time out after 180 s, the faucet transaction's expiry. |
 
 The chain ID is read from the node. The run is refused when it is 6 (Testnet) or 8 (Mainnet), and when it
 is 50 (Devnet) unless `SUPRA_E2E_ALLOW_PUBLIC=1`.

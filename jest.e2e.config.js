@@ -17,7 +17,7 @@ const config = {
     },
     globalSetup: "<rootDir>/e2e/globalSetup.ts",
     testPathIgnorePatterns: ["/node_modules/", "/dist/"],
-    testTimeout: Number(process.env.SUPRA_E2E_TEST_TIMEOUT_MS ?? 90_000),
+    testTimeout: Number(process.env.SUPRA_E2E_TEST_TIMEOUT_MS ?? 240_000),
     // Test files share one localnet and one faucet; running them one after another keeps
     // faucet rate limits and sequence numbers predictable.
     maxWorkers: 1,

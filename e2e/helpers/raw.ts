@@ -58,7 +58,7 @@ export async function pollUntil<T>(
     description: string,
     read: () => Promise<T>,
     done: (value: T) => boolean,
-    timeoutMs = 60_000,
+    timeoutMs = 180_000,
     intervalMs = 500,
 ): Promise<T> {
     const deadline = Date.now() + timeoutMs;
@@ -84,7 +84,7 @@ export async function pollUntil<T>(
 }
 
 /** Waits until the node reports the transaction as committed, and returns the node's JSON for it. */
-export async function rawWaitForCommit(ctx: E2EContext, hash: string, timeoutMs = 60_000): Promise<RawTransaction> {
+export async function rawWaitForCommit(ctx: E2EContext, hash: string, timeoutMs = 180_000): Promise<RawTransaction> {
     return pollUntil(
         `transaction ${hash} to commit`,
         async () => {

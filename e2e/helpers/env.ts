@@ -9,7 +9,7 @@ import { SupraClient } from "../../src/index";
  *   Mainnet (8) are always refused.
  * - `SUPRA_E2E_FAUCET_PATH`: faucet path relative to the base URL, with `{address}` standing for the
  *   account address. Defaults to `/rpc/v3/wallet/faucet/{address}`.
- * - `SUPRA_E2E_TEST_TIMEOUT_MS`: per-test timeout in milliseconds. Defaults to 90000.
+ * - `SUPRA_E2E_TEST_TIMEOUT_MS`: per-test timeout in milliseconds. Defaults to 240000.
  * - `SUPRA_E2E_CHAIN_ID`: set by the global setup after it has read the chain ID from the node.
  */
 

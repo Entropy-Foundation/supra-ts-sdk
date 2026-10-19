@@ -30,7 +30,7 @@ export function waitForBalance(
     ctx: E2EContext,
     address: string,
     accept: (balance: bigint) => boolean,
-    timeoutMs = 60_000,
+    timeoutMs = 180_000,
 ): Promise<bigint> {
     return pollUntil(`the balance of ${address}`, () => rawSupraBalance(ctx, address), accept, timeoutMs);
 }
