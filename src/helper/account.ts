@@ -1,11 +1,11 @@
 import { HexString } from "supra-l1-sdk-core";
 import type { AccountAddressInput } from "../types/account";
-import { SupraAPIError } from "../errors/apiError";
 
 /**
  * Standardize an address
  * @param address - The address to standardize
- * @returns The standardized address
+ * @returns The standardized address: `0x` followed by 64 lower-case hex digits, padded with leading zeros
+ * @throws {RangeError} When the address has more than 64 hex digits
  * @example
  * ```typescript
  * import { functions } from "supra-l1-sdk";
@@ -17,20 +17,13 @@ import { SupraAPIError } from "../errors/apiError";
  */
 export function standardizeAddress(address: AccountAddressInput): string {
 
-    let accountAddress = typeof address === "string" ? HexString.ensure(address).toString() : address.toString();
+    const accountAddress = typeof address === "string" ? HexString.ensure(address).toString() : address.toString();
 
-    let cleanAddress = accountAddress.replace(/^0x/, "");
+    const cleanAddress = accountAddress.replace(/^0x/i, "").toLowerCase();
 
-    if (cleanAddress.length < 64) {
-        cleanAddress = cleanAddress.padStart(64, "0");
-    }
     if (cleanAddress.length > 64) {
-        throw new SupraAPIError({
-            url: "",
-            status: 400,
-            statusText: `Address ${address} is not a valid address`,
-        });
+        throw new RangeError(`Address ${String(address)} has more than 64 hex digits`);
     }
 
-    return `0x${cleanAddress}`;
+    return `0x${cleanAddress.padStart(64, "0")}`;
 }

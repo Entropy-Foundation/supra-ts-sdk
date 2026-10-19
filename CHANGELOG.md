@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SupraNetworkError` instead of a raw `DOMException` or `TypeError`.
 - Clients of a predefined network no longer share one mutable network configuration: the gas, timeout and retry
   settings of one `SupraClient` no longer reach another client of the same network.
+- **Breaking:** `standardizeAddress` returns lower-case hex, and throws a `RangeError` for an address of more than 64
+  hex digits instead of a `SupraAPIError` with status 400 that no node sent.
 
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with

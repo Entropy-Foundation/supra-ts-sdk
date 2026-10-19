@@ -25,14 +25,15 @@ describe("standardizeAddress", () => {
         expect(result.length).toBe(66);
     });
 
-    it("should throw SupraAPIError for address longer than 64 chars", () => {
+    it("should throw a RangeError, not an API error, for address longer than 64 chars", () => {
         const longAddr = "0x" + "a".repeat(65);
-        expect(() => standardizeAddress(longAddr)).toThrow(SupraAPIError);
-        try {
-            standardizeAddress(longAddr);
-        } catch (error) {
-            const apiError = error as SupraAPIError;
-            expect(apiError.status).toBe(400);
-        }
+        expect(() => standardizeAddress(longAddr)).toThrow(RangeError);
+        expect(() => standardizeAddress(longAddr)).not.toThrow(SupraAPIError);
+    });
+
+    it("should lower-case the hex digits", () => {
+        expect(standardizeAddress("0xA")).toBe("0x" + "0".repeat(63) + "a");
+        expect(standardizeAddress("0xAB" + "CD".repeat(31))).toBe("0xab" + "cd".repeat(31));
+        expect(standardizeAddress("ABC")).toBe("0x" + "0".repeat(61) + "abc");
     });
 });
