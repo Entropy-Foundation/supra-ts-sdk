@@ -11,7 +11,10 @@ import {
     extractVectorInner,
     isMoveStruct,
 } from "../general";
-import type { MoveFunction } from "../../types/move";
+import { TypeTagParser } from "supra-l1-sdk-core";
+import type { MoveFunction, MoveModule } from "../../types/move";
+import type { NetworkConfig } from "../../utils/apiEndpoints";
+import { generateViewFunctionPayload } from "../view";
 
 function createMockFunction(overrides: Partial<MoveFunction> = {}): MoveFunction {
     return {
@@ -393,4 +396,43 @@ describe("convertTypeArgsValueToJSONParsable", () => {
     it("should throw for undefined", () => {
         expect(() => convertTypeArgsValueToJSONParsable(undefined)).toThrow("Invalid type argument");
     });
+
+    it.each([
+        "u64",
+        "address",
+        "vector<u8>",
+        "vector<0x1::string::String>",
+        "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
+    ])("should give a TypeTag the same string as the string form of %s", (type) => {
+        expect(convertTypeArgsValueToJSONParsable(new TypeTagParser(type).parseTypeTag())).toBe(type);
+    });
+});
+
+describe("type arguments of a view function", () => {
+    const abi: MoveModule = {
+        address: "0x1",
+        name: "m",
+        friends: [],
+        exposed_functions: [
+            createMockFunction({ name: "f", generic_type_params: [{ constraints: [] }], params: ["u64"] }),
+        ],
+        structs: [],
+    };
+
+    it.each(["u64", "vector<u8>", "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>"])(
+        "should send the same request body for a TypeTag and a string, for %s",
+        async (type) => {
+            const common = { function: "0x1::m::f" as const, functionArguments: [5n], abi };
+            const fromString = await generateViewFunctionPayload(
+                { ...common, typeArguments: [type] },
+                {} as NetworkConfig,
+            );
+            const fromTag = await generateViewFunctionPayload(
+                { ...common, typeArguments: [new TypeTagParser(type).parseTypeTag()] },
+                {} as NetworkConfig,
+            );
+            expect(fromTag).toEqual(fromString);
+            expect(fromTag.typeArguments).toEqual([type]);
+        },
+    );
 });

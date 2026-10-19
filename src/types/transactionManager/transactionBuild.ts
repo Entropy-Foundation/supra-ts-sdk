@@ -111,14 +111,26 @@ export interface MultisigPayloadJSON {
     };
 }
 
-export interface FunctionTypeArgs {
-    struct: {
-        address: string;
-        module: string;
-        name: string;
-        type_args: Array<FunctionTypeArgs>;
-    };
-}
+/** A type argument in the JSON form of a transaction payload. */
+export type FunctionTypeArgs =
+    | "bool"
+    | "u8"
+    | "u16"
+    | "u32"
+    | "u64"
+    | "u128"
+    | "u256"
+    | "address"
+    | "signer"
+    | { vector: FunctionTypeArgs }
+    | {
+          struct: {
+              address: string;
+              module: string;
+              name: string;
+              type_args: Array<FunctionTypeArgs>;
+          };
+      };
 
 export interface ScriptPayloadJSON {
     Script: {

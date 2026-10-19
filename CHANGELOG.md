@@ -248,6 +248,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `getFungibleAssetMetadata` is declared to return `FungibleAssetMetadata` (`name`, `symbol`, `decimals`,
   `icon_uri`, `project_uri`), which is what it returns. It was declared `CoinInfo`.
 
+- **Breaking (types):** `FunctionTypeArgs`, the type of an entry in `ty_args` of a transaction payload
+  in JSON form, is a union of the primitive type names, `{ vector }` and `{ struct }` instead of an
+  interface that only describes `{ struct }`. Code that reads `ty_args[i].struct` directly must narrow
+  the value first.
+
 ### Fixed
 
 - `supra.constructor` is `SupraClient`; it was the constructor of the last mixed-in class.
@@ -262,6 +267,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The JSDoc of `events.getEventsByType` describes events and calls `getEventsByType`.
 - `getAccountInfo` returns `sequence_number` as a `bigint`, the declared type. It returned the number the node
   sends, so `info.sequence_number + 1n` threw a `TypeError`.
+- Type arguments of every `TypeTag` variant (`bool`, `u8` to `u256`, `address`, `signer`, `vector` and
+  `struct` with type parameters, nested to any depth) are written correctly in transaction payloads.
+  Building, simulating or submitting an entry function, script, automation registration or multisig
+  transaction with a non-struct type argument previously threw a `TypeError`.
+- `methods.view` writes a `TypeTag` type argument as its full Move type string, including the type
+  parameters of a struct, and accepts non-struct `TypeTag` values. A `TypeTag` and its string form
+  produce the same request.
+- Script arguments of type `u16` are accepted by `parseScriptArgs`; previously they threw
+  `Invalid script argument variant`. `u32` and `u256` script arguments are covered by tests.
 
 ### Removed
 

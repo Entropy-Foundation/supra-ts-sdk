@@ -1,6 +1,7 @@
 import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import type { InputViewFunctionData } from "../types/methods";
 import type { MoveFunction, MoveFunctionId, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
+import { typeTagToString } from "./typeTag";
 
 /**
  * Splits a function identifier into its constituent parts: module address, module name, and function name.
@@ -87,10 +88,7 @@ export function convertTypeArgsValueToJSONParsable(value: TypeArgument | undefin
     }
 
     if (value instanceof TxnBuilderTypes.TypeTag) {
-        // Use the TypeTagParser to parse the string literal into a TypeTagStruct
-        const typeTagStruct = value as TxnBuilderTypes.TypeTagStruct;
-
-        return `${typeTagStruct.value.address.toHexString()}::${typeTagStruct.value.module_name.value}::${typeTagStruct.value.name.value}`;
+        return typeTagToString(value);
     }
 
     throw new Error(`Invalid type argument: ${value}`);

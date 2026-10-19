@@ -1,5 +1,12 @@
-import { TxnBuilderTypes } from "supra-l1-sdk-core";
-import { sleep, fromUint8ArrayToJSArray, convertMoveValueToJSONParsable, convertMoveValue, parseScriptArgs } from "../functions";
+import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import {
+    sleep,
+    fromUint8ArrayToJSArray,
+    convertMoveValueToJSONParsable,
+    convertMoveValue,
+    parseFunctionTypeArgs,
+    parseScriptArgs,
+} from "../functions";
 
 describe("sleep", () => {
     beforeEach(() => {
@@ -73,8 +80,86 @@ describe("parseScriptArgs", () => {
         expect(result[4]).toEqual({ Bool: true });
     });
 
+    it("should parse the u16 variant", () => {
+        expect(parseScriptArgs([new TxnBuilderTypes.TransactionArgumentU16(65535)])).toEqual([{ U16: 65535 }]);
+    });
+
+    it("should parse the u32 variant at its maximum", () => {
+        expect(parseScriptArgs([new TxnBuilderTypes.TransactionArgumentU32(4294967295)])).toEqual([
+            { U32: 4294967295 },
+        ]);
+    });
+
+    it("should write a u256 as its 32 little-endian bytes", () => {
+        const [arg] = parseScriptArgs([new TxnBuilderTypes.TransactionArgumentU256((1n << 256n) - 1n)]);
+        expect(arg).toEqual({ U256: new Array(32).fill(255) });
+
+        const [small] = parseScriptArgs([new TxnBuilderTypes.TransactionArgumentU256(0x0102n)]);
+        expect(small).toEqual({ U256: [2, 1, ...new Array(30).fill(0)] });
+    });
+
+    it("should parse every variant of TransactionArgument in order", () => {
+        const result = parseScriptArgs([
+            new TxnBuilderTypes.TransactionArgumentU8(1),
+            new TxnBuilderTypes.TransactionArgumentU16(2),
+            new TxnBuilderTypes.TransactionArgumentU32(3),
+            new TxnBuilderTypes.TransactionArgumentU64(4n),
+            new TxnBuilderTypes.TransactionArgumentU128(5n),
+            new TxnBuilderTypes.TransactionArgumentU256(6n),
+            new TxnBuilderTypes.TransactionArgumentAddress(TxnBuilderTypes.AccountAddress.fromHex("0x7")),
+            new TxnBuilderTypes.TransactionArgumentU8Vector(new Uint8Array([8])),
+            new TxnBuilderTypes.TransactionArgumentBool(false),
+        ]);
+        expect(result.map((arg) => Object.keys(arg)[0])).toEqual([
+            "U8",
+            "U16",
+            "U32",
+            "U64",
+            "U128",
+            "U256",
+            "Address",
+            "U8Vector",
+            "Bool",
+        ]);
+    });
+
+    it("should throw for an argument that is not a TransactionArgument variant", () => {
+        expect(() => parseScriptArgs([{} as TxnBuilderTypes.TransactionArgument])).toThrow(
+            "Invalid script argument variant",
+        );
+    });
+
     it("should return an empty array for no arguments", () => {
         expect(parseScriptArgs([])).toEqual([]);
+    });
+});
+
+describe("parseFunctionTypeArgs", () => {
+    const parse = (type: string) => new TypeTagParser(type).parseTypeTag();
+
+    it("should return an empty array for no type arguments", () => {
+        expect(parseFunctionTypeArgs([])).toEqual([]);
+    });
+
+    it("should convert primitive, vector and struct type arguments in one call", () => {
+        const result = parseFunctionTypeArgs([
+            parse("u64"),
+            parse("address"),
+            parse("vector<u8>"),
+            parse("vector<0x1::string::String>"),
+            parse("0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>"),
+        ]);
+        const one = "0x0000000000000000000000000000000000000000000000000000000000000001";
+        const struct = (module: string, name: string, type_args: unknown[] = []) => ({
+            struct: { address: one, module, name, type_args },
+        });
+        expect(result).toEqual([
+            "u64",
+            "address",
+            { vector: "u8" },
+            { vector: struct("string", "String") },
+            struct("coin", "CoinStore", [struct("supra_coin", "SupraCoin")]),
+        ]);
     });
 });
 

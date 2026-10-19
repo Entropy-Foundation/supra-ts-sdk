@@ -1,5 +1,6 @@
 import { BCS, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { MoveToTS } from "../types/contract";
+import { typeTagToJSON } from "../helper/typeTag";
 import type { FunctionTypeArgs, ScriptArgumentJson } from "../types/transactionManager/transactionBuild";
 
 /**
@@ -19,19 +20,7 @@ export async function sleep(timeMs: number): Promise<null> {
 export const parseFunctionTypeArgs = (
     functionTypeArgs: TxnBuilderTypes.TypeTag[]
 ): Array<FunctionTypeArgs> => {
-    const functionTypeArgsParsed: Array<FunctionTypeArgs> = [];
-    functionTypeArgs.forEach((data) => {
-        const structTagData = (data as TxnBuilderTypes.TypeTagStruct).value;
-        functionTypeArgsParsed.push({
-            struct: {
-                address: structTagData.address.toHexString().toString(),
-                module: structTagData.module_name.value,
-                name: structTagData.name.value,
-                type_args: parseFunctionTypeArgs(structTagData.type_args),
-            },
-        });
-    });
-    return functionTypeArgsParsed;
+    return functionTypeArgs.map(typeTagToJSON);
 };
 
 export const parseScriptArgs = (
@@ -41,6 +30,8 @@ export const parseScriptArgs = (
     scriptArgs.forEach((arg) => {
         if (arg instanceof TxnBuilderTypes.TransactionArgumentU8) {
             parsedArgs.push({ U8: arg.value });
+        } else if (arg instanceof TxnBuilderTypes.TransactionArgumentU16) {
+            parsedArgs.push({ U16: arg.value });
         } else if (arg instanceof TxnBuilderTypes.TransactionArgumentU32) {
             parsedArgs.push({ U32: arg.value });
         } else if (arg instanceof TxnBuilderTypes.TransactionArgumentU64) {
