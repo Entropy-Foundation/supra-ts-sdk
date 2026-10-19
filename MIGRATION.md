@@ -142,7 +142,7 @@ try {
 }
 ```
 
-`SupraConfig.timeoutMs` sets the request timeout and `SupraConfig.retry` turns on retries of GET requests.
+`SupraConfig.timeoutMs` sets the request timeout and `SupraConfig.retry` turns on retries of GET requests. The faucet request is sent once.
 
 ### Faucet errors extend `SupraError`
 

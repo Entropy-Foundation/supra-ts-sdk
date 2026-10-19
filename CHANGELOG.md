@@ -89,7 +89,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`) turns on retries of GET requests that fail with 429, 503 or a
   connection failure, honouring the node's `retry_after_seconds` / `Retry-After`. It is off by default; POST requests
-  are never retried.
+  and the faucet request are never retried.
 - **`fungibleAsset.migrateCoinToFungibleStore({ senderAccount, coinType?, optionalTransactionArgs? })`** submits
   `0x1::coin::migrate_to_fungible_store`, which moves the sender's balance of a coin type (default SUPRA) from its
   `CoinStore` to the primary fungible store of the paired fungible asset.
