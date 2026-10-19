@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings of one `SupraClient` no longer reach another client of the same network.
 - **Breaking:** `standardizeAddress` returns lower-case hex, and throws a `RangeError` for an address of more than 64
   hex digits instead of a `SupraAPIError` with status 400 that no node sent.
+- **Breaking:** `getAccountModule` requires `moduleName` to be a Move identifier, and the resource, event and coin
+  type arguments of the account, event, coin and fungible asset methods require the module and struct names of the
+  type to be Move identifiers (a letter or underscore, then letters, digits and underscores). Other values are
+  rejected before any request. The resource and event type and the module name are percent-encoded in the request
+  path.
 
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with

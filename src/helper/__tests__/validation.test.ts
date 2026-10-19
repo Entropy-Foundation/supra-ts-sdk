@@ -1,6 +1,7 @@
 import {
     validateAddress,
     validateFunctionId,
+    validateMoveIdentifier,
     validateStructId,
     validateTransactionHash,
     validatePaginationCount,
@@ -85,6 +86,31 @@ describe("validateStructId", () => {
 
     it("rejects invalid address in struct ID", () => {
         expect(() => validateStructId("badaddr::coin::CoinStore")).toThrow("Invalid resourceType module address");
+    });
+
+    it.each(["0x1::../resources::X", "0x1::coin::Co/in", "0x1::coin::Co in", "0x1::::X", "0x1::1coin::X", "0x1::coin::"])(
+        "rejects a module or struct name that is not a Move identifier: %s",
+        (structId) => {
+            expect(() => validateStructId(structId)).toThrow("Invalid resourceType");
+        },
+    );
+
+    it("does not check the type arguments", () => {
+        expect(() => validateStructId("0x1::coin::CoinStore<0x1::supra_coin::SupraCoin, vector<u8>>")).not.toThrow();
+    });
+});
+
+describe("validateMoveIdentifier", () => {
+    it.each(["coin", "_x", "Coin2", "a_b_C"])("accepts %s", (value) => {
+        expect(() => validateMoveIdentifier(value)).not.toThrow();
+    });
+
+    it.each(["", "../resources", "a/b", "a b", "1a", "a-b", "a::b", "a%2Fb"])("rejects %j", (value) => {
+        expect(() => validateMoveIdentifier(value, "moduleName")).toThrow("Invalid moduleName");
+    });
+
+    it("rejects a value that is not a string", () => {
+        expect(() => validateMoveIdentifier(1)).toThrow("Invalid name");
     });
 });
 

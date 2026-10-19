@@ -5,6 +5,18 @@
  */
 
 const HEX_ADDRESS_REGEX = /^0x[0-9a-fA-F]{1,64}$/;
+const MOVE_IDENTIFIER_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Validates a Move identifier, such as a module or struct name: a letter or underscore followed by letters, digits
+ * and underscores.
+ * @throws Error if the value is not a Move identifier
+ */
+export function validateMoveIdentifier(value: unknown, paramName = "name"): void {
+    if (typeof value !== "string" || !MOVE_IDENTIFIER_REGEX.test(value)) {
+        throw new Error(`Invalid ${paramName}: expected a Move identifier, got ${JSON.stringify(value)}`);
+    }
+}
 
 /**
  * Validates that a value looks like a hex address (0x-prefixed hex string, 1-64 hex chars).
@@ -61,6 +73,8 @@ export function validateStructId(structId: unknown, paramName = "resourceType"):
         );
     }
     validateAddress(parts[0], `${paramName} module address`);
+    validateMoveIdentifier(parts[1], `${paramName} module name`);
+    validateMoveIdentifier(parts[2], `${paramName} struct name`);
 }
 
 /**

@@ -56,7 +56,7 @@ export async function getAccountModuleInternal(
     config: NetworkConfig
 ): Promise<MoveModuleBytecode> {
     return (await get<MoveModuleBytecode>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/modules/${args.moduleName}`,
+        path: `/accounts/${standardizeAddress(args.accountAddress)}/modules/${encodeURIComponent(args.moduleName)}`,
     }, config)).data;
 }
 
@@ -89,7 +89,7 @@ export async function getAccountResourceInternal<T extends object = any>(
     config: NetworkConfig
 ): Promise<MoveResource<T>> {
     return (await get<MoveResource<T>>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/resources/${args.resourceType}`,
+        path: `/accounts/${standardizeAddress(args.accountAddress)}/resources/${encodeURIComponent(args.resourceType)}`,
     }, config)).data;
 }
 
