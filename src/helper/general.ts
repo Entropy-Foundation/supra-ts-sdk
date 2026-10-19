@@ -1,7 +1,7 @@
-import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import { TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { InputViewFunctionData } from "../types/methods";
 import type { MoveFunction, MoveFunctionId, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
-import { typeTagToString } from "./typeTag";
+import { parseTypeArgument, typeTagToString } from "./typeTag";
 
 /**
  * Splits a function identifier into its constituent parts: module address, module name, and function name.
@@ -79,11 +79,14 @@ export function convertPayloadArgsToJSONParsable(functionAbi: MoveFunction, args
 
 
 /**
- * Converts a Move value to a JSON parsable value
+ * Converts a type argument to the type string of a view request. A string is checked with `parseTypeArgument` and
+ * returned unchanged; a `TypeTag` is written as its Move type string.
+ * @throws Error if a string is not a valid type argument
  */
 export function convertTypeArgsValueToJSONParsable(value: TypeArgument | undefined): string {
 
     if (typeof value === "string") {
+        parseTypeArgument(value);
         return value;
     }
 
@@ -95,12 +98,13 @@ export function convertTypeArgsValueToJSONParsable(value: TypeArgument | undefin
 }
 
 /**
- * Converts a Move value to a JSON parsable value
+ * Converts a type argument to a `TypeTag`. A string is parsed with `parseTypeArgument`; a `TypeTag` is returned as is.
+ * @throws Error if a string is not a valid type argument
  */
 export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefined): TxnBuilderTypes.TypeTag {
 
     if (typeof value === "string") {
-        return new TypeTagParser(value).parseTypeTag();
+        return parseTypeArgument(value);
     }
 
     if (value instanceof TxnBuilderTypes.TypeTag) {

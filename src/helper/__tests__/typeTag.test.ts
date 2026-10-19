@@ -1,8 +1,9 @@
-import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
-import { typeTagToJSON, typeTagToString } from "../typeTag";
+import { BCS, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import { parseTypeArgument, typeTagToJSON, typeTagToString } from "../typeTag";
 
 const LONG_ONE = "0x0000000000000000000000000000000000000000000000000000000000000001";
 const LONG_OTHER = "0x00000000000000000000000000000000000000000000000000000000000000ab";
+const LONG_ABC = "0x0000000000000000000000000000000000000000000000000000000000000abc";
 const LONG_ARBITRARY = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 
 const PRIMITIVES: ReadonlyArray<[string, TxnBuilderTypes.TypeTag]> = [
@@ -117,5 +118,126 @@ describe("typeTagToJSON", () => {
 
     it("throws for an object that is not a TypeTag variant", () => {
         expect(() => typeTagToJSON({} as TxnBuilderTypes.TypeTag)).toThrow("Unknown variant of `TypeTag`");
+    });
+});
+
+describe("parseTypeArgument", () => {
+    const bcs = (tag: TxnBuilderTypes.TypeTag) => Array.from(BCS.bcsToBytes(tag));
+    const nested = (levels: number) => `${"vector<".repeat(levels)}u8${">".repeat(levels)}`;
+
+    it.each(PRIMITIVES)("parses %s", (type, tag) => {
+        expect(parseTypeArgument(type)).toBeInstanceOf(tag.constructor);
+    });
+
+    it.each([
+        "vector<u8>",
+        "vector<vector<address>>",
+        "0x1::supra_coin::SupraCoin",
+        "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
+        "0x1::coin::CoinStore<vector<0x1::string::String>>",
+        `${LONG_ARBITRARY}::m::S<u8,${LONG_OTHER}::n::T<bool>>`,
+    ])("gives %s the same BCS as TypeTagParser", (type) => {
+        expect(bcs(parseTypeArgument(type))).toEqual(bcs(parse(type)));
+    });
+
+    it("keeps 0x1::object::Object<T> as the struct Object with its type parameter", () => {
+        const type = "0x1::object::Object<0x1::fungible_asset::Metadata>";
+        const tag = parseTypeArgument(type);
+        expect(tag).toBeInstanceOf(TxnBuilderTypes.TypeTagStruct);
+        expect(typeTagToString(tag)).toBe(type);
+        expect(typeTagToJSON(tag)).toEqual({
+            struct: {
+                address: LONG_ONE,
+                module: "object",
+                name: "Object",
+                type_args: [
+                    { struct: { address: LONG_ONE, module: "fungible_asset", name: "Metadata", type_args: [] } },
+                ],
+            },
+        });
+    });
+
+    it("keeps an Object inside a vector and inside another struct", () => {
+        expect(typeTagToString(parseTypeArgument("vector<0x1::object::Object<0x1::object::ObjectCore>>"))).toBe(
+            "vector<0x1::object::Object<0x1::object::ObjectCore>>",
+        );
+        expect(typeTagToString(parseTypeArgument("0x1::option::Option<0x1::object::Object<0x1::m::S>>"))).toBe(
+            "0x1::option::Option<0x1::object::Object<0x1::m::S>>",
+        );
+    });
+
+    it.each([
+        ["0xabc::usdt0::USDT0", `${LONG_ABC}::usdt0::USDT0`],
+        ["0xabc::m::T1", `${LONG_ABC}::m::T1`],
+        ["0xabc::T1::S", `${LONG_ABC}::T1::S`],
+        ["0x1::m::S<0xabc::usdt0::USDT0>", `0x1::m::S<${LONG_ABC}::usdt0::USDT0>`],
+    ])("accepts the module and struct names of %s", (type, expected) => {
+        expect(typeTagToString(parseTypeArgument(type))).toBe(expected);
+    });
+
+    it("allows whitespace between tokens, a comma after the last type parameter, and 0X", () => {
+        const expected = "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>";
+        for (const type of [
+            "0x1::coin::CoinStore< 0x1::supra_coin::SupraCoin >",
+            " 0x1 :: coin :: CoinStore <0x1::supra_coin::SupraCoin,>\n",
+            "0X1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
+        ]) {
+            expect(typeTagToString(parseTypeArgument(type))).toBe(expected);
+        }
+    });
+
+    it("accepts addresses of 1 to 64 hex digits and refuses longer ones", () => {
+        expect(typeTagToString(parseTypeArgument(`${LONG_ONE}::m::S`))).toBe("0x1::m::S");
+        expect(() => parseTypeArgument(`0x0${LONG_ONE.slice(2)}::m::S`)).toThrow(/more than 64 hex digits/);
+    });
+
+    it.each([
+        ["u64 junk", /unexpected "junk" after the type/],
+        ["u64>", /unexpected ">" after the type/],
+        ["0x1::supra_coin::SupraCoin, u8", /unexpected "," after the type/],
+        ["0x1::supra_coin::SupraCoin>", /unexpected ">" after the type/],
+        ["vector<u8>>", /unexpected ">" after the type/],
+    ])("refuses text after the type: %s", (type, message) => {
+        expect(() => parseTypeArgument(type)).toThrow(message);
+    });
+
+    it.each(["T0", "T12", "vector<T1>", "0x1::coin::CoinStore<T0>"])(
+        "refuses the generic type parameter in %s",
+        (type) => {
+            expect(() => parseTypeArgument(type)).toThrow(/generic type parameter T\d+ is not a concrete type/);
+        },
+    );
+
+    it.each([
+        ["", /expected a type, found the end of the string/],
+        ["   ", /expected a type, found the end of the string/],
+        ["string", /unknown type "string"/],
+        ["U64", /unknown type "U64"/],
+        ["vector", /expected "<"/],
+        ["vector<>", /expected a type, found ">"/],
+        ["vector<u8", /expected ">", found the end of the string/],
+        ["0x1", /expected "::"/],
+        ["0x1::m", /expected "::"/],
+        ["0x1::m::", /expected a struct name/],
+        ["0x1:m::S", /unexpected character ":"/],
+        ["0x1::vector::S", /expected a module name, found "vector"/],
+        ["0x1::m::u8", /expected a struct name, found "u8"/],
+        ["0x1::m::S<u8", /expected ",", found the end of the string/],
+        ["0x1::m::S<u8 u16>", /expected ",", found "u16"/],
+        ["0x::m::S", /unexpected character "0"/],
+        ["1::m::S", /unexpected character "1"/],
+        ["_m", /unexpected character "_"/],
+        ["&u8", /unexpected character "&"/],
+    ])("refuses the malformed type %j", (type, message) => {
+        expect(() => parseTypeArgument(type)).toThrow(message);
+    });
+
+    it("names the input in its error", () => {
+        expect(() => parseTypeArgument("u64 junk")).toThrow('Invalid type argument "u64 junk"');
+    });
+
+    it("accepts types nested 9 levels deep and refuses deeper ones", () => {
+        expect(typeTagToString(parseTypeArgument(nested(8)))).toBe(nested(8));
+        expect(() => parseTypeArgument(nested(9))).toThrow(/nested more than 9 levels deep/);
     });
 });

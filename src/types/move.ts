@@ -189,29 +189,24 @@ export interface Event {
 }
 
 /**
- * Inputs for Entry functions, view functions, and scripts, which can be a string representation of various types including
- * primitive types, vectors, and structured types.
- *
- *  *
- * This can be a string version of the type argument such as:
+ * A type argument of an entry or view function: a `TypeTag`, or the Move type string of a concrete type, one of:
  * - u8
  * - u16
  * - u32
  * - u64
  * - u128
  * - u256
- * - i8
- * - i16
- * - i32
- * - i64
- * - i128
- * - i256
  * - bool
  * - address
  * - signer
  * - vector<Type>
- * - address::module::struct
- * - address::module::struct<Type1, Type2>
+ * - address::module::Struct
+ * - address::module::Struct<Type1, Type2>
+ *
+ * Addresses are `0x` followed by 1 to 64 hex digits. A string must be exactly one type: text after it, generic type
+ * parameters such as `T0` and unknown type names are refused before any request. A struct type in a string is kept
+ * as written, so `0x1::object::Object<0x1::fungible_asset::Metadata>` is the struct `Object`. `TypeTagParser` of
+ * `supra-l1-sdk-core` parses `0x1::object::Object<T>` as `address`; pass such a type argument as a string.
  * @group Implementation
  * @category Transactions
  */

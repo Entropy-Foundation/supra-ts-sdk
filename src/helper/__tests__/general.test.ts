@@ -6,12 +6,14 @@ import {
     convertPayloadTypeArgsToJSONParsable,
     convertPayloadArgsToJSONParsable,
     convertTypeArgsValueToJSONParsable,
+    convertTypeArgsValueToMoveTypeValue,
     isOption,
     extractOptionInner,
     extractVectorInner,
     isMoveStruct,
 } from "../general";
-import { TypeTagParser } from "supra-l1-sdk-core";
+import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import { parseTypeArgument, typeTagToString } from "../typeTag";
 import type { MoveFunction, MoveModule } from "../../types/move";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { generateViewFunctionPayload } from "../view";
@@ -405,6 +407,56 @@ describe("convertTypeArgsValueToJSONParsable", () => {
         "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
     ])("should give a TypeTag the same string as the string form of %s", (type) => {
         expect(convertTypeArgsValueToJSONParsable(new TypeTagParser(type).parseTypeTag())).toBe(type);
+    });
+
+    it("sends a valid string unchanged, including an Object type", () => {
+        for (const type of [
+            "0x1::object::Object<0x1::fungible_asset::Metadata>",
+            "vector<0x1::object::Object<0x1::object::ObjectCore>>",
+            "0x1::coin::CoinStore< 0x1::supra_coin::SupraCoin >",
+        ]) {
+            expect(convertTypeArgsValueToJSONParsable(type)).toBe(type);
+        }
+    });
+
+    it.each(["u64 junk", "0x1::supra_coin::SupraCoin, u8", "T0", "string", ""])(
+        "refuses the malformed string %j",
+        (type) => {
+            expect(() => convertTypeArgsValueToJSONParsable(type)).toThrow(/Invalid type argument/);
+        },
+    );
+});
+
+describe("convertTypeArgsValueToMoveTypeValue", () => {
+    it("parses 0x1::object::Object<T> as the struct Object, not as address", () => {
+        const tag = convertTypeArgsValueToMoveTypeValue("0x1::object::Object<0x1::fungible_asset::Metadata>");
+        expect(tag).toBeInstanceOf(TxnBuilderTypes.TypeTagStruct);
+        expect(typeTagToString(tag)).toBe("0x1::object::Object<0x1::fungible_asset::Metadata>");
+        expect(typeTagToString(convertTypeArgsValueToMoveTypeValue("vector<0x1::object::Object<0x1::m::S>>"))).toBe(
+            "vector<0x1::object::Object<0x1::m::S>>",
+        );
+    });
+
+    it("refuses text after the type and generic type parameters", () => {
+        expect(() => convertTypeArgsValueToMoveTypeValue("u64 junk")).toThrow(/after the type/);
+        expect(() => convertTypeArgsValueToMoveTypeValue("u64>")).toThrow(/after the type/);
+        expect(() => convertTypeArgsValueToMoveTypeValue("T1")).toThrow(/generic type parameter/);
+    });
+
+    it("returns a TypeTag as given", () => {
+        const tag = new TxnBuilderTypes.TypeTagU64();
+        expect(convertTypeArgsValueToMoveTypeValue(tag)).toBe(tag);
+    });
+
+    it.each([
+        "0x1::object::Object<0x1::fungible_asset::Metadata>",
+        "0xabc::usdt0::USDT0",
+        "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
+        "vector<u8>",
+    ])("gives an entry function the type a view function sends for %s", (type) => {
+        const entry = typeTagToString(convertTypeArgsValueToMoveTypeValue(type));
+        const view = convertTypeArgsValueToJSONParsable(type);
+        expect(entry).toBe(typeTagToString(parseTypeArgument(view)));
     });
 });
 

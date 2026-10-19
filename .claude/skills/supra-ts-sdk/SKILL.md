@@ -265,6 +265,11 @@ const [balanceRaw] = await supra.methods.viewRaw({
 });
 ```
 
+Type arguments are `TypeTag`s or Move type strings. A string must be exactly one concrete type (`u64`,
+`vector<u8>`, `0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>`); text after the type, generic parameters such as
+`T0` and unknown names throw before any request. `TypeTagParser` parses `0x1::object::Object<T>` as `address`, so pass
+`Object` type arguments as strings: `typeArguments: ["0x1::object::Object<0x1::fungible_asset::Metadata>"]`.
+
 ### Move Type Argument Mapping
 
 When passing **function arguments** to `view()`:

@@ -190,6 +190,37 @@ describeE2E("type arguments and script arguments", () => {
         });
     });
 
+    describe.each([
+        "0x1::object::Object<0x1::fungible_asset::Metadata>",
+        "vector<0x1::object::Object<0x1::object::ObjectCore>>",
+    ])("the type argument string %s", (type) => {
+        test("is the type argument of the committed entry function", async () => {
+            const rawTxn = await ctx.supra.transaction.build.simple({
+                senderAddress: publisher.address(),
+                senderSequenceNumber: await nextSequenceNumber(publisher),
+                function: tagged,
+                functionTypeArgs: [type],
+                functionArgs: [],
+                optionalTransactionPayloadArgs: gas,
+            });
+            const submitted = await rawTxn.submitTransaction({
+                senderAccount: publisher,
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+            });
+            expect(submitted.status).toBe(TransactionStatus.Success);
+            expect(submitted).toMatchObject({ payload: { Move: { type_arguments: [type] } } });
+        });
+
+        test("is accepted by a view function", async () => {
+            const [echoed] = await ctx.supra.methods.view<[bigint]>({
+                function: `${moduleAddress}::tagged::echo` as MoveFunctionId,
+                typeArguments: [type],
+                functionArguments: [42n],
+            });
+            expect(echoed).toBe(42n);
+        });
+    });
+
     test("view of a framework function accepts a struct TypeTag with type parameters", async () => {
         const address = (await createFundedAccount(ctx)).address().toString();
         const type = "0x1::supra_coin::SupraCoin";
