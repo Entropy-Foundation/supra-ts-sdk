@@ -79,9 +79,11 @@ export async function affordableGasUnitsInternal(
  *    client's `maxGasEstimateMultiplier`, else `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`.
  *
  * A simulation whose status is not `Success` (a `Fail` with an abort, `OUT_OF_GAS`, `PendingAfterExecution`,
- * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. When there is no `senderAccount`, or the
- * balance read fails, or the simulation fails for a reason that is not a simulation result (a request error, a response
- * without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most `affordable` when that is known and not zero.
+ * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. Signing the simulated transaction
+ * throws what signing throws, for example `SupraChainIdMismatchError`, before the simulation is requested. When there
+ * is no `senderAccount`, or the balance read fails, or the simulation fails for a reason that is not a simulation
+ * result (a request error, a response without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most
+ * `affordable` when that is known and not zero.
  */
 export async function resolveMaxGasInternal(
     args: {
@@ -119,17 +121,14 @@ export async function resolveMaxGasInternal(
         return fallback;
     }
 
+    // Signing checks the chain ID; its errors are thrown, as the signature of the submitted transaction would throw them.
+    const sendTxPayload = await sendTxnPayloadInternal(
+        { senderAccount: args.senderAccount, rawTxn: args.buildRawTxn(affordable) },
+        config,
+    );
     let simulated: TransactionResponse;
     try {
-        simulated = await simulateTxnInternal(
-            {
-                sendTxPayload: sendTxnPayloadInternal({
-                    senderAccount: args.senderAccount,
-                    rawTxn: args.buildRawTxn(affordable),
-                }),
-            },
-            config,
-        );
+        simulated = await simulateTxnInternal({ sendTxPayload }, config);
     } catch (error) {
         if (error instanceof SupraSimulationFailedError) {
             throw error;
