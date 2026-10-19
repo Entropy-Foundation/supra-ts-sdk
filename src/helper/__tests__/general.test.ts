@@ -82,8 +82,8 @@ describe("convertArgsValueToJSONParsable", () => {
     });
 
     // Option<u8> with value
-    it("should wrap Option<u8> value as { vec: String(value) }", () => {
-        expect(convertArgsValueToJSONParsable("0x1::option::Option<u8>", 42)).toEqual({ vec: "42" });
+    it("should encode the Option<u8> value as vector<u8> hex", () => {
+        expect(convertArgsValueToJSONParsable("0x1::option::Option<u8>", 42)).toEqual({ vec: "2a" });
     });
 
     // Option<vector<u8>> with string value
@@ -487,4 +487,69 @@ describe("type arguments of a view function", () => {
             expect(fromTag.typeArguments).toEqual([type]);
         },
     );
+});
+
+describe("Option<T> view arguments", () => {
+    const option = (inner: string) => `0x1::option::Option<${inner}>`;
+
+    it("encodes Some(T) of u8 as the hex of the byte, which the node reads as vector<u8>", () => {
+        expect(convertArgsValueToJSONParsable(option("u8"), 16)).toEqual({ vec: "10" });
+        expect(convertArgsValueToJSONParsable(option("u8"), 5)).toEqual({ vec: "05" });
+        expect(convertArgsValueToJSONParsable(option("u8"), "255")).toEqual({ vec: "ff" });
+        expect(convertArgsValueToJSONParsable(option("u8"), 0)).toEqual({ vec: "00" });
+    });
+
+    it("encodes None of u8 as an empty byte string", () => {
+        expect(convertArgsValueToJSONParsable(option("u8"), null)).toEqual({ vec: "" });
+        expect(convertArgsValueToJSONParsable(option("u8"), undefined)).toEqual({ vec: "" });
+    });
+
+    it("rejects a u8 value that is out of range or malformed", () => {
+        expect(() => convertArgsValueToJSONParsable(option("u8"), 256)).toThrow();
+        expect(() => convertArgsValueToJSONParsable(option("u8"), "")).toThrow();
+    });
+
+    it("encodes Option<u64> as a one-element array of the decimal string", () => {
+        expect(convertArgsValueToJSONParsable(option("u64"), 5n)).toEqual({ vec: ["5"] });
+        expect(convertArgsValueToJSONParsable(option("u64"), 5)).toEqual({ vec: ["5"] });
+        expect(convertArgsValueToJSONParsable(option("u64"), null)).toEqual({ vec: [] });
+    });
+
+    it("encodes Option<address> as a one-element array", () => {
+        expect(convertArgsValueToJSONParsable(option("address"), "0x2")).toEqual({ vec: ["0x2"] });
+        expect(convertArgsValueToJSONParsable(option("address"), null)).toEqual({ vec: [] });
+    });
+
+    it("encodes Option<vector<u8>> as a one-element array of hex", () => {
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), [1, 2])).toEqual({ vec: ["0102"] });
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), new Uint8Array([1, 2]))).toEqual({ vec: ["0102"] });
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), "0x0102")).toEqual({ vec: ["0x0102"] });
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), null)).toEqual({ vec: [] });
+    });
+});
+
+describe("integer view arguments", () => {
+    it("rejects empty, whitespace-only and malformed strings", () => {
+        for (const type of ["u8", "u32", "u64", "u256", "i64"]) {
+            for (const value of ["", " ", "1.5", "0x", "abc"]) {
+                expect(() => convertArgsValueToJSONParsable(type, value)).toThrow(`Expected an integer for ${type}`);
+            }
+        }
+        expect(() => convertArgsValueToJSONParsable("u64", "-1")).toThrow();
+    });
+
+    it("accepts decimal strings, numbers and bigints, and a sign for signed types", () => {
+        expect(convertArgsValueToJSONParsable("u8", "16")).toBe(16);
+        expect(convertArgsValueToJSONParsable("u64", 7n)).toBe("7");
+        expect(convertArgsValueToJSONParsable("i64", "-7")).toBe("-7");
+    });
+});
+
+describe("vector<u8> view arguments", () => {
+    it("encodes number[], Uint8Array and hex strings", () => {
+        expect(convertArgsValueToJSONParsable("vector<u8>", [1, 255])).toBe("01ff");
+        expect(convertArgsValueToJSONParsable("vector<u8>", new Uint8Array([1, 255]))).toBe("01ff");
+        expect(convertArgsValueToJSONParsable("vector<u8>", "0x01ff")).toBe("0x01ff");
+        expect(() => convertArgsValueToJSONParsable("vector<u8>", "0x1")).toThrow();
+    });
 });

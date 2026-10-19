@@ -4,3 +4,6 @@ version = "1.0.0"
 
 [addresses]
 sdk_e2e = "_"
+
+[dependencies]
+MoveStdlib = { git = "https://github.com/Entropy-Foundation/aptos-core.git", subdir = "aptos-move/framework/move-stdlib", rev = "aptosvm-v1.16_supra-v1.8.1" }

@@ -132,3 +132,96 @@ describe("DynamicTransactionSerializer - other types", () => {
         expect(bytes.length).toBe(1 + 8);
     });
 });
+
+describe("DynamicTransactionSerializer - vector<u8>", () => {
+    const bytes = [0, 1, 127, 128, 255];
+    const expected = Array.from(core((s) => s.serializeBytes(Uint8Array.from(bytes))));
+
+    it("gives identical BCS for number[], Uint8Array, ArrayBuffer and hex strings", () => {
+        const forms: unknown[] = [
+            bytes,
+            Uint8Array.from(bytes),
+            Uint8Array.from(bytes).buffer,
+            "0x00017f80ff",
+            "00017f80ff",
+            "0x00017F80FF",
+        ];
+        for (const form of forms) {
+            expect(Array.from(ser(form, "vector<u8>"))).toEqual(expected);
+        }
+    });
+
+    it("serializes empty input in every form", () => {
+        for (const form of [[], new Uint8Array(), "0x", ""]) {
+            expect(Array.from(ser(form, "vector<u8>"))).toEqual([0]);
+        }
+    });
+
+    it("serializes vector<u8> inside an Option and a vector", () => {
+        expect(Array.from(ser("0x0102", "0x1::option::Option<vector<u8>>"))).toEqual([1, 2, 1, 2]);
+        expect(Array.from(ser(["0x01", new Uint8Array([2])], "vector<vector<u8>>"))).toEqual([2, 1, 1, 1, 2]);
+    });
+
+    it("rejects malformed input", () => {
+        expect(() => ser("0x123", "vector<u8>")).toThrow(/Failed to serialize argument 0 \(vector<u8>\)/);
+        expect(() => ser("0xzz", "vector<u8>")).toThrow(/hex string/);
+        expect(() => ser([256], "vector<u8>")).toThrow(/Invalid u8/);
+        expect(() => ser([-1], "vector<u8>")).toThrow(/Invalid u8/);
+        expect(() => ser([1.5], "vector<u8>")).toThrow(/Invalid u8/);
+        expect(() => ser(5, "vector<u8>")).toThrow(/vector<u8>/);
+    });
+});
+
+describe("DynamicTransactionSerializer - invalid integer strings", () => {
+    const types = ["u8", "u16", "u32", "u64", "u128", "u256"];
+
+    it.each(types)("rejects empty and whitespace-only strings for %s", (type) => {
+        for (const value of ["", " ", "\t", "\n "]) {
+            expect(() => ser(value, type)).toThrow(`Failed to serialize argument 0 (${type})`);
+        }
+    });
+
+    it.each(types)("rejects other malformed strings for %s", (type) => {
+        for (const value of ["1.5", "-1", "0x", "1e3", "abc", " 5", "5 ", "+5", "0xg1"]) {
+            expect(() => ser(value, type)).toThrow(`Failed to serialize argument 0 (${type})`);
+        }
+    });
+
+    it("rejects values above the maximum of the type", () => {
+        const max: Record<string, bigint> = {
+            u8: 255n,
+            u16: 65535n,
+            u32: 4294967295n,
+            u64: (1n << 64n) - 1n,
+            u128: (1n << 128n) - 1n,
+            u256: (1n << 256n) - 1n,
+        };
+        for (const type of types) {
+            expect(() => ser((max[type]! + 1n).toString(), type)).toThrow(/out of range/);
+            expect(() => ser(max[type]! + 1n, type)).toThrow(/out of range/);
+            expect(() => ser(max[type]!.toString(), type)).not.toThrow();
+        }
+    });
+
+    it("rejects values that are not a number, string or bigint", () => {
+        expect(() => ser(true, "u64")).toThrow(/u64/);
+        expect(() => ser({}, "u8")).toThrow(/u8/);
+        expect(() => ser(Number.NaN, "u32")).toThrow(/integer/);
+    });
+
+    it("accepts decimal and 0x-prefixed hexadecimal strings", () => {
+        expect(Array.from(ser("16", "u8"))).toEqual([16]);
+        expect(Array.from(ser("0x10", "u8"))).toEqual([16]);
+        expect(Array.from(ser("007", "u64"))).toEqual(Array.from(core((s) => s.serializeU64(7n))));
+    });
+});
+
+describe("DynamicTransactionSerializer - addresses", () => {
+    it.each(["0x1", "0xa", "0x123", `0x${"ab".repeat(30)}`, `0x${"f".repeat(63)}`, `0x${"1".repeat(64)}`])(
+        "encodes %s as 32 bytes",
+        (address) => {
+            const hex = address.slice(2).padStart(64, "0");
+            expect(Buffer.from(ser(address, "address")).toString("hex")).toBe(hex);
+        },
+    );
+});

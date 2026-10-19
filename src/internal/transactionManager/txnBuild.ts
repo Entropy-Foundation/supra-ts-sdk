@@ -3,7 +3,7 @@ import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { OptionalTransactionPayloadArgs, RawTxnJSON, SendTxnPayload, TransactionPayloadJSON } from "../../types/transactionManager/transactionBuild";
 import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
 import type { AccountAddressInput } from "../../types/account";
-import { standardizeAddress } from "../../helper/account";
+import { addressToBytes } from "../../helper/account";
 import type { MoveFunctionId, MoveInnerAuthenticator, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
 import { convertPayloadTypeArgsToMoveType, getFunctionParts, uint8ArrayToHexString } from "../../helper/general";
 import { signTransactionInternal } from "../transaction";
@@ -26,7 +26,7 @@ export async function generateTransactionPayload(
     args: {
         function: MoveFunctionId,
         functionTypeArgs: Array<TypeArgument>,
-        functionArgs: Array<Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>>,
+        functionArgs: Array<SimpleEntryFunctionArgumentTypes>,
         abi?: MoveModule | undefined
     },
     config: NetworkConfig
@@ -47,14 +47,11 @@ export async function generateTransactionPayload(
 
     const serializer = new DynamicTransactionSerializer();
 
-    // Entry functions usually take a leading `&signer`/`signer` that is supplied by
-    // the VM, not by the caller. Only strip it when it is actually present so that
-    // functions without a signer parameter keep all their argument types.
-    const firstParam = funcABI.params[0];
-    const paramTypes =
-        firstParam === "&signer" || firstParam === "signer"
-            ? funcABI.params.slice(1)
-            : funcABI.params;
+    // Entry functions take leading `&signer`/`signer` parameters that the VM fills from the
+    // transaction signers, not from the caller. Every leading signer parameter is stripped;
+    // functions without one keep all their argument types.
+    const firstValueParam = funcABI.params.findIndex((param) => param !== "&signer" && param !== "signer");
+    const paramTypes = funcABI.params.slice(firstValueParam === -1 ? funcABI.params.length : firstValueParam);
 
     const serializedArguments = serializer.prepareTransactionArgs(
         args.functionArgs,
@@ -77,7 +74,7 @@ export async function simpleInternal(args: {
     senderSequenceNumber: bigint,
     function: MoveFunctionId,
     functionTypeArgs: Array<TypeArgument>,
-    functionArgs: Array<Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>>,
+    functionArgs: Array<SimpleEntryFunctionArgumentTypes>,
     optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
     abi?: MoveModule,
     senderAccount?: SupraAccount,
@@ -136,10 +133,8 @@ export function rawTxnObjectInnerInternal(
     },
     config: NetworkConfig
 ): TxnBuilderTypes.RawTransaction {
-    let senderAddress = typeof args.senderAddress === "string" ? new HexString(args.senderAddress.toString()) : args.senderAddress;
-
     return new TxnBuilderTypes.RawTransaction(
-        new TxnBuilderTypes.AccountAddress(senderAddress.toUint8Array()),
+        new TxnBuilderTypes.AccountAddress(addressToBytes(args.senderAddress)),
         args.senderSequenceNumber,
         args.payload,
         // The builders that make no request use `DEFAULT_MAX_GAS_UNITS`; the others pass a resolved `maxGas`.
@@ -197,9 +192,7 @@ export function buildEntryFunctionInternal(
     let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
     return new TxnBuilderTypes.EntryFunction(
         new TxnBuilderTypes.ModuleId(
-            new TxnBuilderTypes.AccountAddress(
-                new HexString(standardizeAddress(moduleAddress)).toUint8Array(),
-            ),
+            new TxnBuilderTypes.AccountAddress(addressToBytes(moduleAddress)),
             new TxnBuilderTypes.Identifier(moduleName),
         ),
         new TxnBuilderTypes.Identifier(functionName),
@@ -456,11 +449,9 @@ export function multisigRawTxnObjectInternal(
     },
     config: NetworkConfig
 ): TxnBuilderTypes.RawTransaction {
-    let multisigAddress = typeof args.multisigAddress === "string" ? new HexString(args.multisigAddress.toString()) : args.multisigAddress;
-
     let payload = new TxnBuilderTypes.TransactionPayloadMultisig(
         new TxnBuilderTypes.MultiSig(
-            TxnBuilderTypes.AccountAddress.fromHex(multisigAddress),
+            new TxnBuilderTypes.AccountAddress(addressToBytes(args.multisigAddress)),
             new TxnBuilderTypes.MultiSigTransactionPayload(
                 buildEntryFunctionInternal({
                     function: args.function,
@@ -493,8 +484,6 @@ export function multisigProposalTxRawTxnObjectInternal(
     },
     config: NetworkConfig
 ): TxnBuilderTypes.RawTransaction {
-    let multisigAddress = typeof args.multisigAddress === "string" ? new HexString(args.multisigAddress.toString()) : args.multisigAddress;
-
     let multisigPayload = new TxnBuilderTypes.MultiSigTransactionPayload(
         buildEntryFunctionInternal({
             function: args.function,
@@ -513,7 +502,7 @@ export function multisigProposalTxRawTxnObjectInternal(
             function: `${SUPRA_FRAMEWORK_ADDRESS}::multisig_account::create_transaction_with_hash`,
             functionTypeArgs: [],
             functionArgs: [
-                BCS.bcsToBytes(TxnBuilderTypes.AccountAddress.fromHex(multisigAddress)),
+                BCS.bcsToBytes(new TxnBuilderTypes.AccountAddress(addressToBytes(args.multisigAddress))),
                 BCS.bcsSerializeBytes(multisigPayloadHash.toUint8Array()),
             ],
             optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},

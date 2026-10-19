@@ -1,4 +1,5 @@
-import { standardizeAddress } from "../account";
+import { addressToBytes, standardizeAddress } from "../account";
+import { validateAddress } from "../validation";
 import { SupraAPIError } from "../../errors/apiError";
 
 describe("standardizeAddress", () => {
@@ -35,5 +36,25 @@ describe("standardizeAddress", () => {
         expect(standardizeAddress("0xA")).toBe("0x" + "0".repeat(63) + "a");
         expect(standardizeAddress("0xAB" + "CD".repeat(31))).toBe("0xab" + "cd".repeat(31));
         expect(standardizeAddress("ABC")).toBe("0x" + "0".repeat(61) + "abc");
+    });
+});
+
+describe("addressToBytes", () => {
+    it.each(["1", "a", "123", "ab".repeat(31), "f".repeat(63), "1".repeat(64)])(
+        "encodes every address that validateAddress accepts as 32 bytes: 0x%s",
+        (hex) => {
+            validateAddress(`0x${hex}`);
+            const bytes = addressToBytes(`0x${hex}`);
+            expect(bytes).toHaveLength(32);
+            expect(Buffer.from(bytes).toString("hex")).toBe(hex.padStart(64, "0"));
+        },
+    );
+
+    it("accepts a string without 0x prefix", () => {
+        expect(Buffer.from(addressToBytes("a")).toString("hex")).toBe("a".padStart(64, "0"));
+    });
+
+    it("throws for more than 64 hex characters", () => {
+        expect(() => addressToBytes(`0x${"1".repeat(65)}`)).toThrow(RangeError);
     });
 });

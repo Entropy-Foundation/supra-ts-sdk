@@ -72,7 +72,7 @@ export class Build {
             senderSequenceNumber: bigint,
             function: MoveFunctionId,
             functionTypeArgs: Array<TypeArgument>,
-            functionArgs: Array<Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>>,
+            functionArgs: Array<SimpleEntryFunctionArgumentTypes>,
             abi?: MoveModule,
             optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
         }

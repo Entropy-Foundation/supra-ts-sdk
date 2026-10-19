@@ -19,13 +19,13 @@ export interface CallContractArgs {
 export async function callContractInternal(args: CallContractArgs, config: NetworkConfig): Promise<SubmitTransactionResponse> {
 
     const signers: SupraAccount[] = [];
-    const functionArguments: Array<Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>> = [];
+    const functionArguments: Array<SimpleEntryFunctionArgumentTypes> = [];
 
     args.functionArguments.forEach((f) => {
         if (f instanceof SupraAccount) {
             signers.push(f);
         } else {
-            functionArguments.push(f as Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>);
+            functionArguments.push(f as SimpleEntryFunctionArgumentTypes);
         }
     });
 

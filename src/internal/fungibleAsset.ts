@@ -1,6 +1,6 @@
-import { BCS, HexString, type SupraAccount } from "supra-l1-sdk-core";
+import { BCS, type SupraAccount } from "supra-l1-sdk-core";
 import { SupraInsufficientFungibleAssetBalanceError } from "../errors/fungibleAssetError";
-import { standardizeAddress } from "../helper/account";
+import { addressToBytes, standardizeAddress } from "../helper/account";
 import { parseTypeArgument } from "../helper/typeTag";
 import type { AccountAddressInput } from "../types/account";
 import type { FungibleAssetMetadata } from "../types/fungibleAsset";
@@ -29,10 +29,7 @@ export async function transferFungibleAssetInternal(
     config: NetworkConfig
 ): Promise<SubmitTransactionResponse> {
 
-    let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
-    let assetAddress = typeof args.assetAddress === "string" ? new HexString(args.assetAddress.toString()) : args.assetAddress;
-
-    if (standardizeAddress(assetAddress) === SUPRA_FUNGIBLE_ASSET_ADDRESS) {
+    if (standardizeAddress(args.assetAddress) === SUPRA_FUNGIBLE_ASSET_ADDRESS) {
         await assertSupraFungibleAssetBalanceInternal(args.senderAccount, BigInt(args.amount), config);
     }
 
@@ -40,7 +37,7 @@ export async function transferFungibleAssetInternal(
     let supraTransferPayload = {
         function: `${SUPRA_FRAMEWORK_ADDRESS}::primary_fungible_store::transfer` as MoveFunctionId,
         functionTypeArgs: [parseTypeArgument("0x1::fungible_asset::Metadata")],
-        functionArgs: [assetAddress.toUint8Array(), receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]
+        functionArgs: [addressToBytes(args.assetAddress), addressToBytes(args.receiverAccountAddress), BCS.bcsSerializeUint64(args.amount)]
     }
 
     return await buildAndSubmitEntryFunctionInternal({

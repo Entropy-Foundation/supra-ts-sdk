@@ -19,3 +19,8 @@ supra move tool build-publish-payload --supra-home <empty dir> --package-dir e2e
 `metadata` and `module` come from `<payload.json>`. For `script`, run `supra move tool compile` with the
 same package, home, named address and output directory options; the script is
 `<build dir>/build/sdk_e2e_fixtures/bytecode_scripts/main.mv`, as hex.
+
+The package depends on `MoveStdlib` (for `std::option`), a git dependency on the public repository, so the
+first build needs network access to fetch it. `sdk_e2e::tagged` holds the functions with a type parameter,
+the functions that take several signers, a `vector<u8>` or an `Option`, and the views that return what
+they received.

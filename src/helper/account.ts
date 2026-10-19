@@ -27,3 +27,14 @@ export function standardizeAddress(address: AccountAddressInput): string {
 
     return `0x${cleanAddress.padStart(64, "0")}`;
 }
+
+/**
+ * Encode an address as the 32-byte argument the node expects. Addresses shorter than 64 hex
+ * characters are left-padded with zeros.
+ * @param address - The address to encode
+ * @returns The 32 address bytes
+ * @throws {RangeError} If the address has more than 64 hex characters
+ */
+export function addressToBytes(address: AccountAddressInput): Uint8Array {
+    return new HexString(standardizeAddress(address)).toUint8Array();
+}

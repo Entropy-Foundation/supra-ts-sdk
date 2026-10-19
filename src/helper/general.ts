@@ -120,17 +120,22 @@ export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefi
  */
 export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryFunctionArgumentTypes): unknown {
 
-    // ----------------------------
-    // 1️⃣ Handle null for Option
-    // ----------------------------
-    if (value === null || value === undefined) {
+    const optionInner = extractOptionInner(type);
 
-        const optionInner = extractOptionInner(type);
-        if (optionInner) {
-            if (optionInner === "u8") return { vec: "" };
-            if (optionInner === "vector<u8>") return { vec: [] };
-            return { vec: [] };
+    // ----------------------------
+    // 1. Option<T>
+    // ----------------------------
+    // The node reads an Option<T> as the struct { vec: vector<T> }: `vec` is a hex string for
+    // T = u8 and an array holding zero or one element of T otherwise.
+    if (optionInner) {
+        const isNone = value === null || value === undefined;
+        if (optionInner === "u8") {
+            return { vec: isNone ? "" : uint8ArrayToHexString(vectorU8ToBytes([value])) };
         }
+        return { vec: isNone ? [] : [convertArgsValueToJSONParsable(optionInner, value)] };
+    }
+
+    if (value === null || value === undefined) {
         return null;
     }
 
@@ -138,59 +143,10 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     const bigIntTypes = ["u64", "u128", "u256", "i64", "i128", "i256"];
 
     // ----------------------------
-    // 2️⃣ Option<T>
-    // ----------------------------
-    // Handle Option<T> types
-    const optionInner = extractOptionInner(type);
-    if (optionInner) {
-
-        // Special RPC convention: Option<u8> is directly serialized
-        if (optionInner === "u8") {
-            return { vec: String(value) };
-        }
-
-        // Option<vector<u8>> → wrap hex string inside array
-        if (optionInner === "vector<u8>") {
-            if (typeof value === "string") return { vec: [value] };
-
-            if (value instanceof Uint8Array) return { vec: [uint8ArrayToHexString(value)] };
-
-            if (value instanceof ArrayBuffer) return { vec: [uint8ArrayToHexString(new Uint8Array(value))] };
-
-            if (Array.isArray(value)) {
-                const hex = value.map(v => Number(v).toString(16).padStart(2, "0")).join("");
-                return { vec: [hex] };
-            }
-            throw new Error("Invalid Option<vector<u8>> value");
-        }
-
-        // Nested Option, vector, or struct inside Option
-        return { vec: [convertArgsValueToJSONParsable(optionInner, value)] };
-    }
-
-    // ----------------------------
-    // 3️⃣ vector<u8> (SPECIAL CASE)
+    // 2. vector<u8>
     // ----------------------------
     if (type === "vector<u8>") {
-        // Allow string or byte array
-        if (typeof value === "string") {
-            return value; // assume hex/base64 handled upstream
-        }
-
-        if (value instanceof Uint8Array) return uint8ArrayToHexString(value);
-
-        if (value instanceof ArrayBuffer) return uint8ArrayToHexString(new Uint8Array(value));
-
-
-        if (Array.isArray(value)) {
-            // convert number array to hex string
-            return value.map(v => {
-                const n = Number(v);
-                if (n < 0 || n > 255) throw new Error("Invalid u8 value in vector<u8>");
-                return n.toString(16).padStart(2, "0");
-            }).join("");
-        }
-        throw new Error("Invalid vector<u8> input");
+        return vectorU8ToHex(value);
     }
 
     // ----------------------------
@@ -209,8 +165,8 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     // ----------------------------
     // 5️⃣ Primitives
     // ----------------------------
-    if (intTypes.includes(type)) return Number(value);
-    if (bigIntTypes.includes(type)) return value.toString();
+    if (intTypes.includes(type)) return Number(integerArgument(type, value));
+    if (bigIntTypes.includes(type)) return integerArgument(type, value).toString();
     if (type === "bool") return Boolean(value);
     if (type === "address") return String(value);
 
@@ -407,3 +363,67 @@ export function addAddressPadding(address: string): string {
   
     return '0x' + paddedHex
   }
+
+/**
+ * Converts a `vector<u8>` argument to bytes. Accepts a `number[]` of integers from 0 to 255, a
+ * `Uint8Array`, an `ArrayBuffer`, and a hex string of whole bytes with or without a `0x` prefix.
+ * @throws Error for any other value
+ */
+export function vectorU8ToBytes(value: unknown): Uint8Array {
+    if (value instanceof Uint8Array) {
+        return value;
+    }
+    if (value instanceof ArrayBuffer) {
+        return new Uint8Array(value);
+    }
+    if (typeof value === "string") {
+        const match = /^(?:0x)?((?:[0-9a-fA-F]{2})*)$/.exec(value);
+        if (!match) {
+            throw new Error(`Expected a hex string of whole bytes for vector<u8>, got ${JSON.stringify(value)}`);
+        }
+        const hex = match[1]!;
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < bytes.length; i++) {
+            bytes[i] = parseInt(hex.slice(2 * i, 2 * i + 2), 16);
+        }
+        return bytes;
+    }
+    if (Array.isArray(value)) {
+        return Uint8Array.from(value, (item) => {
+            const byte = typeof item === "string" && /^\d+$/.test(item) ? Number(item) : item;
+            if (typeof byte !== "number" || !Number.isInteger(byte) || byte < 0 || byte > 255) {
+                throw new Error(`Invalid u8 value in vector<u8>: ${JSON.stringify(item)}`);
+            }
+            return byte;
+        });
+    }
+    throw new Error(`Expected number[], Uint8Array or hex string for vector<u8>, got ${typeof value}`);
+}
+
+/**
+ * Converts a `vector<u8>` argument to the hex string the node expects. A string is validated and
+ * returned unchanged; every other accepted form is hex-encoded without a prefix.
+ */
+export function vectorU8ToHex(value: unknown): string {
+    const bytes = vectorU8ToBytes(value);
+    return typeof value === "string" ? value : uint8ArrayToHexString(bytes);
+}
+
+/**
+ * Converts an integer argument given as a number, bigint or decimal string to a bigint. Signed
+ * types accept a leading `-`. Empty, whitespace-only and otherwise malformed strings are rejected.
+ * @throws Error if the value is not an integer
+ */
+function integerArgument(type: string, value: unknown): bigint {
+    if (typeof value === "bigint") {
+        return value;
+    }
+    if (typeof value === "number" && Number.isInteger(value)) {
+        return BigInt(value);
+    }
+    const pattern = type.startsWith("i") ? /^-?\d+$/ : /^\d+$/;
+    if (typeof value === "string" && pattern.test(value)) {
+        return BigInt(value);
+    }
+    throw new Error(`Expected an integer for ${type}, got ${JSON.stringify(typeof value === "bigint" ? String(value) : value)}`);
+}
