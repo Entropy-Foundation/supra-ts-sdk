@@ -480,6 +480,11 @@ console.log((await offline.getChainId()).value);
   must be decimal digits, with a leading `-` for signed types, or, for entry functions, `0x` followed by hex digits.
   Empty strings, surrounding whitespace, `"1.5"`, `"-1"` for unsigned types and values above the maximum of the type
   throw before any request. Pass a `number`, a `bigint` or a trimmed decimal string.
+- Integer arguments of views outside the range of their type (`u8` 300, `u64` -1) throw before any request; the
+  node refused them.
+- A `number` given for an integer argument must be a safe integer (at most 2^53 - 1 in magnitude). Pass larger
+  values, such as `u64` amounts above 2^53 - 1, as a `bigint` or a decimal string; a larger `number` holds a rounded
+  value.
 - `methods.view` sends an `Option<u8>` argument as the hex of the byte, which is what the node reads. Pass the number
   (`16`); code that converted it to a string to work around the old encoding passes the number instead.
 - A `bool` argument of a view is a boolean, `"true"` or `"false"`. Other values, such as `0`, `1` or `"0"`, throw

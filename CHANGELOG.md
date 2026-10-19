@@ -197,6 +197,12 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   whitespace, `"1.5"`, `"-1"` for unsigned types, `"0x"` and values above the maximum of the type throw
   before any request, with an error naming the argument index and type. Previously `""` and `" "` were
   encoded as 0 and padded strings were accepted.
+- **Breaking:** integer arguments of views given in any form (number, bigint or string) must lie in the range of
+  the type, `0` to `2^n - 1` for `un` and `-2^(n-1)` to `2^(n-1) - 1` for `in`; other values throw before any
+  request. Views sent them to the node, which refused them (`u8` 300, `u64` -1).
+- **Breaking:** a `number` given for an integer argument of an entry function or a view must be a safe integer
+  (at most `Number.MAX_SAFE_INTEGER`, 2^53 - 1, in magnitude); larger values are given as a `bigint` or a decimal
+  string. A larger `number` such as `2 ** 53 + 1` holds a rounded value, which was encoded.
 - **Breaking:** `methods.view` encodes an `Option<u8>` argument the way the node reads it, as the hex of the
   byte (`Some(16)` is `{"vec":"10"}`). It was sent as the decimal string, which the node read as a
   different byte or rejected. `Option<T>` for every other `T` is a one-element array of the encoded
