@@ -101,14 +101,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SupraConfig` documents which settings belong to a client: all of them.
 
 - **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
-  none when the estimate is turned off or the estimating simulation fails for a reason other than gas, and of the
-  builders that cannot estimate. The node requires the sender's balance to pay for `max gas × gas unit price`: 20 SUPRA
-  at the minimum gas unit price.
+  none when the estimate is turned off or the estimating simulation could not run to a result (a request error, a
+  response without `gas_used`), and of the builders that cannot estimate. The node requires the sender's balance to pay
+  for `max gas × gas unit price`: 20 SUPRA at the default gas unit price of 100,000 quants. A sender with less must set
+  `maxGas` on the builders that make no request.
 - **Breaking:** without a `maxGas` on the call or the client, a transaction's max gas is estimated by the methods listed
   under Added, and `transaction.build.simple` uses `DEFAULT_MAX_GAS_UNITS` at most what the sender's balance pays for
   (one balance read). These methods make a balance read and, except `transaction.build.simple`, a simulation request
-  before the submission. A transaction whose estimating simulation runs out of gas throws `SupraSimulationFailedError`
-  and is not submitted.
+  before the submission. A transaction whose estimating simulation has a status other than `Success` (an abort,
+  `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and is not submitted.
 - **Breaking:** `SupraClient.networkInformation.maxGas` is `undefined` when `SupraConfig.maxGas` is not set; it was
   `DEFAULT_MAX_GAS_UNITS`.
 

@@ -4,7 +4,7 @@ import type {
     SubmitTransactionResponse,
     SupraAccount,
 } from "../src/index";
-import { TransactionStatus, TypeTagParser } from "../src/index";
+import { MoveVmError, SupraSimulationFailedError, TransactionStatus, TypeTagParser } from "../src/index";
 import { COIN_ABI } from "./helpers/abi";
 import { createFundedAccount, createUnfundedAccount, waitForBalance } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
@@ -158,6 +158,45 @@ describeE2E("gas settings", () => {
 
         expect(txn.status).toBe(TransactionStatus.Success);
         expect(BigInt(committed(txn).header?.max_gas_amount ?? 0) * gasUnitPrice).toBeLessThanOrEqual(left);
+    });
+
+    test("a SUPRA transfer that exceeds the balance throws SupraSimulationFailedError without submitting", async () => {
+        const account = await createFundedAccount(ctx);
+        const sequenceBefore = (await ctx.supra.account.getAccountInfo({ accountAddress: account.address() }))
+            .sequence_number;
+        const balance = await rawSupraBalance(ctx, account.address().toString());
+
+        const originalFetch = globalThis.fetch;
+        let submits = 0;
+        globalThis.fetch = (input: string | URL | Request, init?: RequestInit) => {
+            const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+            if (url.includes("/transactions/submit")) {
+                submits++;
+            }
+            return originalFetch(input, init);
+        };
+        let error: unknown;
+        try {
+            await ctx.supra.coin.transferSupraCoin({
+                senderAccount: account,
+                receiverAccountAddress: createUnfundedAccount().address().toString(),
+                amount: balance + 1n,
+                optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: WAIT },
+            });
+        } catch (caught) {
+            error = caught;
+        } finally {
+            globalThis.fetch = originalFetch;
+        }
+
+        expect(error).toBeInstanceOf(SupraSimulationFailedError);
+        const failed = error as SupraSimulationFailedError;
+        expect(failed.major_status).toBe(MoveVmError.ABORTED);
+        expect(failed.sub_status).toBe(0x10006);
+        expect(submits).toBe(0);
+        expect((await ctx.supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number).toBe(
+            sequenceBefore,
+        );
     });
 
     describe("per-call settings reach the committed transaction", () => {

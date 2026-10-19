@@ -88,16 +88,19 @@ export class Build {
     * @param args.function - Target function name as MoveFunctionId
     * @param args.functionTypeArgs - Target function type args
     * @param args.functionArgs - Target function args
-    * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
+    * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload. This builder makes no
+    * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
+    * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
+    * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
     * @returns Raw transaction object
     * @example
     * ```typescript
     * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
+    *
     * const supra = new SupraClient({ network: Network.TESTNET });
-    * 
+    *
     * async function runExample() {
-    * 
+    *
     *     const supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject({
     *         senderAddress: account.address(),
     *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
@@ -135,7 +138,10 @@ export class Build {
     * @param args.scriptCode - Move script bytecode
     * @param args.scriptTypeArgs - Type arguments that move script bytecode requires
     * @param args.scriptArgs - Arguments to the move script bytecode function
-    * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
+    * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload. This builder makes no
+    * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
+    * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
+    * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
     * @returns Raw script transaction object
     * @example
     * ```typescript
@@ -189,7 +195,10 @@ export class Build {
      * @param args.automationFeeCapForEpoch - Maximum automation fee that user is willing to pay for epoch.
      * @param args.automationFeeCapForEpoch - Expiration time of the automated transaction in seconds since UTC Epoch start.
      * @param args.automationAuxData - Reserved for future extensions of registration parameters.
-     * @param optionalTransactionPayloadArgs Optional arguments for transaction payload
+     * @param optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
+     * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
+     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
+     * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
      * @returns Raw transaction object
      * @example
      * ```typescript
@@ -247,7 +256,10 @@ export class Build {
      * @param args.function - Target function name as MoveFunctionId
      * @param args.functionTypeArgs - Target function type args
      * @param args.functionArgs - Target function args
-     * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload
+     * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
+     * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
+     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
+     * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
      * @returns Raw transaction object
      * @example
      * ```typescript
@@ -297,7 +309,10 @@ export class Build {
     * @param args.function - Target function name as MoveFunctionId
     * @param args.functionTypeArgs - Target function type args
     * @param args.functionArgs - Target function args
-    * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
+    * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload. This builder makes no
+    * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
+    * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
+    * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
     * @returns Raw transaction object
     * @example
     * ```typescript

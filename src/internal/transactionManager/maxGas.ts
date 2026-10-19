@@ -78,9 +78,10 @@ export async function affordableGasUnitsInternal(
  *    `ceil(gas used × multiplier)`, at least `MIN_ESTIMATED_MAX_GAS_UNITS`, at most `affordable`. The multiplier is the
  *    client's `maxGasEstimateMultiplier`, else `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`.
  *
- * A simulation that runs out of gas throws its `SupraSimulationFailedError`: the transaction cannot complete with the
- * sender's balance. When there is no `senderAccount`, or the balance read or the simulation fails for another reason,
- * the max gas is `DEFAULT_MAX_GAS_UNITS`, at most `affordable` when that is known and not zero.
+ * A simulation whose status is not `Success` (a `Fail` with an abort, `OUT_OF_GAS`, `PendingAfterExecution`,
+ * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. When there is no `senderAccount`, or the
+ * balance read fails, or the simulation fails for a reason that is not a simulation result (a request error, a response
+ * without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most `affordable` when that is known and not zero.
  */
 export async function resolveMaxGasInternal(
     args: {
@@ -130,7 +131,7 @@ export async function resolveMaxGasInternal(
             config,
         );
     } catch (error) {
-        if (error instanceof SupraSimulationFailedError && error.major_status === "OUT_OF_GAS") {
+        if (error instanceof SupraSimulationFailedError) {
             throw error;
         }
         return fallback;

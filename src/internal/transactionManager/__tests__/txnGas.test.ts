@@ -328,9 +328,23 @@ describe("gas settings", () => {
             expect(submitted().max_gas_amount).toBe(3_000);
         });
 
-        it("uses DEFAULT_MAX_GAS_UNITS when the simulation fails for a reason other than gas", async () => {
+        it.each([
+            [TransactionStatus.Fail, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006): x"],
+            [TransactionStatus.PendingAfterExecution, "Executed successfully"],
+            [TransactionStatus.Invalid, "SENDING_ACCOUNT_DOES_NOT_EXIST"],
+        ])("throws SupraSimulationFailedError and submits nothing when the simulation is %s", async (status, vmStatus) => {
+            node.simulate = () => json(moveTxn(status, vmStatus, 12));
+
+            const error: unknown = await helper(newClient(), undefined).catch((e: unknown) => e);
+
+            expect(error).toBeInstanceOf(SupraSimulationFailedError);
+            expect((error as SupraSimulationFailedError).status).toBe(status);
+            expect(requests.filter((r) => r.path === "/transactions/submit")).toHaveLength(0);
+        });
+
+        it("uses DEFAULT_MAX_GAS_UNITS when the simulation response has no gas_used", async () => {
             node.simulate = () =>
-                json(moveTxn(TransactionStatus.Fail, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006): x", 12));
+                json({ hash: HASH, status: TransactionStatus.Success, txn_type: "user", output: null, block_header: null });
 
             await helper(newClient(), undefined);
 

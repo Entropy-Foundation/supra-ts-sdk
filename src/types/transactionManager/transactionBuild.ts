@@ -20,15 +20,18 @@ import type { MoveInnerAuthenticator } from "../move";
  * `ceil(gas used × DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER)` (or the client's `maxGasEstimateMultiplier`), at least
  * `MIN_ESTIMATED_MAX_GAS_UNITS`, and at most the number of units the balance pays for.
  *
- * - When the simulation runs out of gas, the transaction cannot complete with the sender's balance:
+ * - When the simulation's status is not `Success` (an abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`),
  *   `SupraSimulationFailedError` is thrown and nothing is submitted.
- * - When the simulation, or the balance read, fails for another reason, the max gas is `DEFAULT_MAX_GAS_UNITS`, at
- *   most the number of units the balance pays for when that is known.
+ * - When the balance read fails, or the simulation fails for a reason that is not a simulation result (a request
+ *   error, a response without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most the number of units the
+ *   balance pays for when that is known.
  *
  * `transaction.build.simple` has no signing account to simulate with: its max gas is `DEFAULT_MAX_GAS_UNITS`, at most
  * the number of gas units the sender's balance pays for. The builders that make no request (`rawTxnObject`,
  * `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and
- * `multisigProposalTxRawTxnObject`) use `DEFAULT_MAX_GAS_UNITS`.
+ * `multisigProposalTxRawTxnObject`) use `DEFAULT_MAX_GAS_UNITS` (20,000 units). The node requires the sender's SUPRA
+ * balance to cover `max gas × gas unit price` at validation: at the default gas unit price of 100,000 quants, 20,000
+ * units need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
  */
 export interface OptionalTransactionPayloadArgs {
     maxGas?: bigint;
