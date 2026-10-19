@@ -540,7 +540,7 @@ A transaction executes only when its sequence number is the account's next numbe
 
 - The first use reads the number from the chain. Each transaction the node accepts advances the counter, so transactions sent without waiting get consecutive numbers, also with `Promise.all`.
 - A transaction the node refuses for another reason (for example an insufficient balance) gives its number back.
-- When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or a number beyond what it queues), the client reads the number from the chain again and sends the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
+- When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number beyond what it queues, or a number that already has a pending transaction), the client reads the number from the chain again and sends the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
 - `supra.resetSequenceNumber(address)` forgets the counter of an account. Call it after the account sent transactions by other means.
 - `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given, without using or changing the counter.
 
