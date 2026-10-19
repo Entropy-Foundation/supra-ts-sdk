@@ -20,8 +20,10 @@ export interface RetryConfig {
  * `OptionalTransactionPayloadArgs`). `minGasUnitPrice` sets the gas unit price of every transaction that sets none
  * (default `DEFAULT_GAS_PRICE`). `estimateMaxGas: false` turns the estimate off: a transaction without `maxGas` then has
  * `DEFAULT_MAX_GAS_UNITS`. A simulation whose status is not `Success` throws `SupraSimulationFailedError` and nothing is
- * submitted. `maxGasEstimateMultiplier` replaces `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`, the factor applied
- * to the simulated gas used; it must be a finite number of at least 1.
+ * submitted; the simulation runs against committed state, so a transaction that depends on an earlier one that has not
+ * committed fails its estimate, and needs `maxGas`. `maxGasEstimateMultiplier` replaces
+ * `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`, the factor applied to the simulated gas used; it must be a finite number of
+ * at least 1.
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`. `retry` turns on retries of GET requests; it is off by default.
  * `waitTimeoutMs` sets how long a wait for a transaction's final status lasts (`waitForTransaction` and submissions

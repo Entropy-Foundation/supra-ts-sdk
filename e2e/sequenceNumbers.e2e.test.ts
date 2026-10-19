@@ -1,10 +1,11 @@
-import type { SubmitTransactionResponse, SupraAccount } from "../src/index";
-import { SupraClient } from "../src/index";
+import type { MoveModule, SubmitTransactionResponse, SupraAccount } from "../src/index";
+import { SupraClient, SupraSimulationFailedError, TypeTagParser } from "../src/index";
 import { isStaleSequenceNumberError } from "../src/internal/sequenceNumber";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import { pollUntil, rawGet, rawWaitForCommit, type RawTransaction } from "./helpers/raw";
+import { fixtureModuleFor, fixturePackageMetadata } from "./helpers/fixturePackage";
 import { explicitGas } from "./helpers/transfers";
 
 const TRANSFERS = 10;
@@ -170,5 +171,116 @@ describeE2E("sequence numbers", () => {
 
         const raw = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${response.hash}`);
         expect(BigInt(raw.body.header?.sequence_number ?? -1)).toBe(explicit);
+    });
+
+    describe("with the default gas settings (the max gas is estimated)", () => {
+        const PIPELINED = 5;
+
+        function defaultGasTransfer(supra: SupraClient, sender: SupraAccount): Promise<SubmitTransactionResponse> {
+            return supra.coin.transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: createUnfundedAccount().address().toString(),
+                amount: AMOUNT,
+                optionalTransactionArgs: {
+                    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+                },
+            });
+        }
+
+        test("transfers issued one after another without waiting are all accepted with consecutive numbers", async () => {
+            const sender = await createFundedAccount(ctx);
+            const supra = newClient();
+            const first = await chainSequenceNumber(sender);
+
+            const responses: SubmitTransactionResponse[] = [];
+            for (let index = 0; index < PIPELINED; index += 1) {
+                responses.push(await defaultGasTransfer(supra, sender));
+            }
+
+            expectConsecutive(await commitAll(responses), first);
+        });
+
+        test("transfers issued together are all accepted with consecutive numbers", async () => {
+            const sender = await createFundedAccount(ctx);
+            const supra = newClient();
+            const first = await chainSequenceNumber(sender);
+
+            const responses = await Promise.all(
+                Array.from({ length: PIPELINED }, () => defaultGasTransfer(supra, sender)),
+            );
+
+            expectConsecutive(await commitAll(responses), first);
+        });
+
+        describe("a call that depends on a transaction that has not committed", () => {
+            const taggedAbi = (address: string) =>
+                ({
+                    address,
+                    name: "tagged",
+                    friends: [],
+                    exposed_functions: [
+                        {
+                            name: "tagged",
+                            visibility: "public",
+                            is_entry: true,
+                            is_view: false,
+                            generic_type_params: [{ constraints: [] }],
+                            params: ["&signer"],
+                            return: [],
+                        },
+                    ],
+                    structs: [],
+                }) as const satisfies MoveModule;
+
+            /** Publishes the fixture module without waiting and calls its entry function straight after. */
+            async function publishThenCall(
+                maxGas: bigint | undefined,
+            ): Promise<{ publisher: SupraAccount; call: Promise<SubmitTransactionResponse>; submitted: () => number }> {
+                const publisher = await createFundedAccount(ctx);
+                const supra = newClient();
+                const publishing = await supra.transaction.publishPackage({
+                    senderAccount: publisher,
+                    packageMetadata: fixturePackageMetadata(),
+                    modulesCode: [fixtureModuleFor(publisher.address().toString())],
+                    optionalTransactionArgs: {
+                        enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+                    },
+                });
+                expect(publishing.hash).toBeDefined();
+                const abi = taggedAbi(publisher.address().toString());
+                const call = supra.contract.fromABI([abi] as const).contracts.tagged.entry.tagged({
+                    functionArguments: [publisher],
+                    typeArguments: [new TypeTagParser("0x1::supra_coin::SupraCoin").parseTypeTag()],
+                    ...(maxGas === undefined ? {} : { optionalTransactionPayloadArgs: { maxGas } }),
+                });
+                return { publisher, call, submitted: () => 0 };
+            }
+
+            test("throws SupraSimulationFailedError and submits nothing without maxGas", async () => {
+                const { publisher, call } = await publishThenCall(undefined);
+
+                await expect(call).rejects.toBeInstanceOf(SupraSimulationFailedError);
+
+                // Only the publish is in the account's history, and the number of the refused call is free.
+                await pollUntil(
+                    "the publish to commit",
+                    () => chainSequenceNumber(publisher),
+                    (value) => value === 1n,
+                );
+            });
+
+            test("is accepted and committed with maxGas", async () => {
+                const { publisher, call } = await publishThenCall(5_000n);
+
+                const response = await call;
+
+                expect(await commitAll([response])).toEqual([1n]);
+                await pollUntil(
+                    "the account's sequence number to advance",
+                    () => chainSequenceNumber(publisher),
+                    (value) => value === 2n,
+                );
+            });
+        });
     });
 });

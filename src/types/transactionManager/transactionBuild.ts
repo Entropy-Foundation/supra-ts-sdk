@@ -26,6 +26,12 @@ import type { MoveInnerAuthenticator } from "../move";
  *   error, a response without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most the number of units the
  *   balance pays for when that is known.
  *
+ * The simulation runs against committed state. When an earlier transaction of the sender has not committed, the
+ * simulation reports the sequence number as too new; the transaction is then simulated with the sender's sequence
+ * number on the chain, and submitted with its own. A transaction that depends on an earlier one that has not committed
+ * (for example one that uses a resource the earlier one creates) fails its estimate and throws
+ * `SupraSimulationFailedError`; set `maxGas` for such a transaction.
+ *
  * `transaction.build.simple` has no signing account to simulate with: its max gas is `DEFAULT_MAX_GAS_UNITS`, at most
  * the number of gas units the sender's balance pays for. The builders that make no request (`rawTxnObject`,
  * `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and

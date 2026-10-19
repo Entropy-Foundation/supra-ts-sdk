@@ -288,6 +288,13 @@ keeps for each account:
 The counter lives in one `SupraClient`. Two clients, or two processes, that send from the same account each keep their
 own counter and recover from each other's transactions through the refusal and re-read described above.
 
+The max gas estimate simulates against committed state. For a transaction sent while an earlier transaction of the
+account has not committed, the node reports the number as too new; the SDK then simulates the same transaction with the
+account's number on the chain and submits it with the counter's number, so pipelined transfers work with the default
+gas settings. A transaction that depends on an earlier one that has not committed (for example a call to a module that
+the earlier transaction publishes) fails that simulation and throws `SupraSimulationFailedError`, and nothing is
+submitted. Pass `maxGas` for such a transaction, or wait for the earlier transaction to commit.
+
 A node accepts a transaction whose number is ahead of the account's next number and holds it until the numbers before
 it have been sent. The node holds at most 25 numbers per account by default (the refusal message names the highest
 number the node accepts), so at most about 25 transactions of one account can be in flight; wait for commits
@@ -319,7 +326,9 @@ used. When neither the call nor the client sets `maxGas`:
   They read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and
   use `ceil(gas used × 1.5)`, at least 1,500 units and at most what the balance pays for. A simulation whose status is
   not `Success` (an abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and
-  nothing is submitted. When the balance read or the simulation request fails, or the response has no `gas_used`, the
+  nothing is submitted. When an earlier transaction of the sender has not committed, the simulation of the next one is
+  made with the sender's sequence number on the chain (see [Sequence numbers](#sequence-numbers)). When the balance
+  read or the simulation request fails, or the response has no `gas_used`, the
   fixed default below applies, at most what the balance pays for. `SupraConfig.maxGasEstimateMultiplier` replaces the
   factor 1.5.
 - `transaction.build.simple` has no key pair to simulate with: it uses the fixed default, at most what the sender's

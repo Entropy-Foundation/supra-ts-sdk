@@ -1,4 +1,4 @@
-import type { SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
+import { TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import type { AccountAddressInput } from "../../types/account";
 import type { TransactionResponse } from "../../types/transaction";
 import type { OptionalTransactionPayloadArgs } from "../../types/transactionManager/transactionBuild";
@@ -13,6 +13,7 @@ import {
 } from "../../utils/constants";
 import { standardizeAddress } from "../../helper/account";
 import { SupraSimulationFailedError } from "../../errors/transactionError";
+import { getAccountInfoInternal } from "../account";
 import { viewRawInternal } from "../methods";
 import { simulateTxnInternal } from "./txnSimulate";
 import { sendTxnPayloadInternal } from "./txnBuild";
@@ -79,7 +80,15 @@ export async function affordableGasUnitsInternal(
  *    client's `maxGasEstimateMultiplier`, else `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`.
  *
  * A simulation whose status is not `Success` (a `Fail` with an abort, `OUT_OF_GAS`, `PendingAfterExecution`,
- * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. Signing the simulated transaction
+ * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. When the transaction's sequence number
+ * is ahead of the account's number on the chain, because an earlier transaction of the account has not committed, the
+ * simulation reports `SEQUENCE_NUMBER_TOO_NEW`: the same transaction is then simulated with the chain's number, and
+ * that result is used. If that simulation reports a stale sequence number again, the number is read and the
+ * simulation made once more; if it is stale a second time, or the account cannot be read, the max gas is
+ * `DEFAULT_MAX_GAS_UNITS`, at most `affordable`. When an earlier transaction committed after the balance was read and
+ * the balance no longer pays for the simulated max gas, the simulation is made with what the new balance pays for.
+ * A transaction that depends on the state of an earlier one that has not
+ * committed fails the simulation at the chain's number and throws. Signing the simulated transaction
  * throws what signing throws, for example `SupraChainIdMismatchError`, before the simulation is requested. When there
  * is no `senderAccount`, or the balance read fails, or the simulation fails for a reason that is not a simulation
  * result (a request error, a response without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most
@@ -122,18 +131,35 @@ export async function resolveMaxGasInternal(
     }
 
     // Signing checks the chain ID; its errors are thrown, as the signature of the submitted transaction would throw them.
-    const sendTxPayload = await sendTxnPayloadInternal(
-        { senderAccount: args.senderAccount, rawTxn: args.buildRawTxn(affordable) },
-        config,
-    );
+    const rawTxn = args.buildRawTxn(affordable);
     let simulated: TransactionResponse;
     try {
-        simulated = await simulateTxnInternal({ sendTxPayload }, config);
+        simulated = await simulateTxnInternal(
+            { sendTxPayload: await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config) },
+            config,
+        );
     } catch (error) {
         if (error instanceof SupraSimulationFailedError) {
-            throw error;
+            if (!isSequenceNumberTooNew(error)) {
+                throw error;
+            }
+            const result = await simulateAtChainSequenceNumber(
+                {
+                    senderAccount: args.senderAccount,
+                    senderAddress: args.senderAddress,
+                    rawTxn,
+                    buildRawTxn: args.buildRawTxn,
+                },
+                config,
+            );
+            if (result === undefined) {
+                return fallback;
+            }
+            simulated = result.simulated;
+            affordable = result.affordable;
+        } else {
+            return fallback;
         }
-        return fallback;
     }
 
     const gasUsed = gasUsedOf(simulated);
@@ -143,6 +169,92 @@ export async function resolveMaxGasInternal(
     const multiplier = config.maxGasEstimateMultiplier ?? DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER;
     const estimate = BigInt(Math.ceil(gasUsed * multiplier));
     return minBigInt(estimate > MIN_ESTIMATED_MAX_GAS_UNITS ? estimate : MIN_ESTIMATED_MAX_GAS_UNITS, affordable);
+}
+
+function isSequenceNumberTooNew(error: SupraSimulationFailedError): boolean {
+    return error.major_status === "SEQUENCE_NUMBER_TOO_NEW";
+}
+
+/**
+ * Simulates the transaction again with the account's sequence number on the chain, for a transaction whose number is
+ * ahead of the committed state because an earlier transaction of the account has not committed. The simulation runs
+ * with the same payload, gas unit price, expiry and chain ID. When the chain moved between the read and the
+ * simulation, the number is read again, once more. An earlier transaction that committed since the balance was read
+ * lowers the balance below `max gas × gas unit price`; the simulation then runs with the largest max gas that the new
+ * balance pays for. Returns `undefined` when the result says nothing about the transaction (the sequence number is
+ * stale both times, the account or the balance cannot be read, the request fails). A simulation that fails for another
+ * reason throws its `SupraSimulationFailedError`.
+ */
+async function simulateAtChainSequenceNumber(
+    args: {
+        senderAccount: SupraAccount;
+        senderAddress: AccountAddressInput;
+        rawTxn: TxnBuilderTypes.RawTransaction;
+        buildRawTxn: (maxGas: bigint) => TxnBuilderTypes.RawTransaction;
+    },
+    config: NetworkConfig,
+): Promise<{ simulated: TransactionResponse; affordable: bigint } | undefined> {
+    const { senderAccount } = args;
+    let rawTxn = args.rawTxn;
+    let staleSimulations = 0;
+    let balanceReads = 0;
+    while (staleSimulations < 2) {
+        let chainSequenceNumber: bigint;
+        try {
+            const account = await getAccountInfoInternal({ accountAddress: senderAccount.address() }, config);
+            chainSequenceNumber = BigInt(account.sequence_number);
+        } catch {
+            return undefined;
+        }
+        if (chainSequenceNumber >= BigInt(rawTxn.sequence_number)) {
+            // The chain has reached the transaction's number: this simulation says nothing about the transaction.
+            return undefined;
+        }
+        const atChainNumber = new TxnBuilderTypes.RawTransaction(
+            rawTxn.sender,
+            chainSequenceNumber,
+            rawTxn.payload,
+            rawTxn.max_gas_amount,
+            rawTxn.gas_unit_price,
+            rawTxn.expiration_timestamp_secs,
+            rawTxn.chain_id,
+        );
+        try {
+            const simulated = await simulateTxnInternal(
+                { sendTxPayload: await sendTxnPayloadInternal({ senderAccount, rawTxn: atChainNumber }, config) },
+                config,
+            );
+            return { simulated, affordable: BigInt(rawTxn.max_gas_amount) };
+        } catch (error) {
+            if (!(error instanceof SupraSimulationFailedError)) {
+                return undefined;
+            }
+            if (error.major_status === "SEQUENCE_NUMBER_TOO_NEW" || error.major_status === "SEQUENCE_NUMBER_TOO_OLD") {
+                staleSimulations += 1;
+            } else if (error.major_status === "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE" && balanceReads < 2) {
+                balanceReads += 1;
+                let affordable: bigint;
+                try {
+                    affordable = await affordableGasUnitsInternal(
+                        { senderAddress: args.senderAddress, gasUnitPrice: BigInt(rawTxn.gas_unit_price) },
+                        config,
+                    );
+                } catch {
+                    return undefined;
+                }
+                if (affordable === 0n) {
+                    return undefined;
+                }
+                if (affordable >= BigInt(rawTxn.max_gas_amount)) {
+                    throw error;
+                }
+                rawTxn = args.buildRawTxn(affordable);
+            } else {
+                throw error;
+            }
+        }
+    }
+    return undefined;
 }
 
 function gasUsedOf(transaction: TransactionResponse): number | undefined {
