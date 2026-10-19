@@ -1,4 +1,4 @@
-import { MILLISECONDS_PER_SECOND, BCS, HexString, TxnBuilderTypes, type MoveFunctionId } from "supra-ts-sdk";
+import { MILLISECONDS_PER_SECOND, BCS, HexString, TxnBuilderTypes, stringifyWithBigInt, type MoveFunctionId } from "supra-ts-sdk";
 import { account } from "./account.setup";
 import { createClient, fundAccountsIfRequested, usesCustomNode } from "./client.setup";
 
@@ -84,11 +84,11 @@ import { createClient, fundAccountsIfRequested, usesCustomNode } from "./client.
         rawTxn: supra.transaction.build.rawTxnObject(await supraTransferPayload())
     })
 
-    // You use can above payload to send the transaction with any HTTP client. The payload holds `u64` fields as
-    // `bigint`, which JSON.stringify cannot serialize; the values here are far below 2^53, so a number is exact.
+    // You use can above payload to send the transaction with any HTTP client. The payload holds `bigint` values,
+    // which `JSON.stringify` rejects; `stringifyWithBigInt` writes them as exact JSON numbers.
     let txn3 = await fetch(`${supra.networkInformation.rpcUrl}/rpc/v3/transactions/submit`, {
         method: "POST",
-        body: JSON.stringify(supraCoinTransferSendTxnPayload, (_key, value) => typeof value === "bigint" ? Number(value) : value),
+        body: stringifyWithBigInt(supraCoinTransferSendTxnPayload),
         headers: {
             "Content-Type": "application/json"
         }

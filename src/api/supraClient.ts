@@ -15,7 +15,8 @@ import { Coin } from "./coin";
 import { Events } from "./events";
 import { Block } from "./block";
 import { FungibleAsset } from "./fungibleAsset";
-import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../utils/constants";
+import { DEFAULT_GAS_PRICE } from "../utils/constants";
+import { validateMaxGasEstimateMultiplier } from "../internal/transactionManager/maxGas";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
 import { validateRpcUrl } from "../client/url";
 import { validateWaitTimeoutMs } from "../internal/transaction";
@@ -141,9 +142,19 @@ export class SupraClient {
             this.networkInformation = { ...NetworkInfo[config.network] };
         }
 
-        // Optional gas
-        this.networkInformation.maxGas = config.maxGas ?? DEFAULT_MAX_GAS_UNITS;
+        // Optional gas; without `maxGas` the max gas of each transaction is estimated or defaulted when it is built
+        if (config.maxGas !== undefined) {
+            this.networkInformation.maxGas = config.maxGas;
+        }
         this.networkInformation.minGasUnitPrice = config.minGasUnitPrice ?? DEFAULT_GAS_PRICE;
+        if (config.estimateMaxGas !== undefined) {
+            this.networkInformation.estimateMaxGas = config.estimateMaxGas;
+        }
+        if (config.maxGasEstimateMultiplier !== undefined) {
+            this.networkInformation.maxGasEstimateMultiplier = validateMaxGasEstimateMultiplier(
+                config.maxGasEstimateMultiplier,
+            );
+        }
 
         // Optional request timeout and retry policy
         if (config.timeoutMs !== undefined) {

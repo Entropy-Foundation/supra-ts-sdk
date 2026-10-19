@@ -10,8 +10,13 @@ export interface NetworkConfig {
     name: string;
     chainId: number;
     rpcUrl: string;
+    /** Max gas of every transaction that sets none; when absent, the max gas is estimated or defaulted. */
     maxGas?: bigint,
     minGasUnitPrice?: bigint,
+    /** Estimate the max gas of a transaction that sets none; default true. */
+    estimateMaxGas?: boolean,
+    /** Factor applied to the simulated gas used; default `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`. */
+    maxGasEstimateMultiplier?: number,
     /** Request timeout in milliseconds. */
     timeout?: number,
     /** Retry policy of idempotent GET requests; no retry when absent. */

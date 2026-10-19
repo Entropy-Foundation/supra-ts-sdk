@@ -66,7 +66,9 @@ export class FungibleAsset {
      * @param args.senderAccount - The account sending the SupraCoin.
      * @param args.receiverAccountAddress - The address of the account receiving the SupraCoin.
      * @param args.amount - The amount of SupraCoin to transfer.
-     * @param args.optionalTransactionArgs - Optional transaction arguments.
+     * @param args.optionalTransactionArgs - Optional transaction arguments. The gas settings in
+     * `optionalTransactionPayloadArgs` apply to the transaction; without `maxGas` it is estimated
+     * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
      * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
      * errors of a submission.
      * @example
@@ -111,7 +113,9 @@ export class FungibleAsset {
      * @param args.receiverAccountAddress - The address of the account receiving the coin.
      * @param args.amount - The amount of the coin to transfer.
      * @param args.assetAddress - The address of the coin to transfer.
-     * @param args.optionalTransactionArgs - Optional transaction arguments.
+     * @param args.optionalTransactionArgs - Optional transaction arguments. The gas settings in
+     * `optionalTransactionPayloadArgs` apply to the transaction; without `maxGas` it is estimated
+     * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
      * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
      * errors of a submission.
      * @example

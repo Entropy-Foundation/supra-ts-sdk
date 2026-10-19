@@ -1,6 +1,6 @@
 import { SupraClient } from "../supraClient";
 import { Network } from "../../utils/apiEndpoints";
-import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../../utils/constants";
+import { DEFAULT_GAS_PRICE } from "../../utils/constants";
 import { Account } from "../account";
 import { Transaction } from "../transaction";
 import { Contract } from "../contract";
@@ -129,9 +129,11 @@ describe("SupraClient", () => {
             expect(client.networkInformation.rpcUrl).toBe("https://custom.example.com");
         });
 
-        it("should use default gas values when not provided", () => {
+        it("should leave maxGas unset, so that it is estimated per transaction, when not provided", () => {
             const client = new SupraClient({ network: Network.TESTNET });
-            expect(client.networkInformation.maxGas).toBe(DEFAULT_MAX_GAS_UNITS);
+            expect(client.networkInformation.maxGas).toBeUndefined();
+            expect(client.networkInformation.estimateMaxGas).toBeUndefined();
+            expect(client.networkInformation.maxGasEstimateMultiplier).toBeUndefined();
             expect(client.networkInformation.minGasUnitPrice).toBe(DEFAULT_GAS_PRICE);
         });
 
@@ -140,10 +142,23 @@ describe("SupraClient", () => {
                 network: Network.TESTNET,
                 maxGas: 5000n,
                 minGasUnitPrice: 200_000n,
+                estimateMaxGas: false,
+                maxGasEstimateMultiplier: 2,
             });
             expect(client.networkInformation.maxGas).toBe(5000n);
             expect(client.networkInformation.minGasUnitPrice).toBe(200_000n);
+            expect(client.networkInformation.estimateMaxGas).toBe(false);
+            expect(client.networkInformation.maxGasEstimateMultiplier).toBe(2);
         });
+
+        it.each([0.5, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+            "should reject a maxGasEstimateMultiplier of %p",
+            (multiplier) => {
+                expect(
+                    () => new SupraClient({ network: Network.TESTNET, maxGasEstimateMultiplier: multiplier }),
+                ).toThrow("maxGasEstimateMultiplier must be a finite number of at least 1");
+            },
+        );
 
         it("should instantiate all sub-modules", () => {
             const client = new SupraClient({ network: Network.TESTNET });

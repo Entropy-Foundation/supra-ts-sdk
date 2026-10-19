@@ -1,9 +1,40 @@
 import type { MoveInnerAuthenticator } from "../move";
 
+/**
+ * Per-transaction settings. Each one that is set replaces the client's setting for this transaction. The SDK does not
+ * modify the object.
+ *
+ * - `maxGas`: max gas of the transaction, in gas units. When absent, the client's `maxGas` applies; when that is absent
+ *   too, the max gas is estimated (see `estimateMaxGas`).
+ * - `gasUnitPrice`: gas unit price, in quants. Default the client's `minGasUnitPrice`, else `DEFAULT_GAS_PRICE`.
+ * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch. Default 300 seconds after the
+ *   transaction is built.
+ * - `estimateMaxGas`: when no `maxGas` is set, estimate it (`true`) or use `DEFAULT_MAX_GAS_UNITS` (`false`). Default
+ *   the client's `estimateMaxGas`, else `true`.
+ *
+ * The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`; the sender is
+ * charged for the gas used. An estimate is made by the methods that build and submit a transaction with a signing
+ * account: the coin and fungible asset transfers, `publishPackage` and contract entry calls. They read the sender's
+ * SUPRA balance and simulate the transaction with a max gas of the largest number of gas units that balance pays for at
+ * the gas unit price, at most `MAX_GAS_UNITS_PER_TRANSACTION`. The max gas is then
+ * `ceil(gas used × DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER)` (or the client's `maxGasEstimateMultiplier`), at least
+ * `MIN_ESTIMATED_MAX_GAS_UNITS`, and at most the number of units the balance pays for.
+ *
+ * - When the simulation runs out of gas, the transaction cannot complete with the sender's balance:
+ *   `SupraSimulationFailedError` is thrown and nothing is submitted.
+ * - When the simulation, or the balance read, fails for another reason, the max gas is `DEFAULT_MAX_GAS_UNITS`, at
+ *   most the number of units the balance pays for when that is known.
+ *
+ * `transaction.build.simple` has no signing account to simulate with: its max gas is `DEFAULT_MAX_GAS_UNITS`, at most
+ * the number of gas units the sender's balance pays for. The builders that make no request (`rawTxnObject`,
+ * `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and
+ * `multisigProposalTxRawTxnObject`) use `DEFAULT_MAX_GAS_UNITS`.
+ */
 export interface OptionalTransactionPayloadArgs {
     maxGas?: bigint;
     gasUnitPrice?: bigint;
     txExpiryTime?: bigint;
+    estimateMaxGas?: boolean;
     /**
      * The sequence number of the transaction. Used by the helpers that build and submit the transaction
      * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `publishPackage`

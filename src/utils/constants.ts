@@ -2,9 +2,31 @@ export const DEFAULT_CHAIN_ID = 6;
 export const MAX_RETRY_FOR_TRANSACTION_COMPLETION = 300;
 export const DELAY_BETWEEN_POOLING_REQUEST = 1000; // 1 Second
 export const DEFAULT_RECORDS_ITEMS_COUNT = 15;
-// The `maximum_number_of_gas_units` amount at move layer is 2 million
-export const DEFAULT_MAX_GAS_UNITS = BigInt(1000); // minimum balance required is 1 supra
-// The `min_price_per_gas_unit` amount at move layer is 100_000
+/**
+ * Max gas, in gas units, of a transaction whose max gas is neither set by the caller nor estimated: estimation is
+ * turned off (`estimateMaxGas: false`), the builder has no signer to simulate with, or the estimating simulation
+ * failed for a reason other than gas. It covers a one-module publish (about 2,000 units), a multisig account creation
+ * (about 1,700) and a transfer that creates the receiver (about 1,000). The node accepts a transaction only when the
+ * sender's balance covers `max gas × gas unit price`: at the minimum gas unit price of 100,000 quants this is 20 SUPRA.
+ */
+export const DEFAULT_MAX_GAS_UNITS = BigInt(20_000);
+/**
+ * Factor applied to the gas used by the estimating simulation to obtain the max gas of a transaction:
+ * `max gas = ceil(gas used × factor)`. The margin covers a difference between the state the simulation ran on and the
+ * state the transaction executes on. `SupraConfig.maxGasEstimateMultiplier` replaces it.
+ */
+export const DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER = 1.5;
+/**
+ * Lowest max gas, in gas units, that an estimate yields when the sender's balance covers it: the gas of a transfer that
+ * creates the receiver (about 1,000 units) times {@link DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER}.
+ */
+export const MIN_ESTIMATED_MAX_GAS_UNITS = BigInt(1_500);
+/**
+ * The node's maximum gas units per transaction: `txn.maximum_number_of_gas_units` of the on-chain gas schedule, which is
+ * 2,000,000,000 on Mainnet, Testnet and Devnet (node v11.7.0 and v12).
+ */
+export const MAX_GAS_UNITS_PER_TRANSACTION = BigInt(2_000_000_000);
+/** Gas unit price, in quants, when neither the call nor the client sets one: the node's `txn.min_price_per_gas_unit`. */
 export const DEFAULT_GAS_PRICE = BigInt(100_000);
 export const DEFAULT_TX_EXPIRATION_DURATION = 300; // 5 Minutes
 export const MILLISECONDS_PER_SECOND = 1000;
@@ -15,8 +37,6 @@ export const OBJECT_CORE = "0x1::object::ObjectCore";
 
 export const DEFAULT_ENABLE_SIMULATION = false;
 export const DEFAULT_WAIT_FOR_TX_COMPLETION = false;
-export const DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS = 10;
-export const DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS = 1020;
 export const RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 export const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 export const DEFAULT_RPC_VERSION = "v3"

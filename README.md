@@ -305,6 +305,59 @@ const responses = await Promise.all(
 );
 ```
 
+### Gas
+
+Each transaction has a max gas (`max_gas_amount`, in gas units), a gas unit price (in quants) and an expiration time.
+`optionalTransactionPayloadArgs` sets them per transaction (`maxGas`, `gasUnitPrice`, `txExpiryTime`) on every method
+that builds a transaction, and `SupraConfig` sets `maxGas` and `minGasUnitPrice` for every transaction of the client.
+A per-call setting replaces the client's. The SDK does not modify the options objects it is given.
+
+The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas
+used. When neither the call nor the client sets `maxGas`:
+
+- The coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI` estimate it.
+  They read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and
+  use `ceil(gas used × 1.5)`, at least 1,500 units and at most what the balance pays for. A simulation that runs out of
+  gas throws `SupraSimulationFailedError` and nothing is submitted; a simulation that fails for another reason gives
+  the fixed default below. `SupraConfig.maxGasEstimateMultiplier` replaces the factor 1.5.
+- `transaction.build.simple` has no key pair to simulate with: it uses the fixed default, at most what the sender's
+  balance pays for.
+- The builders that make no request (`rawTxnObject`, `scriptRawTxnObject`, `automationRegistrationRawTxnObject`,
+  `multisigRawTxnObject`, `multisigProposalTxRawTxnObject`) use the fixed default.
+
+The fixed default, `DEFAULT_MAX_GAS_UNITS`, is 20,000 units: it covers a one-module publish (about 2,000 units), a
+multisig account creation (about 1,700) and a transfer that creates the receiver (about 1,000). At the minimum gas unit
+price of 100,000 quants the sender needs 20 SUPRA for it. `estimateMaxGas: false`, per call or in `SupraConfig`, turns
+the estimate off and uses the fixed default without a request.
+
+```ts
+// Estimated max gas, minimum gas unit price
+await supra.coin.transferSupraCoin({ senderAccount: sender, receiverAccountAddress: "0x1234", amount: 100n });
+
+// Per-call settings
+await supra.coin.transferSupraCoin({
+  senderAccount: sender,
+  receiverAccountAddress: "0x1234",
+  amount: 100n,
+  optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n } },
+});
+```
+
+### `bigint` values
+
+Move `u64`, `u128` and `u256` values are `bigint` in several objects the SDK returns: built transactions, the
+`SendTxnPayload` of `transaction.build.sendTxnPayload`, `getAccountCoinBalance` and view results. `JSON.stringify` throws
+`TypeError: Do not know how to serialize a BigInt` for an object that holds one. `stringifyWithBigInt` writes them as
+exact JSON numbers, the form the node accepts in a request body; to display or store such an object, convert them to
+strings:
+
+```ts
+import { stringifyWithBigInt } from 'supra-ts-sdk';
+
+const body = stringifyWithBigInt(await supra.transaction.build.sendTxnPayload({ senderAccount: sender, rawTxn }));
+const text = JSON.stringify(value, (_key, v) => (typeof v === 'bigint' ? v.toString() : v));
+```
+
 ## 📚 More Examples
 
 - [Account](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/account.ts)

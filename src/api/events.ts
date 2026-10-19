@@ -34,7 +34,7 @@ export class Events {
 
 
     /**
-     * Get coin info of the given coin type
+     * Get the events of the given event type
      * @param args.eventType - Type of event
      * @param args.options.startHeight - Starting block height (inclusive)
      * @param args.options.endHeight - Ending block height (exclusive)
@@ -49,7 +49,7 @@ export class Events {
      * 
      * async function runExample() {
      *    const eventType = "0x1::coin::Transfer";
-     *    const {response: events, cursor} = await supra.events.getEventByType({ eventType: eventType });
+     *    const {response: events, cursor} = await supra.events.getEventsByType({ eventType: eventType, options: {} });
      *    console.log(events);
      * }
      * 

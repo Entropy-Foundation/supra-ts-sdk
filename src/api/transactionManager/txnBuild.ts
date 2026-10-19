@@ -35,6 +35,9 @@ export class Build {
     /**
      * Create raw transaction object for `simple` type txn
      * Don't need to serialize arguments as they serialize on the fly using function abi.
+     * When neither the call nor the client sets `maxGas`, the max gas is `DEFAULT_MAX_GAS_UNITS`, at most the number
+     * of gas units that the sender's SUPRA balance pays for at the gas unit price (one balance read; none with
+     * `estimateMaxGas: false`). See {@link OptionalTransactionPayloadArgs}.
      * @param args.senderAddress - Sender account address
      * @param args.senderSequenceNumber - Sender account sequence number
      * @param args.function - Target function name as MoveFunctionId
@@ -389,10 +392,11 @@ export class Build {
      * Generated data can be used to send transaction directly using `/rpc/v3/transactions/submit` endpoint of `rpc_node`
      * @param args.senderAccount - Sender KeyPair
      * @param args.rawTxn - Raw transaction data
-     * @returns `SendTxPayload`
+     * @returns `SendTxPayload`. Its `u64` fields are `bigint`, which `JSON.stringify` rejects; serialize it with
+     * `stringifyWithBigInt`, which writes them as exact JSON numbers.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
+     * import { SupraClient, Network, stringifyWithBigInt } from "supra-ts-sdk";
      * 
      * const supra = new SupraClient({ network: Network.TESTNET });
      * 
@@ -413,7 +417,7 @@ export class Build {
      * 
      *     let txn = await fetch("https://rpc-testnet.supra.com/rpc/v3/transactions/submit", {
      *         method: "POST",
-     *         body: JSON.stringify(supraCoinTransferSendTxnPayload),
+     *         body: stringifyWithBigInt(supraCoinTransferSendTxnPayload),
      *         headers: {
      *             "Content-Type": "application/json"
      *         }

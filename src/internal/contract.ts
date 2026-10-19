@@ -51,6 +51,7 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
 
     let sendTxPayload: SendTxnPayload;
     try {
+        // The max gas estimate simulates the transaction with `senderSequenceNumber`.
         const simpleRawTxn = await simpleInternal({
             senderAddress: senderAccount.address(),
             senderSequenceNumber,
@@ -58,7 +59,8 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
             functionTypeArgs: args.typeArguments ?? [],
             functionArgs: functionArguments,
             optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-            abi: args.abi as MoveModule
+            abi: args.abi as MoveModule,
+            senderAccount,
         }, config);
         sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: simpleRawTxn }, config);
     } catch (error) {

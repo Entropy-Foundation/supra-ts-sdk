@@ -257,7 +257,9 @@ export class Transaction {
    * @param args.senderAccount - Module Publisher KeyPair
    * @param args.packageMetadata - Package Metadata
    * @param args.modulesCode - module code
-   * @param args.optionalTransactionArgs optional arguments for transaction
+   * @param args.optionalTransactionArgs optional arguments for transaction. The gas settings in
+   * `optionalTransactionPayloadArgs` apply to the transaction; without `maxGas` it is estimated
+   * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
    * @returns `SubmitTransactionResponse`; {@link Submit} describes the statuses and errors of a submission
    * @example
    * ```typescript
