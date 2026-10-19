@@ -44,6 +44,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,js,json,md}\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
     "typecheck:examples": "tsc -p examples/tsconfig.json",
+    "check:jsdoc": "tsx scripts/check-jsdoc-examples.ts",
     "examples": "pnpm build && tsx examples/runAll.ts",
     "doc": "typedoc --out docs src/index.ts --sort source-order --sort instance-first --readme README.md"
   },

@@ -22,7 +22,7 @@ export class Methods {
      * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-l1-sdk";
+     * import { SupraClient,Network } from "supra-ts-sdk";
      * 
      * const supra = new SupraClient({ network: Network.TESTNET });
      * ```
@@ -34,16 +34,19 @@ export class Methods {
 
 
     /**
-     *  Queries for a Move view function
+     * Queries a Move view function. The arguments are encoded and the results converted to TypeScript values by the
+     * function's ABI, which the method reads from the node unless `args.abi` is given (`u64`, `u128` and `u256`
+     * results are `bigint`).
      * @template T - The type of the MoveValue array to be returned.
-     * @param args.function - The name of the function to query.
-     * @param args.typeArguments - An array of type arguments for the function. A string must be one concrete Move type
-     *   (see `TypeArgument`); it is sent as written.
+     * @param args.function - The id of the function to query, `address::module::function`.
+     * @param args.typeArguments - An array of type arguments for the function, as type tags or strings. A string must be
+     *   one concrete Move type (see `TypeArgument`); it is sent as written.
      * @param args.functionArguments - An array of arguments for the function.
+     * @param args.abi - The ABI of the module, to skip the request that reads it.
      * @returns A Promise that resolves to an array of MoveValue objects.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
+     * import { Network, SupraClient, TypeTagParser } from "supra-ts-sdk";
      * 
      * const supra = new SupraClient({ network: Network.TESTNET });
      * 
@@ -69,13 +72,13 @@ export class Methods {
 
 
     /**
-     * Queries for a Move view function without type conversion or parsing
+     * Queries a Move view function without type conversion or parsing: the arguments are sent as given and the
+     * results are returned as the node's JSON, where `u64`, `u128` and `u256` values are strings.
      * @template T - The type of the array to be returned.
-     * @param args.function - The name of the function to query.
-     * @param args.typeArguments - An array of type arguments for the function.
-     * @param args.functionArguments - An array of arguments for the function.
+     * @param args.function - The id of the function to query, `address::module::function`.
+     * @param args.typeArguments - An array of type argument strings for the function.
+     * @param args.functionArguments - An array of JSON-encoded arguments for the function.
      * @returns A Promise that resolves to an array of values.
-     * @note This is for raw data without type conversion or parsing.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";

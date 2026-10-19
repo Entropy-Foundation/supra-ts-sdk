@@ -109,24 +109,11 @@ export type MoveModuleId = `${string}::${string}`;
 /**
  * Specifies the visibility levels for move functions, controlling access permissions.
  */
-// export enum MoveFunctionVisibility {
-//     PRIVATE = "private",
-//     PUBLIC = "public",
-//     FRIEND = "friend",
-// }
-
 export type MoveFunctionVisibility = "private" | "public" | "friend";
 
 /**
  * Abilities related to moving items within the system.
  */
-// export enum MoveAbility {
-//     STORE = "store",
-//     DROP = "drop",
-//     KEY = "key",
-//     COPY = "copy",
-// }
-
 export type MoveAbility = "store" | "drop" | "key" | "copy";
 
 /**

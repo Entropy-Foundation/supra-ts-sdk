@@ -12,8 +12,12 @@ export type TransactionResponse = PendingTransactionResponse | CommittedTransact
  * (or check `"header" in txn`) before reading them:
  *
  * ```typescript
- * if (txn.txn_type === TransactionType.User || txn.txn_type === TransactionType.Auto) {
- *     console.log(txn.header.sender.Move);
+ * import { TransactionType, type CommittedTransactionResponse } from "supra-ts-sdk";
+ *
+ * function printSender(txn: CommittedTransactionResponse): void {
+ *     if (txn.txn_type === TransactionType.User || txn.txn_type === TransactionType.Auto) {
+ *         console.log(txn.header.sender.Move);
+ *     }
  * }
  * ```
  */

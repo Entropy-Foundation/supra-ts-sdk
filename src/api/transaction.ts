@@ -69,13 +69,13 @@ export class Transaction {
     * HTTP 404 on v11. See "HTTP status codes by node version" in the README.
     * @example
     * ```typescript
-    * import {SupraClient, Network} from "supra-l1-sdk";
+    * import { Network, SupraClient } from "supra-ts-sdk";
     *
     * const supra = new SupraClient({ network: Network.TESTNET });
     *
     * async function runExample() {
     *   // Fetch a transaction by its hash
-    *   const transaction = await supra.getTransactionByHash({ transactionHash: "0x123" }); // replace with a real transaction hash
+    *   const transaction = await supra.transaction.getTransactionByHash({ transactionHash: "0x123" }); // replace with a real transaction hash
     *
     *   console.log(transaction);
     * }
@@ -95,15 +95,16 @@ export class Transaction {
     * @param args.transactionHash - The transaction hash should be a hex-encoded bytes string with a 0x prefix.
     * @returns A Promise that resolves to true when the status is `Pending` or `PendingAfterExecution`, and to false
     * when it is `Success`, `Fail` or `Invalid`.
+    * @throws {SupraNotFoundError} When the node has no transaction with the hash.
     * @example
     * ```typescript
-    * import {Supra, Network} from "supra-l1-sdk";
+    * import { Network, SupraClient } from "supra-ts-sdk";
     *
     * const supra = new SupraClient({ network: Network.TESTNET });
     *
     * async function runExample() {
-    *   // Fetch a transaction by its hash
-    *   const isPending = await supra.isPendingTransaction({ transactionHash: "0x123" }); // replace with a real transaction hash
+    *   // Read a transaction by its hash
+    *   const isPending = await supra.transaction.isPendingTransaction({ transactionHash: "0x123" }); // replace with a real transaction hash
     *
     *   console.log(isPending);
     * }
@@ -146,14 +147,17 @@ export class Transaction {
      * timeout.
      * @example
      * ```typescript
-     * import {Supra, Network} from "supra-l1-sdk";
-     * 
+     * import { Network, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
-     *   // Fetch a transaction by its hash
-     *   const transaction = await supra.transaction.waitForTransaction({ transactionHash: "0x123" }); // replace with a real transaction hash
-     * 
+     *   // Wait for a transaction to commit
+     *   const transaction = await supra.transaction.waitForTransaction({
+     *     transactionHash: "0x123", // replace with a real transaction hash
+     *     options: { timeoutMs: 30_000 },
+     *   });
+     *
      *   console.log(transaction);
      * }
      * 
@@ -176,17 +180,23 @@ export class Transaction {
      * @returns Signature message
      * @example
      * ```typescript
-     * import {Supra, Network} from "supra-l1-sdk";
-     * 
+     * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // an account that holds SUPRA
+     *
      * async function runExample() {
-     * 
-     *   let supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload);
-     * 
-     *   // Fetch a transaction by its hash
-     *   const signatureMessage = await supra.getTransactionSignatureMessage({ rawTxn: supraCoinTransferSponsoredRawTransaction }); // replace with a real transaction hash
-     * 
+     *
+     *   const rawTxn = supra.transaction.build.rawTxnObject({
+     *     senderAddress: account.address(),
+     *     senderSequenceNumber: 0n, // the account's sequence number
+     *     function: "0x1::supra_account::transfer",
+     *     functionTypeArgs: [],
+     *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
+     *
+     *   const signatureMessage = supra.transaction.getTransactionSignatureMessage({ rawTxn });
+     *
      *   console.log(signatureMessage);
      * }
      * 
@@ -214,18 +224,24 @@ export class Transaction {
      * nothing is read or checked and no request is sent.
      * @example
      * ```typescript
-     * import {Supra, Network} from "supra-l1-sdk";
+     * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
      *
      * const supra = new SupraClient({ network: Network.TESTNET });
+     * const account = new SupraAccount(); // an account that holds SUPRA
      *
      * async function runExample() {
      *
-     *   let supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload);
+     *   const rawTxn = supra.transaction.build.rawTxnObject({
+     *     senderAddress: account.address(),
+     *     senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *     function: "0x1::supra_account::transfer",
+     *     functionTypeArgs: [],
+     *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
      *
-     *   // Fetch a transaction by its hash
-     *   const signature = await supra.signTransaction({ senderAccount: account, rawTxn: supraCoinTransferSponsoredRawTransaction }); // replace with a real transaction hash
+     *   const signature = await supra.transaction.signTransaction({ senderAccount: account, rawTxn });
      *
-     *   console.log(signature);
+     *   console.log(signature.toString());
      * }
      *
      * runExample().catch(console.error);
@@ -268,26 +284,33 @@ export class Transaction {
     }
 
     /**
-   * Publish package or module on supra network
+   * Publish a package or module on the Supra network with `0x1::code::publish_package_txn`. The sequence number
+   * comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is set. The client checks
+   * the chain ID of its node before it signs; see {@link SupraConfig}.
    * @param args.senderAccount - Module Publisher KeyPair
-   * @param args.packageMetadata - Package Metadata
-   * @param args.modulesCode - module code
+   * @param args.packageMetadata - The BCS-encoded package metadata (the `package-metadata.bcs` file of a build)
+   * @param args.modulesCode - The bytecode of each module of the package
    * @param args.optionalTransactionArgs optional arguments for transaction. The gas settings in
    * `optionalTransactionPayloadArgs` apply to the transaction; without `maxGas` it is estimated
    * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
    * @returns `SubmitTransactionResponse`; {@link Submit} describes the statuses and errors of a submission
+   * @throws {SupraSimulationFailedError} When the estimating simulation or an enabled simulation does not succeed.
+   * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
+   * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
    * @example
    * ```typescript
-   * import { SupraClient,Network } from "supra-ts-sdk";
-   * 
+   * import { readFileSync } from "node:fs";
+   * import { Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+   *
    * const supra = new SupraClient({ network: Network.TESTNET });
-   * 
+   * const account = new SupraAccount(); // an account that holds SUPRA
+   *
    * async function runExample() {
-   * 
+   *
    *   const response = await supra.transaction.publishPackage({
    *      senderAccount: account,
-   *      packageMetadata: Uint8Array.from([]),
-   *      modulesCode: [Uint8Array.from([])],
+   *      packageMetadata: readFileSync("build/MyPackage/package-metadata.bcs"),
+   *      modulesCode: [readFileSync("build/MyPackage/bytecode_modules/my_module.mv")],
    *   });
    * 
    *   console.log(response);

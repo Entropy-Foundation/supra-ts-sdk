@@ -37,8 +37,9 @@ export class Table {
      * @param args.handle - The table handle.
      * @param args.data.key_type - The type of the table item's key.
      * @param args.data.value_type - The type of the table item's value.
-     * param args.data.key - The value of the table item's key.
-     * @returns A Promise that resolves to the table item's value.
+     * @param args.data.key - The value of the table item's key, as JSON (a `u64` key is a string).
+     * @returns A Promise that resolves to the table item's value as the node returns it, without type conversion.
+     * @throws {SupraAPIError} When the node rejects the handle, the key or the types (HTTP 400) or has no such item.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";

@@ -33,7 +33,8 @@ import type { AccountAddressInput } from "../types/account";
 export class SupraClient {
 
     /**
-     * SupraConfig is the configuration object for the SupraClient class. It contains the network property which can be "mainnet", "testnet" or "devnet".
+     * A copy of the SupraConfig the client was constructed with: either a predefined `network` (Mainnet, Testnet or
+     * Devnet) or the `rpcUrl` and `chainId` of a custom node, with the optional settings described by {@link SupraConfig}.
      */
     readonly config: SupraConfig;
 
@@ -95,24 +96,35 @@ export class SupraClient {
     /**
     * The constructor function takes a SupraConfig object as a parameter and assigns it to the config property.
     * @param config - A SupraConfig object that contains information about the network on which the Supra client is running.
-    * @note - You don't need to pass the rpc url or chain id it will be set automatically.
+    * @note - A predefined network (`Network.MAINNET`, `Network.TESTNET` or `Network.DEVNET`) sets the RPC URL and the
+    * chain ID; any other node needs both `rpcUrl` and `chainId`.
+    * @throws {RangeError} When `chainId` is not an integer from 0 to 255.
+    * @throws {TypeError} When `rpcUrl` is not an absolute `http:` or `https:` URL, or `verifyChainId` is not a boolean.
     * @example
     * ```typescript
-    * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
-    * // Options:1 (Default configuration)
-    * const supra = new SupraClient({ network: Network.TESTNET }); 
-    * 
-    * 
-    * // Options:2 (Custom configuration)
-    * const supra = new SupraClient({ network: Network.CUSTOM, rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 });
-    * 
-    * 
-    * // Options:3 (Custom configuration)
-    * const supra = new SupraClient({ rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 });
+    * import { Network, SupraClient } from "supra-ts-sdk";
+    *
+    * // Options:1 (Predefined network: Network.MAINNET, Network.TESTNET or Network.DEVNET)
+    * const supra = new SupraClient({ network: Network.TESTNET });
+    *
+    *
+    * // Options:2 (Custom node)
+    * const custom = new SupraClient({ network: Network.CUSTOM, rpcUrl: "http://localhost:27001", chainId: 255 });
+    *
+    *
+    * // Options:3 (Custom node, without `network`)
+    * const local = new SupraClient({ rpcUrl: "http://localhost:27001", chainId: 255 });
     *
     * // Offline signing: no request reads the node's chain ID
     * const offline = new SupraClient({ network: Network.MAINNET, verifyChainId: false });
+    *
+    * // Gas settings for every transaction of the client, and a longer request timeout
+    * const configured = new SupraClient({
+    *     network: Network.TESTNET,
+    *     maxGas: 20_000n,
+    *     minGasUnitPrice: 100_000n,
+    *     timeoutMs: 60_000,
+    * });
     *
     * ```
     * The constructor sends no request. The node's chain ID is read before the first signature and checked against
@@ -252,8 +264,9 @@ export class SupraClient {
 
 
     /**
-   * Get current `median_gas_price`
-   * @returns Current `median_gas_price`
+   * Reads the median gas unit price, in quants, from `GET /rpc/v3/transactions/estimate_gas_price`
+   * (`median_gas_price`). Transactions that set no `gasUnitPrice` do not use it; they use `SupraConfig.minGasUnitPrice`.
+   * @returns The median gas unit price
    * @example
    * ```typescript
    * import { SupraClient,Network } from "supra-ts-sdk";
@@ -274,8 +287,10 @@ export class SupraClient {
     }
 
     /**
-     * Get current `min_price_per_gas_unit`
-     * @returns Current `min_price_per_gas_unit`
+     * Reads the minimum gas unit price that the node's gas schedule configures, in quants, from
+     * `GET /rpc/v3/transactions/estimate_gas_price` (`min_configured_gas_price`). Transactions that set no
+     * `gasUnitPrice` do not use it; they use `SupraConfig.minGasUnitPrice`, default `DEFAULT_GAS_PRICE`.
+     * @returns The minimum gas unit price
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -300,8 +315,8 @@ export class SupraClient {
      * builds reads the sequence number from the chain again.
      *
      * The client keeps, per account, the next sequence number of the transactions that its helpers
-     * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `publishPackage` and
-     * the entry functions of `Contract.fromABI`) send. The counter is reset automatically when the node reports a stale
+     * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
+     * `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI`) send. The counter is reset automatically when the node reports a stale
      * number; call this method after the account has sent transactions by other means (another client or process, a
      * wallet, or the builders of `transaction.build` with an explicit number).
      * @param address - The account whose counter is reset.
