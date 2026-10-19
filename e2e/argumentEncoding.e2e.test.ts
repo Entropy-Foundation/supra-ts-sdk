@@ -222,12 +222,12 @@ describeE2E("argument encoding", () => {
                 ctx.supra.transaction.signTransaction({
                     senderAccount: account,
                     rawTxn: payload,
-                }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+                });
             const submitted = await ctx.supra.transaction.submit.submitMultiAgentTransaction({
                 secondarySignersAccountAddress: secondaries.map((account) => account.address().toString()),
                 rawTxn,
-                senderAuthenticator: sign(sender),
-                secondarySignersAuthenticator: secondaries.map(sign),
+                senderAuthenticator: await sign(sender),
+                secondarySignersAuthenticator: await Promise.all(secondaries.map(sign)),
                 enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
             });
             return submitted.status;
