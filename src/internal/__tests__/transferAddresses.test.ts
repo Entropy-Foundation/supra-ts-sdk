@@ -7,14 +7,15 @@ import type { NetworkConfig } from "../../utils/apiEndpoints";
 jest.mock("../account", () => ({
     getAccountInfoInternal: jest.fn().mockResolvedValue({ sequence_number: 0n }),
     getAccountResourceInternal: jest.fn(),
-    isAccountExistsInternal: jest.fn().mockResolvedValue(true),
+    // The SUPRA fungible asset transfer reads the sender's balances first; the fungible store covers the amounts here.
+    getAccountSupraBalanceInternal: jest.fn().mockResolvedValue({ total: 100n, coin: 0n, fungibleAsset: 100n }),
 }));
 jest.mock("../transactionManager/txnSubmit", () => ({
-    submitTxnInternal: jest.fn().mockResolvedValue({}),
+    buildAndSubmitEntryFunctionInternal: jest.fn().mockResolvedValue({}),
 }));
 
-import { submitTxnInternal } from "../transactionManager/txnSubmit";
-const mockSubmit = submitTxnInternal as jest.MockedFunction<typeof submitTxnInternal>;
+import { buildAndSubmitEntryFunctionInternal } from "../transactionManager/txnSubmit";
+const mockSubmit = buildAndSubmitEntryFunctionInternal as jest.MockedFunction<typeof buildAndSubmitEntryFunctionInternal>;
 
 const config: NetworkConfig = {
     name: "custom",
@@ -27,10 +28,7 @@ const sender = new SupraAccount();
 
 /** The entry function arguments of the payload passed to the last submission, as hex strings. */
 function submittedArgs(): string[] {
-    const payload = mockSubmit.mock.calls.at(-1)![0].sendTxJsonPayload as unknown as {
-        Move: { raw_txn: { payload: { EntryFunction: { args: number[][] } } } };
-    };
-    return payload.Move.raw_txn.payload.EntryFunction.args.map((arg) => Buffer.from(arg).toString("hex"));
+    return mockSubmit.mock.calls.at(-1)![0].payload.functionArgs.map((arg) => Buffer.from(arg).toString("hex"));
 }
 
 const pad = (hex: string) => hex.padStart(64, "0");
