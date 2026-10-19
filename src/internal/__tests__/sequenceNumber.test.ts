@@ -17,6 +17,8 @@ let submitAnswers: Array<() => Answer>;
 let finalStatus: TransactionStatus;
 let accountReads: number;
 let submitted: number[];
+/** Number of chain ID reads still to be answered with HTTP 500. */
+let failingChainIdReads: number;
 const originalFetch = global.fetch;
 
 function json(body: unknown, status = 200): Answer {
@@ -60,6 +62,7 @@ beforeEach(() => {
     finalStatus = TransactionStatus.Success;
     accountReads = 0;
     submitted = [];
+    failingChainIdReads = 0;
     global.fetch = jest.fn((input: string | URL | Request, init?: RequestInit) => {
         const path = new URL(String(input)).pathname.replace(/^\/rpc\/v3/, "");
         const method = init?.method ?? "GET";
@@ -73,6 +76,13 @@ beforeEach(() => {
             submitted.push(body.Move.raw_txn.sequence_number);
             const answer = submitAnswers.shift()?.() ?? json(HASH);
             return respond(answer);
+        }
+        if (method === "GET" && path === "/transactions/chain_id") {
+            if (failingChainIdReads > 0) {
+                failingChainIdReads -= 1;
+                return respond(json({ message: "Internal Server Error" }, 500));
+            }
+            return respond(json(255));
         }
         if (method === "GET" && path.startsWith("/transactions/")) {
             return respond(
@@ -396,15 +406,29 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(submitted).toEqual([7, 30]);
     });
 
+    it("hands the number out again when signing throws before the submission", async () => {
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
+        const sender = new SupraAccount();
+        failingChainIdReads = 1;
+
+        await expect(transfer(supra, sender)).rejects.toBeInstanceOf(SupraAPIError);
+        await transfer(supra, sender);
+
+        expect(submitted).toEqual([7]);
+        expect(accountReads).toBe(1);
+    });
+
     it("numbers coin and fungible asset transfers from the same counter", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
 
         await transfer(supra, sender);
-        await supra.fungibleAsset.transferSupraFungibleAsset({
+        // A fungible asset other than SUPRA, which the transfer submits without reading balances first.
+        await supra.fungibleAsset.transferFungibleAsset({
             senderAccount: sender,
             receiverAccountAddress: RECEIVER,
             amount: 1n,
+            assetAddress: "0x" + "ab".repeat(32),
             optionalTransactionArgs: { optionalTransactionPayloadArgs: GAS },
         });
 
