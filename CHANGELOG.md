@@ -85,8 +85,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
 - `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
-- **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms) for predefined networks and custom
-  configurations.
+- **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms; an integer up to 2147483647) for predefined
+  networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`) turns on retries of GET requests that fail with 429, 503 or a
   connection failure, honouring the node's `retry_after_seconds` / `Retry-After`. It is off by default; POST requests
   are never retried.
