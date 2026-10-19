@@ -1,5 +1,5 @@
 import { HexString, BCS } from "supra-l1-sdk-core";
-import { vectorU8ToBytes } from "../helper/general";
+import { addressArgument, isObjectType, vectorU8ToBytes } from "../helper/general";
 import type { SimpleEntryFunctionArgumentTypes } from "../types/move";
 
 export class DynamicTransactionSerializer {
@@ -10,11 +10,8 @@ export class DynamicTransactionSerializer {
     ): void {
 
 
-        if (type.startsWith("0x1::object::Object")) {
-            if (typeof value !== 'string') {
-                throw new Error(`Expected string for Object, got ${typeof value}`);
-            }
-            return this.serializeAddress(value, serializer);
+        if (isObjectType(type)) {
+            return this.serializeAddress(value, type, serializer);
         }
 
         if (type === "0x1::string::String") {
@@ -45,7 +42,7 @@ export class DynamicTransactionSerializer {
 
         switch (type) {
             case "address":
-                this.serializeAddress(value as string, serializer);
+                this.serializeAddress(value, type, serializer);
                 break;
             case "bool":
                 this.serializeBool(value as boolean, serializer);
@@ -101,21 +98,13 @@ export class DynamicTransactionSerializer {
         serializer.serializeBytes(vectorU8ToBytes(value));
     }
 
-    private serializeAddress(value: string, serializer: BCS.Serializer): void {
-        if (typeof value !== "string") {
-            throw new Error(`Expected string for address, got ${typeof value}`);
-        }
-
-        let cleanAddress = value.replace(/^0x/, "");
-        if (cleanAddress.length !== 64) {
-            cleanAddress = cleanAddress.padStart(64, "0");
-        }
-
-        const addressBytes = new HexString("0x" + cleanAddress).toUint8Array();
-        if (addressBytes.length !== 32) {
-            throw new Error("Invalid address length");
-        }
-        serializer.serializeFixedBytes(addressBytes);
+    /**
+     * Serialize an `address` or `Object<T>` argument as 32 bytes, left-padded with zeros. See `addressArgument` for
+     * the accepted forms.
+     */
+    private serializeAddress(value: unknown, type: string, serializer: BCS.Serializer): void {
+        const hex = addressArgument(value, type).replace(/^0x/, "").padStart(64, "0");
+        serializer.serializeFixedBytes(new HexString(`0x${hex}`).toUint8Array());
     }
 
     /**

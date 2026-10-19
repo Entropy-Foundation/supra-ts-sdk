@@ -365,11 +365,11 @@ export type AutomationAuthenticator = {
  *
  * `String -> string`
  *
- * `Address -> 0x${string}`
+ * `Address -> 0x${string}` or `HexString`, 1 to 64 hex digits
  *
  * `Struct - 0x${string}::${string}::${string}`
  *
- * `Object -> 0x${string}`
+ * `Object -> 0x${string}` or `HexString`, the object's address
  *
  * `Vector -> Array<MoveValue>`
  *

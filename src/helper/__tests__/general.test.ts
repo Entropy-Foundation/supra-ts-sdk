@@ -12,7 +12,7 @@ import {
     extractVectorInner,
     isMoveStruct,
 } from "../general";
-import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import { HexString, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import { parseTypeArgument, typeTagToString } from "../typeTag";
 import type { MoveFunction, MoveModule } from "../../types/move";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
@@ -177,8 +177,32 @@ describe("convertArgsValueToJSONParsable", () => {
 
     // Struct passthrough
     it("should pass through struct values", () => {
-        const structValue = { inner: "0x1" };
-        expect(convertArgsValueToJSONParsable("0x1::object::Object<0x1::supra_coin::SupraCoin>", structValue)).toBe(structValue);
+        const structValue = { field: "0x1" };
+        expect(convertArgsValueToJSONParsable("0x1::m::S", structValue)).toBe(structValue);
+    });
+});
+
+describe("address and Object<T> view arguments", () => {
+    const OBJECT = "0x1::object::Object<T0>";
+
+    it.each(["address", OBJECT])("sends a %s string as given", (type) => {
+        for (const address of ["0x1", "0xa", "a", "0xABCdef", `0x${"1".repeat(64)}`]) {
+            expect(convertArgsValueToJSONParsable(type, address)).toBe(address);
+        }
+    });
+
+    it.each(["address", OBJECT])("sends a HexString %s argument as its string", (type) => {
+        expect(convertArgsValueToJSONParsable(type, new HexString("0xa"))).toBe("0xa");
+        expect(convertArgsValueToJSONParsable(`vector<${type}>`, [new HexString("0x1"), "0x2"])).toEqual(["0x1", "0x2"]);
+        expect(convertArgsValueToJSONParsable(`0x1::option::Option<${type}>`, new HexString("0x3"))).toEqual({
+            vec: ["0x3"],
+        });
+    });
+
+    it.each(["address", OBJECT])("refuses a %s argument without a hex digit, or malformed", (type) => {
+        for (const value of ["", "0x", "0X1", " 0x1", "0xzz", `0x${"1".repeat(65)}`, 1, {}, { inner: "0x1" }]) {
+            expect(() => convertArgsValueToJSONParsable(type, value as string)).toThrow(/Expected an address/);
+        }
     });
 });
 

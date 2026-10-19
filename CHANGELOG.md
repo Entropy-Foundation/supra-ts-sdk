@@ -255,6 +255,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value, `None` is an empty array, and `Option<vector<u8>>` carries the hex of the bytes.
 - A `vector<u8>` argument of a view is validated: a string must be hex of whole bytes, with or without
   `0x`, and array elements must be integers from 0 to 255.
+- **Breaking:** `address` and `0x1::object::Object<T>` arguments of entry functions and views must be a string
+  or a `HexString` holding 1 to 64 hex digits after an optional `0x`. Other values, including `""` and `"0x"`,
+  throw before any request. Entry functions encoded `""` and `"0x"` as the address `0x0`, and views sent every
+  value to the node, converted with `String(value)` for `address` and unchanged for `Object<T>`.
 - **Breaking (types):** `FunctionTypeArgs`, the type of an entry in `ty_args` of a transaction payload
   in JSON form, is a union of the primitive type names, `{ vector }` and `{ struct }` instead of an
   interface that only describes `{ struct }`. Code that reads `ty_args[i].struct` directly must narrow
@@ -302,6 +306,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A type argument string `0x1::object::Object<T>` is the struct type `Object<T>` in an entry function
   payload, alone and inside `vector<…>` or another struct; it was signed as `address`. A view function and an
   entry function given the same type argument string instantiate the same type.
+- `address` and `Object<T>` arguments of entry functions accept a `HexString`, as their declared type
+  `AccountAddressInput` states; they threw `Expected string for address, got object`. A `HexString` `Object<T>`
+  argument of a view is sent as its address string; it was sent as the object `{"hexString":…}`.
 - Type argument strings whose module or struct names contain `T` followed by digits, such as
   `0xabc::usdt0::USDT0` or `0xabc::m::T1`, are accepted in entry functions and as the `coinType` of
   `coin.transferCoin` and `fungibleAsset.migrateCoinToFungibleStore`; they threw

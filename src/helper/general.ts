@@ -1,4 +1,4 @@
-import { TxnBuilderTypes } from "supra-l1-sdk-core";
+import { HexString, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { InputViewFunctionData } from "../types/methods";
 import type { MoveFunction, MoveFunctionId, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { parseTypeArgument, typeTagToString } from "./typeTag";
@@ -168,7 +168,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     if (intTypes.includes(type)) return Number(integerArgument(type, value));
     if (bigIntTypes.includes(type)) return integerArgument(type, value).toString();
     if (type === "bool") return Boolean(value);
-    if (type === "address") return String(value);
+    if (type === "address" || isObjectType(type)) return addressArgument(value, type);
 
     // ----------------------------
     // 6️⃣ Struct
@@ -308,6 +308,46 @@ export function extractVectorInner(type: string): string | null {
  */
 export function isMoveStruct(type: string) {
     return /^0x[0-9a-fA-F]+::[0-9a-zA-Z_]+::[0-9a-zA-Z_]+$/.test(type);
+}
+
+/**
+ * Whether a parameter type of a function's ABI is `0x1::object::Object<T>`, whose values are addresses.
+ * @example
+ * isObjectType("0x1::object::Object<T0>") // true
+ * isObjectType("address") // false
+ */
+export function isObjectType(type: string): boolean {
+    return /^0x0*1::object::Object<.*>$/.test(type);
+}
+
+/** A value for an error message: strings and objects as JSON, bigints with an `n` suffix. */
+export function describeArgument(value: unknown): string {
+    if (typeof value === "bigint") return `${value}n`;
+    if (typeof value === "string") return JSON.stringify(value);
+    if (value instanceof HexString) return `HexString(${value.toString()})`;
+    return typeof value === "object" && value !== null ? Object.prototype.toString.call(value) : String(value);
+}
+
+/** An address argument: an optional `0x` followed by 1 to 64 hex digits in either case. */
+const ADDRESS_ARGUMENT = /^(?:0x)?[0-9a-fA-F]{1,64}$/;
+
+/**
+ * Validates an `address` or `0x1::object::Object<T>` argument and returns it as a string. The argument is a string
+ * or a `HexString` holding an optional `0x` followed by 1 to 64 hex digits, the form `validateAddress` accepts with
+ * the prefix optional.
+ * @param value - The argument.
+ * @param type - The parameter type, for the error message.
+ * @returns The address as given, or the string of a `HexString`.
+ * @throws Error for any other value, including `""`, `"0x"`, `"0X1"` and addresses of more than 64 hex digits
+ */
+export function addressArgument(value: unknown, type: string): string {
+    const address = value instanceof HexString ? value.toString() : value;
+    if (typeof address !== "string" || !ADDRESS_ARGUMENT.test(address)) {
+        throw new Error(
+            `Expected an address (0x followed by 1 to 64 hex digits) as a string or HexString for ${type}, got ${describeArgument(value)}`,
+        );
+    }
+    return address;
 }
 
 

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { MoveFunctionId, SupraAccount } from "../src/index";
-import { TransactionStatus, TxnBuilderTypes } from "../src/index";
-import { createFundedAccount } from "./helpers/accounts";
+import { HexString, TransactionStatus, TxnBuilderTypes } from "../src/index";
+import { createFundedAccount, createMigratedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import { rawSupraBalance, SUPRA_COIN_TYPE } from "./helpers/raw";
@@ -155,6 +155,82 @@ describeE2E("argument encoding", () => {
                         abi,
                     }),
                 ).rejects.toThrow("Failed to serialize argument 1 (u64)");
+                expect(fetchSpy.mock.calls.length).toBe(before);
+            } finally {
+                fetchSpy.mockRestore();
+            }
+        });
+    });
+
+    describe("Object<T> and address arguments", () => {
+        const FA_TRANSFER = "0x1::primary_fungible_store::transfer" as MoveFunctionId;
+        const FA_BALANCE = "0x1::primary_fungible_store::balance" as MoveFunctionId;
+        const METADATA = "0x1::fungible_asset::Metadata";
+        const forms: Array<[string, (address: string) => string | HexString]> = [
+            ["strings", (address) => address],
+            ["HexStrings", (address) => new HexString(address)],
+        ];
+
+        test.each(forms)(
+            "an entry function and a view function take Object<T> and address arguments as %s",
+            async (_, form) => {
+                const owner = await createMigratedAccount(ctx);
+                const receiver = createUnfundedAccount().address().toString();
+                const rawTxn = await ctx.supra.transaction.build.simple({
+                    senderAddress: owner.address(),
+                    senderSequenceNumber: await nextSequenceNumber(owner),
+                    function: FA_TRANSFER,
+                    functionTypeArgs: [METADATA],
+                    functionArgs: [form("0xa"), form(receiver), AMOUNT],
+                    optionalTransactionPayloadArgs: gas,
+                });
+                const submitted = await rawTxn.submitTransaction({
+                    senderAccount: owner,
+                    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+                });
+                expect(submitted.status).toBe(TransactionStatus.Success);
+
+                const [balance] = await ctx.supra.methods.view<[bigint]>({
+                    function: FA_BALANCE,
+                    typeArguments: [METADATA],
+                    functionArguments: [form(receiver), form("0xa")],
+                });
+                expect(balance).toBe(AMOUNT);
+            },
+        );
+
+        test.each(["", "0x"])("%j as an Object<T> or address argument throws before any request", async (empty) => {
+            const abi = (
+                await ctx.supra.account.getAccountModule({ accountAddress: "0x1", moduleName: "primary_fungible_store" })
+            ).abi!;
+            const receiver = createUnfundedAccount().address().toString();
+            const fetchSpy = jest.spyOn(globalThis, "fetch");
+            try {
+                const before = fetchSpy.mock.calls.length;
+                const build = (functionArgs: unknown[]) =>
+                    ctx.supra.transaction.build.simple({
+                        senderAddress: sender.address(),
+                        senderSequenceNumber: 0n,
+                        function: FA_TRANSFER,
+                        functionTypeArgs: [METADATA],
+                        functionArgs: functionArgs as never[],
+                        optionalTransactionPayloadArgs: gas,
+                        abi,
+                    });
+                await expect(build([empty, receiver, AMOUNT])).rejects.toThrow(
+                    "Failed to serialize argument 0 (0x1::object::Object<T0>): Expected an address",
+                );
+                await expect(build(["0xa", empty, AMOUNT])).rejects.toThrow(
+                    "Failed to serialize argument 1 (address): Expected an address",
+                );
+                await expect(
+                    ctx.supra.methods.view({
+                        function: FA_BALANCE,
+                        typeArguments: [METADATA],
+                        functionArguments: [receiver, empty],
+                        abi,
+                    }),
+                ).rejects.toThrow("Expected an address");
                 expect(fetchSpy.mock.calls.length).toBe(before);
             } finally {
                 fetchSpy.mockRestore();

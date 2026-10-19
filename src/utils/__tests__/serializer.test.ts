@@ -1,4 +1,4 @@
-import { BCS } from "supra-l1-sdk-core";
+import { BCS, HexString } from "supra-l1-sdk-core";
 import { DynamicTransactionSerializer } from "../serializer";
 
 const serializer = new DynamicTransactionSerializer();
@@ -224,4 +224,39 @@ describe("DynamicTransactionSerializer - addresses", () => {
             expect(Buffer.from(ser(address, "address")).toString("hex")).toBe(hex);
         },
     );
+
+    const OBJECT = "0x1::object::Object<T0>";
+    const hexOf = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
+
+    it.each(["address", OBJECT])("accepts %s without the 0x prefix and in upper case", (type) => {
+        expect(hexOf(ser("1", type))).toBe("1".padStart(64, "0"));
+        expect(hexOf(ser("0xABCdef", type))).toBe("abcdef".padStart(64, "0"));
+    });
+
+    it.each(["address", OBJECT])("refuses a %s argument without a hex digit, or malformed", (type) => {
+        for (const value of ["", "0x", "0X1", " 0x1", "0x1 ", "0xzz", "0x-1", `0x${"1".repeat(65)}`]) {
+            expect(() => ser(value, type)).toThrow(`Failed to serialize argument 0 (${type}): Expected an address`);
+        }
+    });
+
+    it.each(["address", OBJECT])("refuses a %s argument that is not a string or HexString", (type) => {
+        for (const value of [1, 1n, null, {}, [1]]) {
+            expect(() => ser(value, type)).toThrow(/Expected an address/);
+        }
+    });
+
+    it.each(["address", OBJECT])("gives a HexString %s argument the bytes of its string", (type) => {
+        for (const address of ["0xa", "0x1234", `0x${"1".repeat(64)}`]) {
+            expect(hexOf(ser(new HexString(address), type))).toBe(hexOf(ser(address, type)));
+        }
+    });
+
+    it("checks addresses inside a vector and an Option", () => {
+        expect(hexOf(ser(["0x1", new HexString("0x2")], "vector<address>"))).toBe(
+            `02${"1".padStart(64, "0")}${"2".padStart(64, "0")}`,
+        );
+        expect(hexOf(ser(new HexString("0xa"), `0x1::option::Option<${OBJECT}>`))).toBe(`01${"a".padStart(64, "0")}`);
+        expect(() => ser(["0x1", ""], "vector<address>")).toThrow(/Expected an address/);
+        expect(() => ser("0x", "0x1::option::Option<address>")).toThrow(/Expected an address/);
+    });
 });
