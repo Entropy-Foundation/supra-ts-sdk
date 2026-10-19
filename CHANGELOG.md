@@ -261,6 +261,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Breaking:** `standardizeAddress` returns lower-case hex, and throws a `RangeError` for an address of more than 64
   hex digits instead of a `SupraAPIError` with status 400 that no node sent. An address in upper case now matches the
   SUPRA fungible asset address, and `resetSequenceNumber` finds the counter of such an address.
+- **Breaking:** `getTransactionByHash`, `waitForTransaction` and `isPendingTransaction` require a transaction hash of
+  `0x` followed by exactly 64 hex digits. A longer or shorter value is rejected before any request.
 
 ### Fixed
 

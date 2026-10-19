@@ -286,7 +286,8 @@ if (response.status === "NotReadBack") {
 ### Transaction hashes and `getTransactionByHash`
 
 `deriveTransactionHash` returns the hash with a `0x` prefix, the form that `getTransactionByHash` and
-`waitForTransaction` accept. Remove code that adds the prefix.
+`waitForTransaction` accept. Remove code that adds the prefix. These methods and `isPendingTransaction` reject a hash
+that is not `0x` followed by exactly 64 hex digits.
 
 `getTransactionByHash` takes no type argument; it returns `TransactionResponse`. Narrow on `txn_type` instead of
 passing a type:
