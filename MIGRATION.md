@@ -493,7 +493,7 @@ console.log((await offline.getChainId()).value);
   1 to 64 hex digits after an optional `0x`. `""` and `"0x"`, which entry functions encoded as the address `0x0`, and
   values of other types throw before any request. Pass `"0x0"` for the zero address.
 - A type argument given as a string must be exactly one concrete Move type, in entry functions, views and the
-  `coinType` of `coin.transferCoin`. Text after the type, generic type parameters such as `T0`, and the short name
+  `coinType` of `coin.transferCoin` and `fungibleAsset.migrateCoinToFungibleStore`. Text after the type, generic type parameters such as `T0`, and the short name
   `"string"` throw before any request; write `"0x1::string::String"`. `0x1::object::Object<T>` written as a string is
   the struct `Object<T>`; `TypeTagParser` turns it into `address`, so pass `Object` type arguments as strings.
 - `FunctionTypeArgs`, the type of an entry of `ty_args` in a transaction payload in JSON form, is a union of the

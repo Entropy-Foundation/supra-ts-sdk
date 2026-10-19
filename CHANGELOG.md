@@ -218,7 +218,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   value to the node, converted with `String(value)` for `address` and unchanged for `Object<T>`.
 - **Breaking:** type arguments given as strings are parsed by the SDK with the grammar of the node's type
   parser, in entry functions (`transaction.build.simple` and the entry functions of `Contract.fromABI`), the
-  `coinType` of `coin.transferCoin` and `methods.view`. A string that is not exactly one concrete type throws
+  `coinType` of `coin.transferCoin` and of `fungibleAsset.migrateCoinToFungibleStore`, and `methods.view`. A string that is not exactly one concrete type throws
   before any request: text after the type (`"u64 junk"`, `"0x1::supra_coin::SupraCoin, u8"`), a generic type
   parameter (`"T0"`), and `"string"`, which was read as `0x1::string::String` and which nodes refuse. Entry
   functions used the first type of such a string, and views sent it to the node unchecked.
@@ -327,7 +327,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   argument of a view is sent as its address string; it was sent as the object `{"hexString":…}`.
 - Type argument strings whose module or struct names contain `T` followed by digits, such as
   `0xabc::usdt0::USDT0` or `0xabc::m::T1`, are accepted in entry functions and as the `coinType` of
-  `coin.transferCoin`; they threw `TypeTagParserError: Invalid type tag.`
+  `coin.transferCoin` and `fungibleAsset.migrateCoinToFungibleStore`; they threw
+  `TypeTagParserError: Invalid type tag.`
 - Script arguments of type `u16` are accepted by `parseScriptArgs`; previously they threw
   `Invalid script argument variant`. `u32` and `u256` script arguments are covered by tests.
 - `getAccountInfo` returns `sequence_number` as a `bigint`, the declared type. It returned the number the node
