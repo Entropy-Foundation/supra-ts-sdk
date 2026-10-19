@@ -37,7 +37,8 @@ export class Account {
     /**
      * Check whether given account exists onchain or not
      * @param args.accountAddress - The address of the account to query.
-     * @returns `true` if account exists otherwise `false`
+     * @returns `true` if account exists otherwise `false`. The node reports an absent account with HTTP 404 on v12
+     * and HTTP 400 on v11; both give `false`.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -63,6 +64,8 @@ export class Account {
      * Queries the current state of an account, including its sequence number and authentication key.
      * @param args.accountAddress - The address of the account to query.
      * @returns A Promise that resolves to an AccountData object containing the sequence number and authentication key of the account.
+     * @throws {SupraAPIError} For an account that does not exist: HTTP 404 on v12, HTTP 400 on v11. See "HTTP status
+     * codes by node version" in the README.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -88,8 +91,9 @@ export class Account {
      * Queries the modules of an account.
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.count - The number of modules to return.
-     * @param args.options.start - Cursor specifying where to start for pagination. Use the cursor returned by the previous request when making the next request.
+     * @param args.options.start - The `cursor` of the previous page. Omit it, or pass `undefined`, for the first page.
      * @returns A Promise that resolves to an array of MoveModuleBytecode objects representing the modules of the account with optional cursor.
+     * `cursor` is `undefined` when there are no more modules; see {@link PaginatedResponse}.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -108,7 +112,7 @@ export class Account {
      */
     async getAccountModules(args: {
         accountAddress: AccountAddressInput;
-        options?: { count?: number; start?: string };
+        options?: { count?: number; start?: string | undefined };
     }): Promise<PaginatedResponse<MoveModuleBytecode[]>> {
         validateAddress(args.accountAddress, "accountAddress");
         validatePaginationCount(args.options?.count);
@@ -151,8 +155,9 @@ export class Account {
      * Queries the resources of an account.
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.count - The number of resources to return.
-     * @param args.options.start - Cursor specifying where to start for pagination. Use the cursor returned by the previous request when making the next request.
+     * @param args.options.start - The `cursor` of the previous page. Omit it, or pass `undefined`, for the first page.
      * @returns A Promise that resolves to an array of MoveResource objects representing the resources of the account with optional cursor.
+     * `cursor` is `undefined` when there are no more resources; see {@link PaginatedResponse}.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -171,7 +176,7 @@ export class Account {
      */
     async getAccountResources(args: {
         accountAddress: AccountAddressInput;
-        options?: { count?: number; start?: string };
+        options?: { count?: number; start?: string | undefined };
     }): Promise<PaginatedResponse<MoveResource[]>> {
         validateAddress(args.accountAddress, "accountAddress");
         validatePaginationCount(args.options?.count);
@@ -215,10 +220,16 @@ export class Account {
      * @template {TransactionResponse} T - The type of the transaction to be returned.
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.count - The number of transactions to return.
-     * @param args.options.start - Cursor specifying where to start for pagination. Use the cursor returned by the previous request when making the next request.
-     * @param args.options.ascending - Whether to return the transactions in ascending order.   
+     * @param args.options.start - The sequence number to start from, inclusive in both orders, or the `cursor` of
+     * the previous page. Omit it for the most recent transactions (descending) or the first ones (ascending).
+     * @param args.options.ascending - Whether to return the transactions in ascending order.
      * @note Maximum number of items to return default is 20 and maximum is 100.
+     * @note The node pages this feed by sequence number and sends no `x-supra-cursor` header. The SDK computes
+     * `cursor` as the sequence number after the last transaction of the page in the requested order, so it is
+     * passed back as `start` like the cursor of the other feeds. It is `undefined` when the page is empty, or ends
+     * at sequence number 0 in descending order.
      * @returns A Promise that resolves to an array of TransactionResponse objects representing the transactions of the account with optional cursor.
+     * The items are user transactions.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -239,7 +250,7 @@ export class Account {
         accountAddress: AccountAddressInput;
         options?: {
             count?: number;
-            start?: string;
+            start?: string | number | bigint | undefined;
             ascending?: boolean;
         };
     }): Promise<PaginatedResponse<T[]>> {
@@ -254,10 +265,15 @@ export class Account {
      * @template {TransactionResponse} T - The type of the transaction to be returned.
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.count - The number of transactions to return.
-     * @param args.options.start - Cursor specifying where to start for pagination. Use the cursor returned by the previous request when making the next request.
+     * @param args.options.start - The `cursor` of the previous page, exclusive. Omit it, or pass `undefined`, for the first page.
      * @param args.options.ascending - Whether to return the transactions in ascending order.
+     * @param args.options.type - Return only transactions of this type. `"settlement"` requires a node from v12
+     * onwards; older nodes reject it with HTTP 400. A page filtered by type can be empty and still carry a cursor.
      * @note Maximum number of items to return default is 20 and maximum is 100.
      * @returns A Promise that resolves to an array of TransactionResponse objects representing the coin transactions of the account with optional cursor.
+     * Items can be of any `txn_type`, including `settlement` items, which have no `header`, `payload` or
+     * `authenticator`; narrow on `txn_type` before reading them. `cursor` is `undefined` when there are no more
+     * transactions; see {@link PaginatedResponse}.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -278,7 +294,7 @@ export class Account {
         accountAddress: AccountAddressInput;
         options?: {
             count?: number;
-            start?: string;
+            start?: string | undefined;
             ascending?: boolean;
             type?: TransactionQueryType
         };
@@ -296,13 +312,14 @@ export class Account {
      * @param args.options.block_height - Starting block height (inclusive). Optional.
      *  The block height at which to start lookup for transactions. If provided, returns :count of transactions starting from it in the specified order. For order see :ascending flag.
      * @note If a :cursor is specified then this field will be ignored. 
-     * @param args.options.cursor - Cursor specifying where to start for pagination. Use the cursor returned by the previous request when making the next request.
+     * @param args.options.cursor - The `cursor` of the previous page, exclusive. Omit it, or pass `undefined`, for the first page.
      * If provided, returns :count of transactions starting from this cursor in the specified order. For order see :ascending flag.
      * If not specified, the lookup will be done based on the :block_height parameter value. 
      * @note If both :cursor and :block_height are specified then :cursor has precedence.
      * @param args.options.ascending - Whether to return the transactions in ascending order.
      * @note Maximum number of items to return default is 20 and maximum is 100.
      * @returns A Promise that resolves to an array of AutoTransactionResponse objects representing the auto transactions of the account with optional cursor.
+     * `cursor` is `undefined` when there are no more transactions; see {@link PaginatedResponse}.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -324,7 +341,7 @@ export class Account {
         options?: {
             count?: number;
             block_height?: number;
-            cursor?: string;
+            cursor?: string | undefined;
             ascending?: boolean;
         };
     }): Promise<PaginatedResponse<T[]>> {

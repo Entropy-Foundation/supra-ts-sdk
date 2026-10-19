@@ -87,6 +87,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`account.getAccountSupraBalance`** returns `{ total, coin, fungibleAsset }` (`SupraBalance`): the SUPRA balance in
   quants and the parts held in the `CoinStore` and in the fungible asset store.
 - **`SUPRA_FUNGIBLE_ASSET_ADDRESS`** is the address of the SUPRA fungible asset (`0xa`, padded to 64 digits).
+- Settlement transactions, returned by nodes from v12 onwards: `TransactionType.Settlement`, the
+  `SettlementTransactionResponse` variant of `CommittedTransactionResponse` and `TransactionResponse` (with
+  `SettlementData`, `SettlementApplierSummary`, `SettlementCreditSummary` and `AppliedInboundSettlement`), and
+  `"settlement"` in `TransactionQueryType`. A settlement item has no `header`, `payload` or `authenticator`.
+- `AutomationTransactionResponse.predicate` (`AutomationPredicateInfo`), the `Remove` variant of
+  `AutomationRecordAction`, `EvmTransactionOutput` in `TransactionOutput`, and the v12 fields and
+  `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
+- `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
+  requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
+- README sections on reading a feed page by page and on the HTTP status codes that differ between v11 and v12
+  nodes.
 
 ### Changed
 
@@ -202,6 +213,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The examples `buildTransaction.ts` and `submitTransaction.ts` read a fresh sequence number for each transaction
   (they reused the number of the first one), use the client's RPC URL for the raw HTTP request, and take the
   automation gas price cap from the network's minimum gas unit price.
+
+- **Breaking:** `PaginatedResponse.cursor` is `undefined` exactly at the end of a feed, on v11 and v12 nodes alike.
+  The empty header, the `"0"` of `coin_transactions` and the echoed `start` of `resources` and `modules` that v11
+  nodes send at the end of a feed are returned as `undefined`. A page can be empty and still carry a cursor.
+- **Breaking:** `getEventsByType` types `options.start` as `string`, the type of the cursor it returns. It was
+  `number`.
+- **Breaking:** `CommittedTransactionResponse` and `TransactionResponse` include `SettlementTransactionResponse`.
+  Code that reads `header`, `payload` or `authenticator` must narrow on `txn_type` first.
+- **Breaking:** `EmptyTransactionOutput` is the string `"Empty"`, which is what the node sends. It was declared
+  as `{ Empty: null }`.
+- **Breaking:** `PendingTransactionResponse.txn_type` is `TransactionType.User`. `BlockMetadataTransactionResponse`
+  and `AutomationRecordTransactionResponse` declare `output` as non-null. `block_header` is optional on every
+  transaction response, as the node's API schema declares it; transactions returned as part of a block have
+  `block_header: null`.
+- **Breaking:** `FinalizedBlockHeader.transactions` is optional, since the node omits it unless the block is
+  requested with `withFinalizedTransactions: true`, and is typed `CommittedTransactionResponse[]`.
+- The `type` option of `getBlockByHeight` and `getTransactionsByBlockHash` is `TransactionQueryType`, which adds
+  `"record"` and `"settlement"`.
+- Every cursor option (`start` or `cursor`) accepts `undefined`, so a returned cursor is passed back without a
+  check or a cast. An empty cursor is not sent.
 
 ### Fixed
 

@@ -1,5 +1,6 @@
 import { getBlockByHashInternal, getBlockByHeightInternal, getLatestBlockInternal, getTransactionsByBlockHashInternal } from "../internal/block";
 import type { FinalizedBlockHeader } from "../types/block";
+import type { TransactionQueryType } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { validateBlockHeight, validateHexString } from "../helper/validation";
 
@@ -59,8 +60,12 @@ export class Block {
      * Get information about the block that has been finalized at the given height.
      * @param args.height - The height of the block to retrieve.
      * @param args.options.withFinalizedTransactions - Whether to include the transactions in the block.
-     * @param args.options.type - The type of block to retrieve.
-     * @returns A Promise that resolves to a FinalizedBlockHeader object.
+     * @param args.options.type - Include only the transactions of this type. `"settlement"` requires a node from
+     * v12 onwards; older nodes reject it with HTTP 400.
+     * @returns A Promise that resolves to a FinalizedBlockHeader object. Its `transactions` can contain any
+     * `txn_type`, including `settlement` items, which have no `header`, `payload` or `authenticator`.
+     * @throws {SupraAPIError} HTTP 404 when the node has no block at that height yet. A height that is not a number
+     * is HTTP 400 on v12 and HTTP 404 on v11. See "HTTP status codes by node version" in the README.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -77,7 +82,7 @@ export class Block {
      * ```
      * @group Block
      */
-    async getBlockByHeight(args: { height: number, options?: { withFinalizedTransactions?: boolean, type?: "user" | "auto" | "meta" } }): Promise<FinalizedBlockHeader> {
+    async getBlockByHeight(args: { height: number, options?: { withFinalizedTransactions?: boolean, type?: TransactionQueryType } }): Promise<FinalizedBlockHeader> {
         validateBlockHeight(args.height, "height");
         return getBlockByHeightInternal(args, this.networkInformation)
     }
@@ -86,6 +91,8 @@ export class Block {
      * Get the header and execution output statistics of the block with the given hash.
      * @param args.blockHash - The hash of the block to retrieve.
      * @returns A Promise that resolves to a FinalizedBlockHeader object.
+     * @throws {SupraAPIError} HTTP 404 for an unknown block. A hash that is not hexadecimal is HTTP 400 on v12 and
+     * HTTP 404 on v11. See "HTTP status codes by node version" in the README.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -111,8 +118,11 @@ export class Block {
     /**
      * Get a list containing the hashes of the transactions that were finalized in the block with the given hash in the order that they were executed.
      * @param args.blockHash - The hash of the block to retrieve.
-     * @param args.options.type - The type of block to retrieve.
+     * @param args.options.type - Return only the hashes of transactions of this type. `"settlement"` requires a
+     * node from v12 onwards; older nodes reject it with HTTP 400.
      * @returns A Promise that resolves to a string array.
+     * @throws {SupraAPIError} HTTP 404 for an unknown block. A hash that is not hexadecimal is HTTP 400 on v12 and
+     * HTTP 404 on v11. See "HTTP status codes by node version" in the README.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -129,7 +139,7 @@ export class Block {
      * ```
      * @group Block
      */
-    async getTransactionsByBlockHash(args: { blockHash: string, options?: { type?: "user" | "auto" | "meta" } }): Promise<string[]> {
+    async getTransactionsByBlockHash(args: { blockHash: string, options?: { type?: TransactionQueryType } }): Promise<string[]> {
         validateHexString(args.blockHash, "blockHash");
         return getTransactionsByBlockHashInternal(args, this.networkInformation)
     }

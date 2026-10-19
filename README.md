@@ -97,6 +97,32 @@ import { SupraClient, Network } from 'supra-ts-sdk';
 })();
 ```
 
+### Reading a Feed Page by Page
+
+Paginated methods return `{ response, cursor }`. Pass `cursor` back unchanged until it is `undefined`. A page
+can be empty and still carry a cursor.
+
+```ts
+import { TransactionType } from 'supra-ts-sdk';
+
+let cursor: string | undefined;
+do {
+  const page = await supra.account.getAccountCoinTransactions({
+    accountAddress: rootAddress,
+    options: { count: 50, start: cursor },
+  });
+  for (const txn of page.response) {
+    // Only user and automated transactions have a header, payload and authenticator.
+    if (txn.txn_type === TransactionType.User || txn.txn_type === TransactionType.Auto) {
+      console.log(txn.hash, txn.header.sender.Move);
+    } else {
+      console.log(txn.hash, txn.txn_type);
+    }
+  }
+  cursor = page.cursor;
+} while (cursor !== undefined);
+```
+
 ## Chain ID
 
 Every transaction carries the chain ID of the client's configuration: 8 for `Network.MAINNET`, 6 for `Network.TESTNET`,
@@ -195,6 +221,22 @@ try {
   }
 }
 ```
+
+### HTTP Status Codes by Node Version
+
+Errors from the node are thrown as `SupraAPIError`, whose `status` is the HTTP status. The SDK supports nodes from
+v11.7.0 onwards. These conditions are reported with a different status by v12 nodes than by v11 nodes:
+
+| Condition | v12 | v11 |
+|---|---|---|
+| An account that does not exist (`getAccountInfo`) | 404 | 400 |
+| A fault in the node (store, archive or state failure) | 500 | 400 |
+| A path parameter that does not parse (an address, hash or height) | 400 | 404 |
+| A full transaction pool on submission | 503 | 500 |
+| A `type` of `"settlement"` | accepted | 400 |
+
+`isAccountExists` returns `false` for an account that does not exist on both versions. Other statuses, such as 404
+for an unknown transaction, block, module or resource, and 410 for pruned data, are the same on both.
 
 ### Timeout and retries
 

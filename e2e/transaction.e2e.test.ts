@@ -1,7 +1,7 @@
 import type { SupraAccount, TransactionResponse } from "../src/index";
 import { BCS, HexString, TransactionStatus, TxnBuilderTypes } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
-import { describeE2E, testFailingOnV11 } from "./helpers/describe";
+import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import { rawGet, rawSupraBalance, rawWaitForCommit, type RawTransaction } from "./helpers/raw";
 import { explicitGas, sendSupra } from "./helpers/transfers";
@@ -269,8 +269,7 @@ describeE2E("transaction feeds", () => {
         expect(seen).toEqual(all.response.map((resource) => resource.type));
     });
 
-    // Expected: the last page of a feed carries no cursor, so a feed read to its end ends with `undefined`.
-    testFailingOnV11("getAccountModules returns no cursor on the last page", async () => {
+    test("getAccountModules returns no cursor on the last page", async () => {
         let cursor: string | undefined;
         let pages = 0;
         do {

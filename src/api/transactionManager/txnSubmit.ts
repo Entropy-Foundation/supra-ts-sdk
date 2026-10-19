@@ -15,8 +15,10 @@ import type { AccountAddressInput } from "../../types/account";
  * 1. With `enableTransactionSimulation`, the transaction is simulated first. A simulated status other than `Success`
  *    throws `SupraSimulationFailedError` and nothing is submitted.
  * 2. The transaction is submitted. An error status of the node throws `SupraAPIError`; the transaction was not
- *    accepted. A submission that times out or fails before the node answers throws `SupraTimeoutError` or
- *    `SupraNetworkError`; the node may have accepted the transaction.
+ *    accepted. A node whose transaction pool is full answers HTTP 503 on v12 and HTTP 500 on v11; the transaction can
+ *    be submitted again later (see "HTTP status codes by node version" in the README). A submission that times out or
+ *    fails before the node answers throws `SupraTimeoutError` or `SupraNetworkError`; the node may have accepted the
+ *    transaction.
  * 3. With `enableWaitForTransaction`, the call waits until the transaction has a final status, as
  *    `waitForTransaction` does:
  *    - `Success`: the transaction is returned.

@@ -1,5 +1,5 @@
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
-import { describeE2E } from "./helpers/describe";
+import { describeE2E, nodeGeneration } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import type { RawTransaction } from "./helpers/raw";
 import { sendSupra } from "./helpers/transfers";
@@ -38,6 +38,19 @@ describeE2E("blocks", () => {
         const byHeight = await ctx.supra.block.getBlockByHeight({ height });
         const byHash = await ctx.supra.block.getBlockByHash({ blockHash: byHeight.header.hash });
         expect(byHash.header).toEqual(byHeight.header);
+    });
+
+    test("the settlement type filter is accepted from v12 and refused with HTTP 400 before it", async () => {
+        const hash = transfer.block_header?.hash as string;
+        const request = ctx.supra.block.getTransactionsByBlockHash({
+            blockHash: hash,
+            options: { type: "settlement" },
+        });
+        if (nodeGeneration() === "v11") {
+            await expect(request).rejects.toMatchObject({ status: 400 });
+        } else {
+            await expect(request).resolves.not.toContain(transfer.hash);
+        }
     });
 
     test("getTransactionsByBlockHash lists the hash of the transfer", async () => {
