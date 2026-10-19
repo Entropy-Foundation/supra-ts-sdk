@@ -3,8 +3,15 @@ import { SupraClient } from "../../api/supraClient";
 import { SupraAPIError } from "../../errors/apiError";
 import { SupraTransactionFailedError } from "../../errors/transactionError";
 import { TransactionStatus } from "../../types/transaction";
+import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
-import { SequenceNumberTracker, bindReservation, reservationOf } from "../sequenceNumber";
+import {
+    SequenceNumberTracker,
+    bindReservation,
+    reservationOf,
+    sequenceNumberTrackerOf,
+    settleUnsubmittedSequenceNumberInternal,
+} from "../sequenceNumber";
 
 const RPC_URL = "http://node.test";
 const HASH = "0x" + "5e".repeat(32);
@@ -524,6 +531,37 @@ describe("sequence numbers of the transfer helpers", () => {
 
         expect(submitted).toEqual([7, 8]);
         expect(accountReads).toBe(1);
+    });
+});
+
+describe("a number whose transaction threw before submission", () => {
+    const address = "0x" + "cd".repeat(32);
+    const newConfig = (): NetworkConfig => ({ name: "custom", chainId: 255, rpcUrl: RPC_URL });
+
+    it("is handed out again after an error that does not report the number", async () => {
+        const config = newConfig();
+        const tracker = sequenceNumberTrackerOf(config);
+        const reservation = await tracker.reserve(address, async () => 7n);
+
+        settleUnsubmittedSequenceNumberInternal(reservation, new Error("signing failed"), config);
+
+        expect((await tracker.reserve(address, async () => 99n)).sequenceNumber).toBe(7n);
+    });
+
+    it("makes the counter read the chain again after an error that reports a stale number", async () => {
+        const config = newConfig();
+        const tracker = sequenceNumberTrackerOf(config);
+        const reservation = await tracker.reserve(address, async () => 7n);
+        const stale = new SupraAPIError({
+            status: 400,
+            statusText: "Bad Request",
+            url: RPC_URL,
+            data: { message: "General err: MoveTransactionValidationFailed(0x1, 0, SEQUENCE_NUMBER_TOO_OLD)" },
+        });
+
+        settleUnsubmittedSequenceNumberInternal(reservation, stale, config);
+
+        expect((await tracker.reserve(address, async () => 12n)).sequenceNumber).toBe(12n);
     });
 });
 

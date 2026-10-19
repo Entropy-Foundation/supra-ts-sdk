@@ -4,11 +4,11 @@ import { SupraTransactionFailedError } from "../../errors/transactionError";
 import { TransactionStatus, type WaitForTransactionOptions } from "../../types/transaction";
 import {
     bindReservation,
-    releaseSequenceNumberInternal,
     reservationOf,
     reserveSequenceNumberInternal,
     sequenceNumberTrackerOf,
     settleRefusedSubmission,
+    settleUnsubmittedSequenceNumberInternal,
 } from "../sequenceNumber";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, OptionalTransactionArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
@@ -107,7 +107,8 @@ export async function submitTxnInternal(
  *
  * The sequence number is the call's `sequenceNumber`, else the next number of the client's counter. The max gas
  * estimate simulates the transaction with that number, and the submission uses it. When the counter assigned the
- * number and building, estimating or signing throws, the number is handed out again.
+ * number and building, estimating or signing throws, the number is handed out again, or the counter is read from the
+ * chain again when the error reports a stale number.
  */
 export async function buildAndSubmitEntryFunctionInternal(
     args: {
@@ -143,7 +144,7 @@ export async function buildAndSubmitEntryFunctionInternal(
     } catch (error) {
         // The transaction was not submitted, so a number from the counter is not used.
         if (reservation !== undefined) {
-            releaseSequenceNumberInternal(reservation, config);
+            settleUnsubmittedSequenceNumberInternal(reservation, error, config);
         }
         throw error;
     }

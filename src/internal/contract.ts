@@ -1,7 +1,7 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal } from "./transactionManager/txnBuild";
-import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
+import { bindReservation, reserveSequenceNumberInternal, settleUnsubmittedSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs, SendTxnPayload } from "../types/transactionManager/transactionBuild";
@@ -66,7 +66,7 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
     } catch (error) {
         // The transaction was not submitted, so a number from the counter is not used.
         if (reservation !== undefined) {
-            releaseSequenceNumberInternal(reservation, config);
+            settleUnsubmittedSequenceNumberInternal(reservation, error, config);
         }
         throw error;
     }
