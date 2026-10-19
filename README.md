@@ -41,6 +41,18 @@ npm install supra-ts-sdk
 yarn add supra-ts-sdk
 ```
 
+### Release channels
+
+Releases that support a network are published to npm under a dist-tag named after the network: `devnet`, `testnet`
+and `mainnet`. The `devnet` tag carries the prerelease versions that support Devnet before the other networks:
+
+```bash
+pnpm add supra-ts-sdk@devnet
+```
+
+The dist-tags are set when a version is released; until then `pnpm add supra-ts-sdk` installs the `latest` version.
+The SDK supports nodes from v11.7.0 onwards.
+
 ## Requirements
 
 - Node.js ≥ 18
@@ -49,33 +61,47 @@ yarn add supra-ts-sdk
 
 ## 🚀 Quick Start
 
-```ts
-import { SupraClient, Network } from 'supra-ts-sdk';
+The program below connects to Devnet, funds a new account from the faucet, sends 0.01 SUPRA to another account and
+waits for the commit. It is an ES module (top-level `await`):
 
-(async () => {
-  const supra = new SupraClient({ network: Network.TESTNET });
-  console.log("Connected to Supra Testnet (Chain ID 6)");
-  // Devnet: new SupraClient({ network: Network.DEVNET }) (Chain ID 50)
-})();
+```ts
+import { SupraAccount, SupraClient, Network } from 'supra-ts-sdk';
+
+const supra = new SupraClient({ network: Network.DEVNET }); // chain ID 50
+// Testnet: Network.TESTNET (chain ID 6), Mainnet: Network.MAINNET (chain ID 8)
+// Any other node: new SupraClient({ rpcUrl: "http://localhost:27001", chainId: 255 })
+
+const sender = new SupraAccount();
+const receiver = new SupraAccount();
+
+// The faucet answers before its transaction executes; wait for the commit.
+const faucet = await supra.faucet.fundAccountWithFaucet({ accountAddress: sender.address() });
+await supra.transaction.waitForTransaction({ transactionHash: faucet.hash });
+console.log("Balance:", await supra.account.getAccountSupraCoinBalance({ accountAddress: sender.address() }));
+
+const transfer = await supra.coin.transferSupraCoin({
+  senderAccount: sender,
+  receiverAccountAddress: receiver.address(),
+  amount: 1_000_000n,
+  optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+console.log(`Transfer ${transfer.hash}: ${transfer.status}`);
 ```
+
+The helper estimates the max gas, takes the sequence number from the client's counter and checks the chain ID of the
+node before it signs. On a network without a faucet, use an account that holds SUPRA, for example one made with
+`SupraAccount.fromSupraAccountObject`. The [examples](./examples/README.md) run against Devnet, Testnet and localnets.
 
 ### Querying Accounts
 
 #### 1. Check if an Account Exists
 
 ```ts
-import { SupraClient, Network } from 'supra-ts-sdk';
+const accountAddress = new SupraAccount().address();
 
-(async () => {
-  const supra = new SupraClient({ network: Network.TESTNET });
+const exists = await supra.account.isAccountExists({ accountAddress });
 
-  const accountAddress = "0x88fbd33f54e1126269769780feb24480428179f552e2313fbe571b72e62a1c55";
-
-  const exists = await supra.account.isAccountExists({ accountAddress });
-
-  console.log(`Account ${accountAddress.slice(0, 8)}... exists:`, exists);
-
-})();
+console.log(`Account ${accountAddress.toString().slice(0, 8)}... exists:`, exists); // false
 ```
 
 **Note**: Accounts on Supra only exist after receiving a transaction or resource. This is a fast, gas-free check.
@@ -83,18 +109,12 @@ import { SupraClient, Network } from 'supra-ts-sdk';
 #### 2. Get Full Account Information
 
 ```ts
-import { SupraClient, Network } from 'supra-ts-sdk';
+const rootAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
-(async () => {
-  const supra = new SupraClient({ network: Network.TESTNET });
+const accountData = await supra.account.getAccountInfo({ accountAddress: rootAddress });
 
-  const rootAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
-
-  const accountData = await supra.account.getAccountInfo({ accountAddress: rootAddress });
-
-  console.log("Framework (0x1) account info:", accountData);
-  // Expected fields: sequence_number, authentication_key, etc.
-})();
+console.log("Framework (0x1) account info:", accountData);
+// Expected fields: sequence_number, authentication_key, etc.
 ```
 
 ### Reading a Feed Page by Page
@@ -108,7 +128,7 @@ import { TransactionType } from 'supra-ts-sdk';
 let cursor: string | undefined;
 do {
   const page = await supra.account.getAccountCoinTransactions({
-    accountAddress: rootAddress,
+    accountAddress: sender.address(),
     options: { count: 50, start: cursor },
   });
   for (const txn of page.response) {
@@ -414,6 +434,14 @@ const text = JSON.stringify(value, (_key, v) => (typeof v === 'bigint' ? v.toStr
 ```
 
 ## 📚 More Examples
+
+Every example runs against Devnet, Testnet or a localnet given `SUPRA_NETWORK` (or `SUPRA_RPC_URL` and
+`SUPRA_CHAIN_ID`) and, for the examples that send transactions, `SUPRA_PRIVATE_KEY` or `SUPRA_EXAMPLES_FUND=1`.
+[`examples/README.md`](./examples/README.md) lists what each one needs. From a clone of this repository:
+
+```bash
+SUPRA_NETWORK=devnet SUPRA_EXAMPLES_FUND=1 pnpm examples
+```
 
 - [Account](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/account.ts)
 - [Faucet](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/faucet.ts)

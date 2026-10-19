@@ -1,51 +1,38 @@
-import { SupraClient, Network, TypeTagParser } from "supra-ts-sdk";
-import { account } from "./account.setup";
+import { TypeTagParser } from "supra-ts-sdk";
 import { COIN_ABI } from "./abi";
+import { assertSuccess, createClient, getFundedAccounts, runExample } from "./setup";
 
+runExample(async () => {
+    const supra = createClient();
+    // `0x1::coin::transfer` needs a receiver that has a coin store, which an account that was funded has.
+    const [account, receiver] = await getFundedAccounts(supra, 2);
+    if (account === undefined || receiver === undefined) {
+        throw new Error("Missing accounts");
+    }
 
-(async () => {
-
-    // const account = SupraAccount.fromSupraAccountObject({
-    //     address: "AccountAddress",
-    //     privateKeyHex: `${"PrivateKey"}${"PublicKey (Without 0x)"}`,
-    //     publicKeyHex: `0x${"PublicKey (Without 0x)"}`
-    // });
-
-    const supra = new SupraClient({ network: Network.TESTNET });
-
-
-    const contract_abis = [
-        COIN_ABI
-    ] as const;
-
-    const instance = supra.contract.fromABI(contract_abis);
+    const contractAbis = [COIN_ABI] as const;
+    const instance = supra.contract.fromABI(contractAbis);
 
     // ---------------------------------------------------------------------------
-    // Get supra coin balance
+    // Call a view function: the SUPRA balance of the account
     // ---------------------------------------------------------------------------
-
-    let balance = await instance.contracts.coin.view.balance({
-        functionArguments: ["0x10cdf6e0c4c5c762bb23be3eac5c7eaa272c1b4abe0573cd1386c5632b7992ca"],
-        typeArguments: ["0x1::supra_coin::SupraCoin"]
-    })
-
+    const balance = await instance.contracts.coin.view.balance({
+        functionArguments: [account.address().toString()],
+        typeArguments: ["0x1::supra_coin::SupraCoin"],
+    });
     console.log("Balance:", balance[0]);
 
-
     // ---------------------------------------------------------------------------
-    // Transfer supra coin
+    // Call an entry function: transfer SUPRA
     // ---------------------------------------------------------------------------
-
-    let txn = await instance.contracts.coin.entry.transfer({
-        functionArguments: [account, "0x10cdf6e0c4c5c762bb23be3eac5c7eaa272c1b4abe0573cd1386c5632b7992ca", 1000n],
+    const txn = await instance.contracts.coin.entry.transfer({
+        functionArguments: [account, receiver.address().toString(), 1000n],
         typeArguments: [new TypeTagParser("0x1::supra_coin::SupraCoin").parseTypeTag()],
         enableTransactionWaitAndSimulationArgs: {
             enableTransactionSimulation: true,
-            enableWaitForTransaction: true
+            enableWaitForTransaction: true,
         },
-    })
-
-    console.log("Transaction submitted:", txn);
-
-
-})();
+    });
+    assertSuccess("coin::transfer", txn);
+    console.log("Transaction committed:", txn.hash);
+});

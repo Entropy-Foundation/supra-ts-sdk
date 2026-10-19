@@ -1,125 +1,140 @@
-import { SupraClient, Network, HexString } from "supra-ts-sdk";
+import { HexString, SupraAccount, TransactionType } from "supra-ts-sdk";
+import { canSendTransactions, createClient, getFundedAccounts, runExample } from "./setup";
 
-(async () => {
-    const supra = new SupraClient({ network: Network.TESTNET });
-
-    // -------------------------------------------------------------------------
-    // Query the current state of an account
-    // -------------------------------------------------------------------------
-    const accountAddress1 = "0x88fbd33f54e1126269769780feb24480428179f552e2313fbe571b72e62a1c55";
-    const accountData1 = await supra.account.isAccountExists({ accountAddress: accountAddress1 });
-
-    console.log("Account exists:", accountData1);
+runExample(async () => {
+    const supra = createClient();
+    const frameworkAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
     // -------------------------------------------------------------------------
-    // Query the current state of an account
+    // Check whether accounts exist
     // -------------------------------------------------------------------------
-    let accountAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
-    const accountData = await supra.account.getAccountInfo({ accountAddress: accountAddress });
+    console.log("0x1 exists:", await supra.account.isAccountExists({ accountAddress: frameworkAddress }));
+    console.log(
+        "A new account exists:",
+        await supra.account.isAccountExists({ accountAddress: new SupraAccount().address() }),
+    );
 
+    // -------------------------------------------------------------------------
+    // Query the current state of an account (the address as a string or a HexString)
+    // -------------------------------------------------------------------------
+    const accountData = await supra.account.getAccountInfo({ accountAddress: frameworkAddress });
     console.log("Account data:", accountData);
 
-    // -------------------------------------------------------------------------
-    // Query the current state of an account
-    // -------------------------------------------------------------------------
-    let hexAccountAddress = new HexString("0x0000000000000000000000000000000000000000000000000000000000000001");
-    const accountData2 = await supra.account.getAccountInfo({ accountAddress: hexAccountAddress });
-
+    const accountData2 = await supra.account.getAccountInfo({ accountAddress: new HexString(frameworkAddress) });
     console.log("Account data:", accountData2);
-
 
     // -------------------------------------------------------------------------
     // Query the modules of an account
     // -------------------------------------------------------------------------
-    const { response: accountModules } = await supra.account.getAccountModules({ accountAddress: accountAddress });
-
-    console.log("Account modules:", accountModules);
-
+    const { response: accountModules } = await supra.account.getAccountModules({
+        accountAddress: frameworkAddress,
+        options: { count: 5 },
+    });
+    console.log(
+        "Account modules:",
+        accountModules.map((module) => module.abi?.name),
+    );
 
     // -------------------------------------------------------------------------
-    // Query the specific module of an account
+    // Query one module of an account
     // -------------------------------------------------------------------------
-    const accountModule = await supra.account.getAccountModule({ accountAddress: hexAccountAddress, moduleName: "acl" });
+    const accountModule = await supra.account.getAccountModule({
+        accountAddress: new HexString(frameworkAddress),
+        moduleName: "supra_account",
+    });
+    console.log("Account module:", accountModule.abi?.name, accountModule.abi?.exposed_functions.length, "functions");
 
-    console.log("Account module:", accountModule);
-
-
-    // --------------------------------------------------------------------------
-    // Query the resources of an account
     // -------------------------------------------------------------------------
-    const { response: accountResources } = await supra.account.getAccountResources({ accountAddress: accountAddress });
-
-    console.log("Account resources:", accountResources);
-
-
-    // --------------------------------------------------------------------------
-    // Query the specific resource of an account
+    // Query the resources of an account, and one resource
     // -------------------------------------------------------------------------
-    const accountResource = await supra.account.getAccountResource({ accountAddress: accountAddress, resourceType: "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>" });
+    const { response: accountResources } = await supra.account.getAccountResources({
+        accountAddress: frameworkAddress,
+    });
+    console.log("Account resources:", accountResources.length);
 
+    const accountResource = await supra.account.getAccountResource({
+        accountAddress: frameworkAddress,
+        resourceType: "0x1::timestamp::CurrentTimeMicroseconds",
+    });
     console.log("Account resource:", accountResource);
 
-
-    // --------------------------------------------------------------------------
-    // Query the specific resource of an account
     // -------------------------------------------------------------------------
-
-    const { response: accountTransactions } = await supra.account.getAccountTransactions({ accountAddress: "0x665f6c5e407321321bb411711fc42eb43ad46e9964c17096c92cb72e734e928a", options: { count: 1 } });
-
-    console.log("Account transaction:", accountTransactions[0]);
-
-    // --------------------------------------------------------------------------
-    // Query the legacy token count of an account
+    // Queries about an account that has sent transactions
     // -------------------------------------------------------------------------
+    if (!canSendTransactions()) {
+        console.log("Skipping the queries about an account's history: set SUPRA_PRIVATE_KEY or SUPRA_EXAMPLES_FUND=1.");
+        return;
+    }
 
-    const accountCoinsCount = await supra.account.getAccountCoinsCount({ accountAddress: "0x10cdf6e0c4c5c762bb23be3eac5c7eaa272c1b4abe0573cd1386c5632b7992ca" });
+    const [account] = await getFundedAccounts(supra, 1);
+    if (account === undefined) {
+        throw new Error("No account");
+    }
+    const address = account.address();
 
-    console.log("Account coins count:", accountCoinsCount);
-
-    // --------------------------------------------------------------------------
-    // Query the legacy tokens of an account
-    // -------------------------------------------------------------------------
-    const { response: accountCoinTransaction } = await supra.account.getAccountCoinTransactions({ accountAddress: "0x10cdf6e0c4c5c762bb23be3eac5c7eaa272c1b4abe0573cd1386c5632b7992ca" });
-
-    console.log("Account coin transaction:", accountCoinTransaction);
-
-
-    // --------------------------------------------------------------------------
-    // Query the auto transactions of an account
-    // -------------------------------------------------------------------------
-    const { response: accountAutoTransaction, cursor } = await supra.account.getAccountAutoTransactions({ accountAddress: "0xfd1c16e536bf78e79b3f0c22d10a7fb850a0270e1c638eb184d251c37ef87039", options: { count: 10 } });
-
-    console.log("Account auto transaction:", accountAutoTransaction);
-
-
-    // ---------------------------------------------------------------------------
-    // Query the supra coin balance of an account
-    // ---------------------------------------------------------------------------
-
-    let supraBalance = await supra.account.getAccountSupraCoinBalance({
-        accountAddress: "0x10cdf6e0c4c5c762bb23be3eac5c7eaa272c1b4abe0573cd1386c5632b7992ca"
+    // The account sends one transfer so that it has a history to read.
+    const transfer = await supra.coin.transferSupraCoin({
+        senderAccount: account,
+        receiverAccountAddress: new SupraAccount().address(),
+        amount: 1_000n,
+        optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
     });
+    console.log("Transfer committed:", transfer.hash);
 
-    console.log("Supra balance:", supraBalance);
-
-    // ---------------------------------------------------------------------------
-    // Query the coin balance of an account
-    // ---------------------------------------------------------------------------
-
-    let supraBalanceLegacy = await supra.account.getAccountCoinBalance({
-        accountAddress: "0x10cdf6e0c4c5c762bb23be3eac5c7eaa272c1b4abe0573cd1386c5632b7992ca",
-        asset: "0x1::supra_coin::SupraCoin"
+    const { response: accountTransactions } = await supra.account.getAccountTransactions({
+        accountAddress: address,
+        options: { count: 1 },
     });
+    console.log("Account transaction:", accountTransactions[0]?.hash);
 
+    console.log("Account coins count:", await supra.account.getAccountCoinsCount({ accountAddress: address }));
 
-    let supraBalanceFungible = await supra.account.getAccountCoinBalance({
-        accountAddress: "0x10cdf6e0c4c5c762bb23be3eac5c7eaa272c1b4abe0573cd1386c5632b7992ca",
-        asset: "0xa"
+    const { response: accountCoinTransactions } = await supra.account.getAccountCoinTransactions({
+        accountAddress: address,
     });
+    console.log("Account coin transactions:", accountCoinTransactions.length);
 
+    const { response: accountAutoTransactions } = await supra.account.getAccountAutoTransactions({
+        accountAddress: address,
+        options: { count: 10 },
+    });
+    console.log("Account auto transactions:", accountAutoTransactions.length);
 
-    console.log("Supra balance legacy:", supraBalanceLegacy);
-    console.log("Supra balance fungible:", supraBalanceFungible);
+    // -------------------------------------------------------------------------
+    // Read a feed page by page: pass the cursor back until it is undefined
+    // -------------------------------------------------------------------------
+    let cursor: string | undefined;
+    do {
+        const page = await supra.account.getAccountCoinTransactions({
+            accountAddress: address,
+            options: { count: 50, start: cursor },
+        });
+        for (const txn of page.response) {
+            // Only user and automated transactions have a header, payload and authenticator.
+            if (txn.txn_type === TransactionType.User || txn.txn_type === TransactionType.Auto) {
+                console.log(txn.hash, txn.header.sender.Move);
+            } else {
+                console.log(txn.hash, txn.txn_type);
+            }
+        }
+        cursor = page.cursor;
+    } while (cursor !== undefined);
 
+    // -------------------------------------------------------------------------
+    // Query the SUPRA balance of an account
+    // -------------------------------------------------------------------------
+    console.log("SUPRA balance:", await supra.account.getAccountSupraCoinBalance({ accountAddress: address }));
+    console.log("SUPRA balance by form:", await supra.account.getAccountSupraBalance({ accountAddress: address }));
 
-})();
+    // -------------------------------------------------------------------------
+    // Query the balance of a coin type, and of a fungible asset
+    // -------------------------------------------------------------------------
+    console.log(
+        "SUPRA coin balance:",
+        await supra.account.getAccountCoinBalance({ accountAddress: address, asset: "0x1::supra_coin::SupraCoin" }),
+    );
+    console.log(
+        "SUPRA fungible asset balance:",
+        await supra.account.getAccountCoinBalance({ accountAddress: address, asset: "0xa" }),
+    );
+});

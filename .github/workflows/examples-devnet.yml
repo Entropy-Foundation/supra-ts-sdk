@@ -1,0 +1,36 @@
+name: Examples on Devnet
+
+# Builds the SDK and runs every example in `examples/` against Devnet. The examples that send transactions use the
+# account of the repository secret SUPRA_DEVNET_PRIVATE_KEY (an Ed25519 private key, 32 bytes as hex). When the secret
+# is empty, they generate fresh accounts and fund them from the Devnet faucet.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPRA_NETWORK: devnet
+      SUPRA_PRIVATE_KEY: ${{ secrets.SUPRA_DEVNET_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Use the faucet when no key is configured
+        run: |
+          if [ -z "$SUPRA_PRIVATE_KEY" ]; then
+            echo "SUPRA_EXAMPLES_FUND=1" >> "$GITHUB_ENV"
+          fi
+      - name: Run the examples
+        run: pnpm examples
