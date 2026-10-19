@@ -1,5 +1,5 @@
 import { HexString, BCS } from "supra-l1-sdk-core";
-import { addressArgument, isObjectType, vectorU8ToBytes } from "../helper/general";
+import { addressArgument, boolArgument, isObjectType, vectorU8ToBytes } from "../helper/general";
 import type { SimpleEntryFunctionArgumentTypes } from "../types/move";
 
 export class DynamicTransactionSerializer {
@@ -45,7 +45,7 @@ export class DynamicTransactionSerializer {
                 this.serializeAddress(value, type, serializer);
                 break;
             case "bool":
-                this.serializeBool(value as boolean, serializer);
+                serializer.serializeBool(boolArgument(value));
                 break;
             case "u8":
                 this.serializeU8(value as number | string, serializer);
@@ -184,13 +184,6 @@ export class DynamicTransactionSerializer {
 
     private serializeU256(value: unknown, serializer: BCS.Serializer): void {
         serializer.serializeU256(this.parseBigUint(value, 256));
-    }
-
-    private serializeBool(value: boolean, serializer: BCS.Serializer): void {
-        if (typeof value !== "boolean") {
-            throw new Error(`Expected boolean, got ${typeof value}`);
-        }
-        serializer.serializeBool(value);
     }
 
     public prepareTransactionArgs(

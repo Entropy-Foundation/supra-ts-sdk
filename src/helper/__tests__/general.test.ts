@@ -171,6 +171,21 @@ describe("convertArgsValueToJSONParsable", () => {
         expect(convertArgsValueToJSONParsable("bool", false)).toBe(false);
     });
 
+    it("should convert the strings true and false to booleans", () => {
+        expect(convertArgsValueToJSONParsable("bool", "true")).toBe(true);
+        expect(convertArgsValueToJSONParsable("bool", "false")).toBe(false);
+        expect(convertArgsValueToJSONParsable("vector<bool>", ["false", true])).toEqual([false, true]);
+        expect(convertArgsValueToJSONParsable("0x1::option::Option<bool>", "false")).toEqual({ vec: [false] });
+    });
+
+    it("should refuse other bool values", () => {
+        for (const value of ["0", "1", "", "False", "yes", 0, 1, {}]) {
+            expect(() => convertArgsValueToJSONParsable("bool", value as string)).toThrow(
+                'Expected a boolean, "true" or "false" for bool',
+            );
+        }
+    });
+
     it("should convert address to string", () => {
         expect(convertArgsValueToJSONParsable("address", "0x1")).toBe("0x1");
     });

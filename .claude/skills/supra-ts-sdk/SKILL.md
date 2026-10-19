@@ -279,7 +279,7 @@ When passing **function arguments** to `view()`:
 |-----------|-----------------|
 | `u8`, `u16`, `u32` | `number` (e.g., `10`) |
 | `u64`, `u128`, `u256` | `bigint` (e.g., `100n`) |
-| `bool` | `boolean` |
+| `bool` | `boolean` (or `"true"` / `"false"`; other values throw) |
 | `address` | `string` or `HexString` (1 to 64 hex digits, e.g., `"0x1"`; `""` and `"0x"` throw) |
 | `0x1::object::Object<T>` | the object's address, as for `address` (e.g., `"0xa"`) |
 | `vector<u8>` | `string` (hex) |

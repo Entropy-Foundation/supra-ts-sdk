@@ -255,6 +255,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value, `None` is an empty array, and `Option<vector<u8>>` carries the hex of the bytes.
 - A `vector<u8>` argument of a view is validated: a string must be hex of whole bytes, with or without
   `0x`, and array elements must be integers from 0 to 255.
+- **Breaking:** a `bool` argument of a view is a boolean or one of the strings `"true"` and `"false"`; other
+  values throw before any request. Views converted the value with `Boolean(value)`, which sent `"false"` and `"0"`
+  as `true`. Entry functions accept the same two strings, so both encode a value alike.
 - **Breaking:** `address` and `0x1::object::Object<T>` arguments of entry functions and views must be a string
   or a `HexString` holding 1 to 64 hex digits after an optional `0x`. Other values, including `""` and `"0x"`,
   throw before any request. Entry functions encoded `""` and `"0x"` as the address `0x0`, and views sent every

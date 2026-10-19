@@ -353,7 +353,7 @@ export type AutomationAuthenticator = {
  *
  * Map of a Move value to the corresponding TypeScript value
  *
- * `Bool -> boolean`
+ * `Bool -> boolean`, or the string `"true"` or `"false"`
  *
  * `u8, u16, u32 -> number`
  *

@@ -102,6 +102,18 @@ describe("DynamicTransactionSerializer - other types", () => {
         expect(Array.from(ser(true, "bool"))).toEqual(Array.from(core((s) => s.serializeBool(true))));
     });
 
+    it("serializes the strings true and false like the booleans", () => {
+        expect(Array.from(ser("true", "bool"))).toEqual([1]);
+        expect(Array.from(ser("false", "bool"))).toEqual([0]);
+        expect(Array.from(ser(false, "bool"))).toEqual([0]);
+    });
+
+    it("refuses other bool values", () => {
+        for (const value of ["TRUE", "False", "1", "0", "", " true", 1, 0, null, {}]) {
+            expect(() => ser(value, "bool")).toThrow('Failed to serialize argument 0 (bool): Expected a boolean, "true"');
+        }
+    });
+
     it("serializes 0x1::string::String", () => {
         expect(Array.from(ser("hello", "0x1::string::String"))).toEqual(
             Array.from(core((s) => s.serializeStr("hello"))),

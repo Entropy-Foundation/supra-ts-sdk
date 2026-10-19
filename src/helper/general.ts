@@ -167,7 +167,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     // ----------------------------
     if (intTypes.includes(type)) return Number(integerArgument(type, value));
     if (bigIntTypes.includes(type)) return integerArgument(type, value).toString();
-    if (type === "bool") return Boolean(value);
+    if (type === "bool") return boolArgument(value);
     if (type === "address" || isObjectType(type)) return addressArgument(value, type);
 
     // ----------------------------
@@ -326,6 +326,17 @@ export function describeArgument(value: unknown): string {
     if (typeof value === "string") return JSON.stringify(value);
     if (value instanceof HexString) return `HexString(${value.toString()})`;
     return typeof value === "object" && value !== null ? Object.prototype.toString.call(value) : String(value);
+}
+
+/**
+ * Converts a `bool` argument to a boolean. Accepts a boolean and the strings `"true"` and `"false"`.
+ * @throws Error for any other value
+ */
+export function boolArgument(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    throw new Error(`Expected a boolean, "true" or "false" for bool, got ${describeArgument(value)}`);
 }
 
 /** An address argument: an optional `0x` followed by 1 to 64 hex digits in either case. */
