@@ -2,7 +2,7 @@ import { type NetworkConfig } from "../utils/apiEndpoints";
 import { createSupraAPIError } from "../errors/apiError";
 import { parseJsonResponse } from "./parseResponse";
 import { sendRequest } from "./request";
-import { DEFAULT_RPC_VERSION } from "../utils/constants";
+import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RPC_VERSION } from "../utils/constants";
 
 export interface RequestParams {
     path: string;
@@ -36,7 +36,7 @@ export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVe
     }, config, true);
 
     const cursor = response.headers.get("x-supra-cursor") ?? undefined;
-    const data = await parseJsonResponse(response, url.toString());
+    const data = await parseJsonResponse(response, url.toString(), config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
 
     if (response.ok) {
         return {

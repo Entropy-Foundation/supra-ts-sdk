@@ -275,6 +275,32 @@ describe("client request handling", () => {
             expect(fetchMock).toHaveBeenCalledTimes(1);
         });
 
+        it.each([
+            ["a GET", () => get({ path: "/x" }, baseConfig)],
+            ["a POST", () => post({ path: "/x", data: {} }, baseConfig)],
+        ])("rejects %s whose body fails after the headers arrived", async (_name, send) => {
+            const failing = (error: Error) =>
+                new Response(
+                    new ReadableStream({
+                        pull(controller) {
+                            controller.error(error);
+                        },
+                    }),
+                    { status: 200 },
+                );
+
+            fetchMock.mockResolvedValueOnce(failing(timeoutError()));
+            const timeout = (await send().catch((e: unknown) => e)) as SupraTimeoutError;
+            expect(timeout).toBeInstanceOf(SupraTimeoutError);
+            expect(timeout.timeoutMs).toBe(DEFAULT_REQUEST_TIMEOUT_MS);
+            expect(timeout.cause).toBeInstanceOf(DOMException);
+
+            fetchMock.mockResolvedValueOnce(failing(new TypeError("terminated")));
+            const network = (await send().catch((e: unknown) => e)) as SupraNetworkError;
+            expect(network).toBeInstanceOf(SupraNetworkError);
+            expect((network.cause as Error).message).toBe("terminated");
+        });
+
         it("does not retry other error statuses", async () => {
             fetchMock.mockResolvedValue(response(400, { message: "bad" }));
             await expect(get({ path: "/x" }, retrying)).rejects.toBeInstanceOf(SupraAPIError);

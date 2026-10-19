@@ -3,7 +3,7 @@ import { type NetworkConfig } from "../utils/apiEndpoints";
 import { createSupraAPIError } from "../errors/apiError";
 import { parseJsonResponse } from "./parseResponse";
 import { sendRequest } from "./request";
-import { DEFAULT_RPC_VERSION } from "../utils/constants";
+import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RPC_VERSION } from "../utils/constants";
 import { stringifyWithBigInt } from "../utils/json";
 
 /**
@@ -26,7 +26,7 @@ export async function post<Req extends object, Res>(args: RequestParams, config:
         body: args.data ? stringifyWithBigInt(args.data as Req) : null,
     }, config, false);
 
-    const data = await parseJsonResponse(response, url);
+    const data = await parseJsonResponse(response, url, config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
 
     if (response.ok) {
         return data as Res;

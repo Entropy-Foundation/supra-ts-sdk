@@ -44,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository is removed.
 - **Breaking:** `SupraFaucetUnavailableError` and `SupraFaucetResponseError` extend `SupraError`; they are still not
   `SupraAPIError`s and keep their names.
-- **Breaking:** a request that times out or fails before the node answers rejects with `SupraTimeoutError` or
+- **Breaking:** a request that times out or fails before the node answers, or whose response body cannot be read,
+  rejects with `SupraTimeoutError` or
   `SupraNetworkError` instead of a raw `DOMException` or `TypeError`.
 - Clients of a predefined network no longer share one mutable network configuration: the gas, timeout and retry
   settings of one `SupraClient` no longer reach another client of the same network.

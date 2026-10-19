@@ -76,7 +76,7 @@ async function retryAfterSecondsOfResponse(response: Response): Promise<number |
 }
 
 /** The only signal of a request is the timeout, whose abort reason is a `TimeoutError` (`AbortError` in older runtimes). */
-function isTimeout(error: unknown): boolean {
+export function isTimeout(error: unknown): boolean {
     const name = (error as { name?: unknown } | null | undefined)?.name;
     return name === "TimeoutError" || name === "AbortError";
 }
