@@ -24,7 +24,7 @@ import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../utils/constants";
 export class SupraClient {
 
     /**
-     * SupraConfig is the configuration object for the SupraClient class. It contains the network property which can be either "mainnet" or "testnet".
+     * SupraConfig is the configuration object for the SupraClient class. It contains the network property which can be "mainnet", "testnet" or "devnet".
      */
     readonly config: SupraConfig;
 
@@ -110,7 +110,7 @@ export class SupraClient {
         this.config = config;
 
         // Set network
-        // use default network configuration if network is testnet or mainnet
+        // use default network configuration if network is mainnet, testnet or devnet
         if ('rpcUrl' in config && 'chainId' in config) {
             // Custom network
             this.networkInformation = {

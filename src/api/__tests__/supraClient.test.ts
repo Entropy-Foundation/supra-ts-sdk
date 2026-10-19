@@ -35,6 +35,13 @@ describe("SupraClient", () => {
             expect(client.networkInformation.rpcUrl).toBe("https://rpc-mainnet.supra.com");
         });
 
+        it("should initialize with DEVNET config", () => {
+            const client = new SupraClient({ network: Network.DEVNET });
+            expect(client.networkInformation.name).toBe("devnet");
+            expect(client.networkInformation.chainId).toBe(50);
+            expect(client.networkInformation.rpcUrl).toBe("https://rpc-devnet.supra.com");
+        });
+
         it("should initialize with custom rpcUrl and chainId", () => {
             const client = new SupraClient({
                 rpcUrl: "https://custom-rpc.example.com",

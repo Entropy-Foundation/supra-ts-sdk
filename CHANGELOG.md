@@ -5,6 +5,27 @@ All notable changes to `supra-ts-sdk` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`Network.DEVNET`** — `new SupraClient({ network: Network.DEVNET })` connects to
+  `https://rpc-devnet.supra.com` with chain ID 50.
+- **`SupraFaucetUnavailableError`** — thrown by `fundAccountWithFaucet` when the node answers `"TryLater"` because no
+  faucet account is free. **`SupraFaucetResponseError`** is thrown when the node answers with any other body that
+  carries no transaction hash; the body is available as `data`.
+- **`faucet.getFaucetTransaction({ transactionHash })`** — reads a faucet transaction
+  (`GET /rpc/v3/wallet/faucet/transactions/{hash}`).
+
+### Changed
+
+- **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
+  throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
+  an error status, which is thrown as `SupraAPIError`.
+- **Breaking:** `fundAccountWithFaucet` throws `SupraFaucetUnavailableError` or `SupraFaucetResponseError` where it
+  returned `{ hash: undefined }`.
+- The `SupraConfig` type accepts `Network.DEVNET` alongside `Network.MAINNET` and `Network.TESTNET`.
+
 ## [1.2.0] - 2026-09-22
 
 ### Added
