@@ -24,6 +24,14 @@ export interface SequenceNumberReservation {
     readonly sequenceNumber: bigint;
 }
 
+/**
+ * Messages of a refusal that carries no VM status and concerns the account's sequence number: a number outside the
+ * window the node accepts (`sequence number 30 is above ...`), and a number that already has a pending transaction
+ * (`Already scheduled digest=..., sequence_number=N` on v11.7.0; `a transaction with sequence number N is already
+ * pending for this account` and `transaction ... is already pending` on v12).
+ */
+const SEQUENCE_NUMBER_MESSAGE = /\bsequence[ _]number\b|\balready (?:pending|scheduled)\b/i;
+
 interface AccountState {
     /** The next number to hand out, or `undefined` when it has to be read from the chain. */
     next: bigint | undefined;
@@ -200,12 +208,13 @@ function validateSequenceNumber(value: bigint | number): bigint {
  * Whether the error reports a sequence number that does not match the account's, from the node's refusal of a
  * submission, a simulation or a discarded transaction. That is a Move VM status of `SEQUENCE_NUMBER_TOO_OLD` or
  * `SEQUENCE_NUMBER_TOO_NEW`, or a status 400 whose message names the sequence number: the nodes refuse a number
- * beyond what they queue for the account, or below the account's next number, with a message of that form and no VM
- * status.
+ * beyond what they queue for the account, or below the account's next number, or a number that already has a pending
+ * transaction, with a message of that form and no VM status. In every case the counter is wrong and is read from the
+ * chain again.
  */
 export function isStaleSequenceNumberError(error: unknown): boolean {
     if (error instanceof SupraAPIError && error.major_status === undefined) {
-        return error.status === 400 && /\bsequence number\b/i.test(error.message);
+        return error.status === 400 && SEQUENCE_NUMBER_MESSAGE.test(error.message);
     }
     if (
         error instanceof SupraAPIError ||

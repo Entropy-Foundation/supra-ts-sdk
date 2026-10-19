@@ -55,8 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-account sequence-number counter.** Each `SupraClient` keeps the next sequence number of every account that its
   helpers send from. The first use reads the number from the chain; each transaction the node accepts advances it. A
   refusal for a stale number (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or the nodes' refusal of a number
-  beyond what they queue for the account) reads the number from the chain again, and the helper sends the transaction
-  once more with the fresh number. A transaction the node refused for another reason gives its number back.
+  beyond what they queue for the account, or a number that already has a pending transaction) reads the number from
+  the chain again, and the helper sends the transaction once more with the fresh number. A transaction the node refused for another reason gives its number back.
   Concurrent sends from one account in a process get distinct consecutive numbers.
 - **`SupraClient.resetSequenceNumber(address)`** forgets the counter of an account; the next transaction reads its
   number from the chain.

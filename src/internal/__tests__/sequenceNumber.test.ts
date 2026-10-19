@@ -329,6 +329,15 @@ describe("sequence numbers of the transfer helpers", () => {
             "a number the node did not expect",
             "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 30 but the expected sequence number is 1.",
         ],
+        [
+            "a number already scheduled (v11.7.0)",
+            "Transaction validation failed: Already scheduled digest=0xab, sender=0x1, sequence_number=7",
+        ],
+        [
+            "a number that already has a pending transaction (v12)",
+            "Transaction validation failed: a transaction with sequence number 7 is already pending for this account at gas unit price 100; a replacement must offer a higher gas unit price than that, and this one offers 100",
+        ],
+        ["a transaction already pending (v12)", "Transaction validation failed: transaction 0xab is already pending"],
     ])("resynchronises and retries when the node refuses with a message about %s", async (_name, message) => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
@@ -342,7 +351,7 @@ describe("sequence numbers of the transfer helpers", () => {
 
     it("does not treat other refusals as a stale number", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
-        submitAnswers = [() => json({ message: "Transaction validation failed: transaction 0xab is already pending" }, 400)];
+        submitAnswers = [() => json({ message: "Transaction validation failed: Invalid transaction expiry" }, 400)];
 
         await expect(transfer(supra, new SupraAccount())).rejects.toBeInstanceOf(SupraAPIError);
 

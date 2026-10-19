@@ -278,7 +278,7 @@ keeps for each account:
   are sent concurrently (`Promise.all`).
 - A transaction the node refuses for another reason (for example an insufficient balance) gives its number back.
 - When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or a refusal of a
-  number beyond what it queues for the account), the client reads the number from the chain again and the helper sends
+  number beyond what it queues for the account, or a number that already has a pending transaction), the client reads the number from the chain again and the helper sends
   the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
 - `supra.resetSequenceNumber(address)` forgets the counter of an account. Call it after the account has sent
   transactions by other means, or after a `SupraTransactionTimeoutError` for a transaction that will not commit.
