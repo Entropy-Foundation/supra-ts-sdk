@@ -119,6 +119,8 @@ function stubFetch(): void {
             response = answer(moveTxn(TransactionStatus.Success));
         } else if (method === "POST" && path === "/transactions/submit") {
             response = answer(HASH);
+        } else if (method === "GET" && path === "/transactions/chain_id") {
+            response = answer(255);
         } else if (method === "GET" && path.startsWith("/transactions/")) {
             response = answer(moveTxn(TransactionStatus.Success));
         } else if (method === "GET" && /^\/accounts\/0x[0-9a-f]+$/.test(path)) {
