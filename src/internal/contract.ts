@@ -1,10 +1,10 @@
-import { BCS, SupraAccount } from "supra-l1-sdk-core";
+import { SupraAccount } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import { simpleInternal } from "./transactionManager/txnBuild";
+import { sendTxnPayloadInternal, simpleInternal } from "./transactionManager/txnBuild";
 import { releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
-import { submitSerializedRawTransactionInternal } from "./transactionManager/txnSubmit";
-import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
+import { submitTxnInternal } from "./transactionManager/txnSubmit";
+import type { OptionalTransactionPayloadArgs, SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 
 export interface CallContractArgs {
@@ -42,14 +42,15 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
         throw new Error("Sender account must be SupraAccount");
     }
 
+    const explicitSequenceNumber = args.optionalTransactionPayloadArgs?.sequenceNumber;
     const senderSequenceNumber = await reserveSequenceNumberInternal({
         address: senderAccount.address(),
-        sequenceNumber: args.optionalTransactionPayloadArgs?.sequenceNumber,
+        sequenceNumber: explicitSequenceNumber,
     }, config);
 
-    let simpleRawTxn;
+    let sendTxPayload: SendTxnPayload;
     try {
-        simpleRawTxn = await simpleInternal({
+        const simpleRawTxn = await simpleInternal({
             senderAddress: senderAccount.address(),
             senderSequenceNumber,
             function: args.function,
@@ -58,16 +59,17 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
             optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
             abi: args.abi as MoveModule
         }, config);
+        sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: simpleRawTxn }, config);
     } catch (error) {
-        // The transaction was not built, so its number is not used.
-        releaseSequenceNumberInternal({ address: senderAccount.address(), sequenceNumber: senderSequenceNumber }, config);
+        // The transaction was not submitted, so a number from the counter is not used.
+        if (explicitSequenceNumber === undefined) {
+            releaseSequenceNumberInternal({ address: senderAccount.address(), sequenceNumber: senderSequenceNumber }, config);
+        }
         throw error;
     }
 
-    return await submitSerializedRawTransactionInternal({
-        senderAccount: senderAccount,
-        serializedRawTransaction: BCS.bcsToBytes(simpleRawTxn),
+    return await submitTxnInternal({
+        sendTxJsonPayload: sendTxPayload,
         enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
-
     }, config);
 }

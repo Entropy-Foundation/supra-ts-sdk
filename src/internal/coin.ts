@@ -4,8 +4,9 @@ import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../type
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
 import { getAccountResourceInternal, isAccountExistsInternal } from "./account";
-import { reserveSequenceNumberInternal } from "./sequenceNumber";
+import { releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId } from "../types/move";
+import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
 import type { CoinInfo } from "../types/coin";
@@ -38,18 +39,28 @@ export async function transferCoinInternal(
 
     }
 
+    const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
+
     // Coin Transfer Payload
     let supraTransferPayload = {
         senderAddress: args.senderAccount.address(),
-        senderSequenceNumber: await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber }, config),
+        senderSequenceNumber: await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: explicitSequenceNumber }, config),
         function: `${SUPRA_FRAMEWORK_ADDRESS}::supra_account::transfer_coins` as MoveFunctionId,
         functionTypeArgs: [new TypeTagParser(args.coinType).parseTypeTag()],
         functionArgs: [receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]
     }
 
-    let raw_txn = rawTxnObjectInternal(supraTransferPayload, config);
-
-    let sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn }, config);
+    let sendTxPayload: SendTxnPayload;
+    try {
+        let raw_txn = rawTxnObjectInternal(supraTransferPayload, config);
+        sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn }, config);
+    } catch (error) {
+        // The transaction was not submitted, so a number from the counter is not used.
+        if (explicitSequenceNumber === undefined) {
+            releaseSequenceNumberInternal({ address: supraTransferPayload.senderAddress, sequenceNumber: supraTransferPayload.senderSequenceNumber }, config);
+        }
+        throw error;
+    }
 
     return await submitTxnInternal({
         sendTxJsonPayload: sendTxPayload,
