@@ -383,7 +383,7 @@ const rawTxn = supra.transaction.build.rawTxnObject({
 
 ```typescript
 // Build a sendTxnPayload for simulation
-const sendPayload = supra.transaction.build.sendTxnPayload({
+const sendPayload = await supra.transaction.build.sendTxnPayload({
     senderAccount: account,
     rawTxn: rawTxn,
 });
@@ -419,7 +419,7 @@ const txn = await supra.transaction.submit.submitSerializedRawTransaction({
 });
 
 // Submit with pre-computed signature
-const signature = supra.transaction.signTransaction({
+const signature = await supra.transaction.signTransaction({
     senderAccount: account,
     rawTxn: rawTxn,
 });
@@ -463,15 +463,15 @@ const feePayerPayload = new TxnBuilderTypes.FeePayerRawTransaction(
     new TxnBuilderTypes.AccountAddress(feePayerAccount.address().toUint8Array()),
 );
 
-const senderAuth = supra.transaction.signTransaction({
+const senderAuth = (await supra.transaction.signTransaction({
     senderAccount: account,
     rawTxn: feePayerPayload,
-}) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+})) as TxnBuilderTypes.AccountAuthenticatorEd25519;
 
-const feePayerAuth = supra.transaction.signTransaction({
+const feePayerAuth = (await supra.transaction.signTransaction({
     senderAccount: feePayerAccount,
     rawTxn: feePayerPayload,
-}) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+})) as TxnBuilderTypes.AccountAuthenticatorEd25519;
 
 const txn = await supra.transaction.submit.submitSponsorTransaction({
     feePayerAddress: feePayerAccount.address().toString(),
