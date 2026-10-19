@@ -228,6 +228,36 @@ describe("DynamicTransactionSerializer - invalid integer strings", () => {
     });
 });
 
+describe("DynamicTransactionSerializer - numbers above Number.MAX_SAFE_INTEGER", () => {
+    const UNSAFE = [2 ** 53, 2 ** 53 + 2, 9007199254740994, 2 ** 63];
+
+    it.each(["u64", "u128", "u256"])("rejects a number that is not a safe integer for %s", (type) => {
+        for (const value of UNSAFE) {
+            expect(() => ser(value, type)).toThrow(/is not a safe integer.*use a bigint or a decimal string/);
+        }
+    });
+
+    it.each(["u64", "u128", "u256"])("accepts Number.MAX_SAFE_INTEGER, and larger values as bigint or string, for %s", (type) => {
+        expect(() => ser(Number.MAX_SAFE_INTEGER, type)).not.toThrow();
+        expect(Array.from(ser(2n ** 53n + 1n, type))).toEqual(Array.from(ser((2n ** 53n + 1n).toString(), type)));
+    });
+
+    it("encodes 2^53 + 1 given as a bigint exactly", () => {
+        expect(Array.from(ser(2n ** 53n + 1n, "u64"))).toEqual(Array.from(core((s) => s.serializeU64(2n ** 53n + 1n))));
+    });
+
+    it("reports an unsafe number for u8 to u32 as out of range", () => {
+        for (const type of ["u8", "u16", "u32"]) {
+            expect(() => ser(2 ** 60, type)).toThrow(/out of range/);
+        }
+    });
+
+    it("checks numbers inside a vector and an Option", () => {
+        expect(() => ser([1, 2 ** 53], "vector<u64>")).toThrow(/not a safe integer/);
+        expect(() => ser(2 ** 53, "0x1::option::Option<u128>")).toThrow(/not a safe integer/);
+    });
+});
+
 describe("DynamicTransactionSerializer - addresses", () => {
     it.each(["0x1", "0xa", "0x123", `0x${"ab".repeat(30)}`, `0x${"f".repeat(63)}`, `0x${"1".repeat(64)}`])(
         "encodes %s as 32 bytes",

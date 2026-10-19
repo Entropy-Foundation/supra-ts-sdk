@@ -130,7 +130,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     if (optionInner) {
         const isNone = value === null || value === undefined;
         if (optionInner === "u8") {
-            return { vec: isNone ? "" : uint8ArrayToHexString(vectorU8ToBytes([value])) };
+            return { vec: isNone ? "" : uint8ArrayToHexString(Uint8Array.of(Number(integerArgument("u8", value)))) };
         }
         return { vec: isNone ? [] : [convertArgsValueToJSONParsable(optionInner, value)] };
     }
@@ -461,20 +461,57 @@ export function vectorU8ToHex(value: unknown): string {
 }
 
 /**
+ * Checks that a `number` given for an integer argument is a safe integer (at most `Number.MAX_SAFE_INTEGER`,
+ * 2^53 - 1, in magnitude), which a JavaScript number holds exactly.
+ * @param type - The parameter type, for the error message.
+ * @param value - The number.
+ * @throws Error if the number is not a safe integer
+ */
+export function assertSafeIntegerArgument(type: string, value: number): void {
+    if (!Number.isSafeInteger(value)) {
+        throw new Error(
+            `${type} value ${value} is not a safe integer (above 2^53 - 1 in magnitude, so it may have been rounded); use a bigint or a decimal string`,
+        );
+    }
+}
+
+/** The smallest and largest value of the integer types `u8` to `u256` and `i8` to `i256`. */
+function integerBounds(type: string): { min: bigint; max: bigint } {
+    const match = /^([ui])(8|16|32|64|128|256)$/.exec(type);
+    if (!match) {
+        throw new Error(`Unsupported integer type: ${type}`);
+    }
+    const bits = BigInt(match[2]!);
+    return match[1] === "u"
+        ? { min: 0n, max: (1n << bits) - 1n }
+        : { min: -(1n << (bits - 1n)), max: (1n << (bits - 1n)) - 1n };
+}
+
+/**
  * Converts an integer argument given as a number, bigint or decimal string to a bigint. Signed
  * types accept a leading `-`. Empty, whitespace-only and otherwise malformed strings are rejected.
- * @throws Error if the value is not an integer
+ * A number must be a safe integer; larger values are given as a bigint or a decimal string.
+ * @throws Error if the value is not an integer, is outside the range of the type, or is a number that is not a safe
+ *   integer
  */
 function integerArgument(type: string, value: unknown): bigint {
-    if (typeof value === "bigint") {
-        return value;
-    }
-    if (typeof value === "number" && Number.isInteger(value)) {
-        return BigInt(value);
-    }
+    let integer: bigint;
     const pattern = type.startsWith("i") ? /^-?\d+$/ : /^\d+$/;
-    if (typeof value === "string" && pattern.test(value)) {
-        return BigInt(value);
+    if (typeof value === "bigint") {
+        integer = value;
+    } else if (typeof value === "number" && Number.isInteger(value)) {
+        integer = BigInt(value);
+    } else if (typeof value === "string" && pattern.test(value)) {
+        integer = BigInt(value);
+    } else {
+        throw new Error(`Expected an integer for ${type}, got ${describeArgument(value)}`);
     }
-    throw new Error(`Expected an integer for ${type}, got ${JSON.stringify(typeof value === "bigint" ? String(value) : value)}`);
+    const { min, max } = integerBounds(type);
+    if (integer < min || integer > max) {
+        throw new Error(`${type} value out of range (${min} to ${max}): ${integer}`);
+    }
+    if (typeof value === "number") {
+        assertSafeIntegerArgument(type, value);
+    }
+    return integer;
 }

@@ -1,5 +1,5 @@
 import { HexString, BCS } from "supra-l1-sdk-core";
-import { addressArgument, boolArgument, isObjectType, vectorU8ToBytes } from "../helper/general";
+import { addressArgument, assertSafeIntegerArgument, boolArgument, isObjectType, vectorU8ToBytes } from "../helper/general";
 import type { SimpleEntryFunctionArgumentTypes } from "../types/move";
 
 export class DynamicTransactionSerializer {
@@ -122,7 +122,8 @@ export class DynamicTransactionSerializer {
 
     /**
      * Parse an unsigned integer of the given width from a number, a string or a bigint into a
-     * bigint, rejecting malformed, negative and out-of-range input.
+     * bigint, rejecting malformed, negative and out-of-range input, and numbers that are not safe
+     * integers.
      */
     private parseUnsigned(value: unknown, bits: number): bigint {
         let num: bigint;
@@ -145,6 +146,9 @@ export class DynamicTransactionSerializer {
         }
         if (num > max) {
             throw new Error(`u${bits} value out of range (0-${max}): ${num}`);
+        }
+        if (typeof value === "number") {
+            assertSafeIntegerArgument(`u${bits}`, value);
         }
         return num;
     }
