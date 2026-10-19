@@ -472,6 +472,18 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(accountReads).toBe(1);
     });
 
+    it("reads the chain again after resetSequenceNumber with the address in upper case", async () => {
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+
+        chainSequenceNumbers = [30];
+        supra.resetSequenceNumber("0x" + sender.address().toString().slice(2).toUpperCase());
+        await transfer(supra, sender);
+
+        expect(submitted).toEqual([7, 30]);
+    });
+
     it("reads the chain again after resetSequenceNumber", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
