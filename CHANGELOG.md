@@ -102,6 +102,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
 - README sections on reading a feed page by page and on the HTTP status codes that differ between v11 and v12
   nodes.
+- `pnpm examples` runs every example in `examples/` against the network that `SUPRA_RPC_URL`/`SUPRA_CHAIN_ID` or
+  `SUPRA_NETWORK` names (default Devnet). The examples create or query the data they need instead of using hard-coded
+  hashes, heights and Testnet addresses. CI type-checks the examples, and a scheduled workflow runs them on Devnet.
 
 ### Changed
 

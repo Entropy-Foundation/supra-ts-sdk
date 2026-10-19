@@ -18,7 +18,6 @@ jobs:
     timeout-minutes: 30
     env:
       SUPRA_NETWORK: devnet
-      SUPRA_PRIVATE_KEY: ${{ secrets.SUPRA_DEVNET_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -27,10 +26,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Use the faucet when no key is configured
+      # The key is visible to this step only, not to the dependency installation above.
+      - name: Run the examples
+        env:
+          SUPRA_PRIVATE_KEY: ${{ secrets.SUPRA_DEVNET_PRIVATE_KEY }}
         run: |
           if [ -z "$SUPRA_PRIVATE_KEY" ]; then
-            echo "SUPRA_EXAMPLES_FUND=1" >> "$GITHUB_ENV"
+            export SUPRA_EXAMPLES_FUND=1
           fi
-      - name: Run the examples
-        run: pnpm examples
+          pnpm examples
