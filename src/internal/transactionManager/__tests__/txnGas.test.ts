@@ -99,6 +99,8 @@ function stubFetch(): void {
             answer = node.simulate();
         } else if (method === "POST" && path === "/transactions/submit") {
             answer = json(HASH);
+        } else if (method === "GET" && path === "/transactions/chain_id") {
+            answer = json(255);
         } else if (method === "GET" && path.startsWith("/transactions/")) {
             answer = json(moveTxn(TransactionStatus.Success, "Executed successfully", 7));
         } else if (method === "GET" && /^\/accounts\/0x[0-9a-f]+$/.test(path)) {
