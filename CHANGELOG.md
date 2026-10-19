@@ -77,6 +77,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `transactionChainId`) before signing when the configured chain ID or the transaction's chain ID is not the node's.
 - **`SupraConfig.verifyChainId`**: `false` turns the check off for offline signing. The client signs with its
   configured chain ID and sends no request to do so.
+- **`parseTypeArgument`** is exported. It parses a Move type string into a `TypeTag` with the grammar of the node's type
+  parser, as the SDK does for type argument strings: `0x1::object::Object<T>` stays the struct `Object<T>`, and names
+  that contain `T` followed by digits are accepted. Use it for the `TypeTag`s of `transaction.build.rawTxnObject` and
+  the other builders that take `TypeTag`s, where `TypeTagParser` turns `Object<T>` into `address`.
 - **`stringifyWithBigInt`** is exported. It serializes a value whose `bigint` fields (for example the result of
   `transaction.build.sendTxnPayload`) `JSON.stringify` rejects, writing them as exact JSON numbers.
 - Settlement transactions, returned by nodes from v12 onwards: `TransactionType.Settlement`, the

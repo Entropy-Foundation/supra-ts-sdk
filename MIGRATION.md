@@ -496,6 +496,9 @@ console.log((await offline.getChainId()).value);
   `coinType` of `coin.transferCoin` and `fungibleAsset.migrateCoinToFungibleStore`. Text after the type, generic type parameters such as `T0`, and the short name
   `"string"` throw before any request; write `"0x1::string::String"`. `0x1::object::Object<T>` written as a string is
   the struct `Object<T>`; `TypeTagParser` turns it into `address`, so pass `Object` type arguments as strings.
+  Code that builds `TypeTag`s, for example for the `functionTypeArgs` of `transaction.build.rawTxnObject`, uses
+  `parseTypeArgument` instead of `TypeTagParser`: it parses the same grammar as the SDK's type argument strings,
+  keeps `Object<T>` a struct and accepts names such as `USDT0`.
 - `FunctionTypeArgs`, the type of an entry of `ty_args` in a transaction payload in JSON form, is a union of the
   primitive type names, `{ vector }` and `{ struct }`. Code that reads `.struct` narrows first:
 
