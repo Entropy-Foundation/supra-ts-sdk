@@ -15,6 +15,7 @@ function mockFetchResponse(status: number, data: unknown) {
         statusText: status === 200 ? "OK" : "Error",
         json: jest.fn().mockResolvedValue(data),
         text: jest.fn().mockResolvedValue(typeof data === "string" ? data : JSON.stringify(data)),
+        headers: new Headers(),
     } as unknown as Response;
 }
 
@@ -24,6 +25,7 @@ function mockRawResponse(status: number, body: string) {
         status,
         statusText: status === 200 ? "OK" : "Error",
         text: jest.fn().mockResolvedValue(body),
+        headers: new Headers(),
     } as unknown as Response;
 }
 
@@ -100,17 +102,24 @@ describe("client/post", () => {
     });
 
     it("should include error details in SupraAPIError", async () => {
-        const errorData = { message: "major_status: ABORTED" };
+        const errorData = { message: "Failed to execute view function: ABORTED with sub status 4001 at location UNDEFINED" };
         (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(400, errorData));
 
-        try {
-            await post({ path: "/view" }, testConfig);
-        } catch (error) {
-            const apiError = error as SupraAPIError;
-            expect(apiError.status).toBe(400);
-            expect(apiError.data).toEqual(errorData);
-            expect(apiError.major_status).toBe("ABORTED");
-        }
+        const error = (await post({ path: "/view" }, testConfig).catch((e: unknown) => e)) as SupraAPIError;
+        expect(error).toBeInstanceOf(SupraAPIError);
+        expect(error.status).toBe(400);
+        expect(error.message).toBe(errorData.message);
+        expect(error.data).toEqual(errorData);
+        expect(error.major_status).toBe("ABORTED");
+        expect(error.sub_status).toBe(4001);
+    });
+
+    it("should not retry a POST even when the client retries", async () => {
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(503, { message: "busy" }));
+
+        const config = { ...testConfig, retry: { attempts: 3, maxDelayMs: 1000 } };
+        await expect(post({ path: "/transactions/submit" }, config)).rejects.toThrow(SupraAPIError);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it("should throw SupraAPIError (not SyntaxError) on a non-JSON 2xx body", async () => {

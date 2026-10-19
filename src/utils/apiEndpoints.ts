@@ -12,7 +12,10 @@ export interface NetworkConfig {
     rpcUrl: string;
     maxGas?: bigint,
     minGasUnitPrice?: bigint,
-    timeout?: number
+    /** Request timeout in milliseconds. */
+    timeout?: number,
+    /** Retry policy of idempotent GET requests; no retry when absent. */
+    retry?: { attempts: number, maxDelayMs: number }
 }
 
 

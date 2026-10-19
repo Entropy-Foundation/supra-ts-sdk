@@ -52,6 +52,45 @@ describe("SupraClient", () => {
             expect(client.networkInformation.rpcUrl).toBe("https://custom-rpc.example.com");
         });
 
+        it("should not set a timeout or a retry policy by default", () => {
+            const client = new SupraClient({ network: Network.TESTNET });
+            expect(client.networkInformation.timeout).toBeUndefined();
+            expect(client.networkInformation.retry).toBeUndefined();
+        });
+
+        it("should set the request timeout of a predefined network and of a custom network", () => {
+            const predefined = new SupraClient({ network: Network.DEVNET, timeoutMs: 5_000 });
+            const custom = new SupraClient({ rpcUrl: "https://custom.example.com", chainId: 42, timeoutMs: 7_000 });
+            expect(predefined.networkInformation.timeout).toBe(5_000);
+            expect(custom.networkInformation.timeout).toBe(7_000);
+        });
+
+        it("should keep the settings of one client from reaching another client of the same network", () => {
+            const slow = new SupraClient({ network: Network.DEVNET, timeoutMs: 5_000, retry: { attempts: 2 } });
+            const plain = new SupraClient({ network: Network.DEVNET });
+            expect(slow.networkInformation.timeout).toBe(5_000);
+            expect(plain.networkInformation.timeout).toBeUndefined();
+            expect(plain.networkInformation.retry).toBeUndefined();
+        });
+
+        it("should reject a timeout that is not a positive integer", () => {
+            for (const timeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+                expect(() => new SupraClient({ network: Network.TESTNET, timeoutMs })).toThrow(RangeError);
+            }
+        });
+
+        it("should apply the defaults to a retry policy and validate it", () => {
+            const client = new SupraClient({ network: Network.TESTNET, retry: {} });
+            expect(client.networkInformation.retry).toEqual({ attempts: 3, maxDelayMs: 10_000 });
+
+            const tuned = new SupraClient({ network: Network.TESTNET, retry: { attempts: 5, maxDelayMs: 2_000 } });
+            expect(tuned.networkInformation.retry).toEqual({ attempts: 5, maxDelayMs: 2_000 });
+
+            expect(() => new SupraClient({ network: Network.TESTNET, retry: { attempts: 0 } })).toThrow(RangeError);
+            expect(() => new SupraClient({ network: Network.TESTNET, retry: { attempts: 1.5 } })).toThrow(RangeError);
+            expect(() => new SupraClient({ network: Network.TESTNET, retry: { maxDelayMs: -1 } })).toThrow(RangeError);
+        });
+
         it("should initialize with explicit Network.CUSTOM", () => {
             const client = new SupraClient({
                 network: Network.CUSTOM,

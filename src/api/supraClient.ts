@@ -13,6 +13,7 @@ import { Events } from "./events";
 import { Block } from "./block";
 import { FungibleAsset } from "./fungibleAsset";
 import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../utils/constants";
+import { resolveRetry, validateTimeoutMs } from "../client/request";
 
 
 /**
@@ -120,13 +121,21 @@ export class SupraClient {
             };
 
         } else {
-            // Predefined network
-            this.networkInformation = NetworkInfo[config.network];
+            // Predefined network; copied so that the settings of this client do not reach other clients
+            this.networkInformation = { ...NetworkInfo[config.network] };
         }
 
         // Optional gas
         this.networkInformation.maxGas = config.maxGas ?? DEFAULT_MAX_GAS_UNITS;
         this.networkInformation.minGasUnitPrice = config.minGasUnitPrice ?? DEFAULT_GAS_PRICE;
+
+        // Optional request timeout and retry policy
+        if (config.timeoutMs !== undefined) {
+            this.networkInformation.timeout = validateTimeoutMs(config.timeoutMs);
+        }
+        if (config.retry !== undefined) {
+            this.networkInformation.retry = resolveRetry(config.retry);
+        }
 
 
         /**
