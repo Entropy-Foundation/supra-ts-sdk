@@ -143,6 +143,7 @@ beforeEach(() => {
 
 afterEach(() => {
     global.fetch = originalFetch;
+    jest.restoreAllMocks();
 });
 
 function newClient(): SupraClient {
@@ -160,6 +161,8 @@ function transfer(supra: SupraClient, sender: SupraAccount) {
 
 describe("the max gas estimate of a transaction behind a pending one", () => {
     it("simulates at the chain's number and submits the transaction with the counter's number and that estimate", async () => {
+        // Each build reads the clock for the expiry; a fixed clock keeps the builds of one transaction in one second.
+        jest.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 0, 1));
         const supra = newClient();
         const sender = new SupraAccount();
         // The counter reads 3 from the chain and hands out 3 to the first call and 4 to the second. The first
