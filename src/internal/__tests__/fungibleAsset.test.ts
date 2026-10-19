@@ -290,19 +290,22 @@ describe("SUPRA balances and fungible asset transfers", () => {
     });
 
     describe("transferFungibleAsset", () => {
-        it("applies the balance check to the SUPRA fungible asset address in any spelling", async () => {
-            chain.coin = 9n;
+        it.each(["0xa", "0xA", "0x" + "0".repeat(63) + "A"])(
+            "applies the balance check to the SUPRA fungible asset address in any spelling: %s",
+            async (assetAddress) => {
+                chain.coin = 9n;
 
-            await expect(
-                newClient().fungibleAsset.transferFungibleAsset({
-                    senderAccount: new SupraAccount(),
-                    receiverAccountAddress: new SupraAccount().address().toString(),
-                    amount: 1n,
-                    assetAddress: "0xa",
-                }),
-            ).rejects.toBeInstanceOf(SupraInsufficientFungibleAssetBalanceError);
-            expect(submitRequests()).toEqual([]);
-        });
+                await expect(
+                    newClient().fungibleAsset.transferFungibleAsset({
+                        senderAccount: new SupraAccount(),
+                        receiverAccountAddress: new SupraAccount().address().toString(),
+                        amount: 1n,
+                        assetAddress,
+                    }),
+                ).rejects.toBeInstanceOf(SupraInsufficientFungibleAssetBalanceError);
+                expect(submitRequests()).toEqual([]);
+            },
+        );
 
         it("does not read balances for another fungible asset", async () => {
             await newClient().fungibleAsset.transferFungibleAsset({
