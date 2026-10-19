@@ -1,5 +1,6 @@
 import type { SubmitTransactionResponse, SupraAccount } from "../src/index";
 import { SupraClient } from "../src/index";
+import { isStaleSequenceNumberError } from "../src/internal/sequenceNumber";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
@@ -117,6 +118,32 @@ describeE2E("sequence numbers", () => {
         expect(recovered.status).toBe("Success");
         expect(next.status).toBe("Success");
         expect(await chainSequenceNumber(sender)).toBe(start + 2n);
+    });
+
+    test("a number that already has a pending transaction is recognised as in use and the counter recovers", async () => {
+        const sender = await createFundedAccount(ctx);
+        const first = newClient();
+        const second = newClient();
+
+        await transfer(first, sender, { wait: true });
+        // The counter of `first` is at 1. `second` sends another transaction with number 1 and does not wait.
+        const pending = await transfer(second, sender, { sequenceNumber: 1n });
+        const outcome = await transfer(first, sender, { wait: true }).then(
+            (response) => response,
+            (error: unknown) => error,
+        );
+
+        // The call either recovers within itself, or the node still refuses the number and the refusal is
+        // recognised as one about the sequence number.
+        if (outcome instanceof Error) {
+            expect(isStaleSequenceNumberError(outcome)).toBe(true);
+        } else {
+            expect((outcome as SubmitTransactionResponse).status).toBe("Success");
+        }
+        await rawWaitForCommit(ctx, pending.hash);
+        const recovered = await transfer(first, sender, { wait: true });
+
+        expect(recovered.status).toBe("Success");
     });
 
     test("the counter continues from the chain after resetSequenceNumber", async () => {
