@@ -482,6 +482,9 @@ console.log((await offline.getChainId()).value);
   throw before any request. Pass a `number`, a `bigint` or a trimmed decimal string.
 - `methods.view` sends an `Option<u8>` argument as the hex of the byte, which is what the node reads. Pass the number
   (`16`); code that converted it to a string to work around the old encoding passes the number instead.
+- `address` and `0x1::object::Object<T>` arguments of entry functions and views are a string or a `HexString` with
+  1 to 64 hex digits after an optional `0x`. `""` and `"0x"`, which entry functions encoded as the address `0x0`, and
+  values of other types throw before any request. Pass `"0x0"` for the zero address.
 - A type argument given as a string must be exactly one concrete Move type, in entry functions, views and the
   `coinType` of `coin.transferCoin`. Text after the type, generic type parameters such as `T0`, and the short name
   `"string"` throw before any request; write `"0x1::string::String"`. `0x1::object::Object<T>` written as a string is
