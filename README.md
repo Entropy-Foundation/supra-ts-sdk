@@ -43,15 +43,53 @@ yarn add supra-ts-sdk
 
 ### Release channels
 
-Releases that support a network are published to npm under a dist-tag named after the network: `devnet`, `testnet`
-and `mainnet`. The `devnet` tag carries the prerelease versions that support Devnet before the other networks:
+Each network has an npm dist-tag that points at the SDK version for the node release it runs: `devnet`, `testnet`
+and `mainnet`. `mainnet` is the same version as `latest`, which a plain `pnpm add supra-ts-sdk` installs. The `devnet`
+tag carries prereleases (`X.Y.Z-beta.N`) for node release candidates that run on Devnet before the other networks:
 
 ```bash
 pnpm add supra-ts-sdk@devnet
 ```
 
-The dist-tags are set when a version is released; until then `pnpm add supra-ts-sdk` installs the `latest` version.
-The SDK supports nodes from v11.7.0 onwards.
+A tag moves to a new version when the node release that version supports reaches the tag's network.
+[RELEASING.md](./RELEASING.md) describes the versioning policy and the release process.
+
+### Compatibility
+
+2.0.0 supports Supra node v11.7.0 (Mainnet and Testnet) and the v12.0.0 release candidates (Devnet).
+[`compatibility.json`](./compatibility.json) states, for each SDK release, the node releases it supports and the RPC
+API versions it calls. The package ships it, so an application can read it as `supra-ts-sdk/compatibility.json`:
+
+```json
+{
+    "schema": 1,
+    "releases": [
+        {
+            "sdk": "2.0.0",
+            "node": { "min": "v11.7.0", "tested": ["v11.7.0", "v12.0.0-rc6"], "unsupported": [] },
+            "rpc": ["v3"]
+        }
+    ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `schema` | Version of this format. It changes only when a field is removed or changes meaning. |
+| `releases` | One entry per SDK release, newest first. |
+| `sdk` | SDK version. |
+| `node.min` | Lowest node release the SDK release supports, or `null` when none was stated for it. |
+| `node.tested` | Node releases the end-to-end suite passed against before the release. |
+| `node.unsupported` | Node major lines (`v12`) the SDK release does not work with. |
+| `rpc` | RPC API versions the SDK calls (`/rpc/<version>/...`). |
+
+Node releases are written `v<major>.<minor>.<patch>`, with `-rc<N>` for a release candidate: the node tag
+`supra_node_v12.0.0.rc6` is `v12.0.0-rc6`.
+
+### Upgrading from 1.x
+
+[MIGRATION.md](./MIGRATION.md) lists every breaking change from 1.2.0 to 2.0.0 and the code to change.
+[CHANGELOG.md](./CHANGELOG.md) lists every change of each release.
 
 ## Requirements
 
@@ -474,6 +512,11 @@ Please:
 - Follow existing code style & add tests where possible
 - Update README/examples if behavior changes
 - Report bugs via **Issues** with reproduction steps
+
+### Releasing
+
+[RELEASING.md](./RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
+[`compatibility.json`](./compatibility.json) and [CHANGELOG.md](./CHANGELOG.md) are updated with every release.
 
 
 ## 📄 License

@@ -4,9 +4,12 @@
  * Usage: `pnpm check:jsdoc`
  *
  * The examples are the ```typescript and ```ts fenced blocks in the JSDoc comments under `src/` (test directories
- * excluded) and in `.claude/skills/supra-ts-sdk/SKILL.md`. Each block is written to its own file under
- * `.jsdoc-check/`, which imports from `supra-ts-sdk` through a tsconfig `paths` alias to `src/index.ts`, and the
+ * excluded), in `.claude/skills/supra-ts-sdk/SKILL.md` and in `MIGRATION.md`. Each block is written to its own file
+ * under `.jsdoc-check/`, which imports from `supra-ts-sdk` through a tsconfig `paths` alias to `src/index.ts`, and the
  * files are checked together with `tsc` under the strict settings of the root tsconfig.
+ *
+ * A fence whose info string has a word after the language (```typescript 1.2.0) is not checked. MIGRATION.md marks
+ * its 1.2.0 code that way.
  *
  * A block is checked as a module. Its `import` statements are hoisted and the rest of its text is wrapped in an async
  * function, so a block may use top-level `await` and declare names that another block declares. A block with a
@@ -29,6 +32,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_DIR = join(ROOT, ".jsdoc-check");
 const SKILL_FILE = join(ROOT, ".claude", "skills", "supra-ts-sdk", "SKILL.md");
 const SKILL_SOURCE = relative(ROOT, SKILL_FILE);
+const MIGRATION_FILE = join(ROOT, "MIGRATION.md");
 
 interface Block {
     /** Path of the file that holds the block, relative to the repository root. */
@@ -186,6 +190,7 @@ function main(): void {
     const blocks: Block[] = [];
     for (const file of sourceFiles(join(ROOT, "src"))) blocks.push(...jsdocBlocks(file));
     blocks.push(...fencedBlocks(readFileSync(SKILL_FILE, "utf8"), relative(ROOT, SKILL_FILE), 0));
+    blocks.push(...fencedBlocks(readFileSync(MIGRATION_FILE, "utf8"), relative(ROOT, MIGRATION_FILE), 0));
 
     rmSync(OUT_DIR, { recursive: true, force: true });
     mkdirSync(OUT_DIR, { recursive: true });

@@ -1,0 +1,23 @@
+{
+    "schema": 1,
+    "releases": [
+        {
+            "sdk": "2.0.0",
+            "node": {
+                "min": "v11.7.0",
+                "tested": ["v11.7.0", "v12.0.0-rc6"],
+                "unsupported": []
+            },
+            "rpc": ["v3"]
+        },
+        {
+            "sdk": "1.2.0",
+            "node": {
+                "min": null,
+                "tested": [],
+                "unsupported": ["v12"]
+            },
+            "rpc": ["v3"]
+        }
+    ]
+}
