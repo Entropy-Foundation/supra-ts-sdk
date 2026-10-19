@@ -69,7 +69,7 @@ describeE2E("transactions", () => {
             optionalTransactionPayloadArgs: await explicitGas(ctx),
         });
         const derived = ctx.supra.transaction.deriveTransactionHash({
-            signedTransaction: rawTxn.signedTransaction(sender),
+            signedTransaction: await rawTxn.signedTransaction(sender),
         });
 
         const submitted = await rawTxn.submitTransaction({ senderAccount: sender });
@@ -86,7 +86,7 @@ describeE2E("transactions", () => {
             functionArgs: [createUnfundedAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_001n)],
             optionalTransactionPayloadArgs: await explicitGas(ctx),
         });
-        const signature = ctx.supra.transaction.signTransaction({ senderAccount: sender, rawTxn }) as HexString;
+        const signature = (await ctx.supra.transaction.signTransaction({ senderAccount: sender, rawTxn })) as HexString;
 
         const submitted = await rawTxn.submitTransactionAndSignature({
             senderPubkey: sender.pubKey(),
@@ -139,14 +139,14 @@ describeE2E("transactions", () => {
             [],
             new TxnBuilderTypes.AccountAddress(feePayer.address().toUint8Array()),
         );
-        const senderAuthenticator = ctx.supra.transaction.signTransaction({
+        const senderAuthenticator = (await ctx.supra.transaction.signTransaction({
             senderAccount: sponsored,
             rawTxn: payload,
-        }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
-        const feePayerAuthenticator = ctx.supra.transaction.signTransaction({
+        })) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+        const feePayerAuthenticator = (await ctx.supra.transaction.signTransaction({
             senderAccount: feePayer,
             rawTxn: payload,
-        }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+        })) as TxnBuilderTypes.AccountAuthenticatorEd25519;
 
         const submitted = await ctx.supra.transaction.submit.submitSponsorTransaction({
             feePayerAddress: feePayer.address().toString(),

@@ -176,21 +176,21 @@ export function buildEntryFunctionInternal(
 }
 
 
-export function signedTransactionInternal(
+export async function signedTransactionInternal(
     args: {
         senderAccount: SupraAccount,
         rawTxn: TxnBuilderTypes.RawTransaction,
-    }
-): TxnBuilderTypes.SignedTransaction {
+    },
+    config: NetworkConfig
+): Promise<TxnBuilderTypes.SignedTransaction> {
+    const signature = await signTransactionInternal({ senderAccount: args.senderAccount, rawTxn: args.rawTxn }, config) as HexString;
     return new TxnBuilderTypes.SignedTransaction(
         args.rawTxn,
         new TxnBuilderTypes.AccountAuthenticatorEd25519(
             new TxnBuilderTypes.Ed25519PublicKey(
                 args.senderAccount.pubKey().toUint8Array(),
             ),
-            new TxnBuilderTypes.Ed25519Signature(
-                (signTransactionInternal({ senderAccount: args.senderAccount, rawTxn: args.rawTxn }) as HexString).toUint8Array(),
-            ),
+            new TxnBuilderTypes.Ed25519Signature(signature.toUint8Array()),
         ),
     );
 }
@@ -317,16 +317,17 @@ export function getRawTxnJSONInternal(rawTxn: TxnBuilderTypes.RawTransaction): R
 }
 
 
-export function sendTxnPayloadInternal(
+export async function sendTxnPayloadInternal(
     args: {
         senderAccount: SupraAccount,
         rawTxn: TxnBuilderTypes.RawTransaction,
-    }
-): SendTxnPayload {
-    let signature = signTransactionInternal({
+    },
+    config: NetworkConfig
+): Promise<SendTxnPayload> {
+    let signature = await signTransactionInternal({
         senderAccount: args.senderAccount,
         rawTxn: args.rawTxn
-    }) as HexString;
+    }, config) as HexString;
 
 
     return {
@@ -516,24 +517,28 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * Create a signed transaction
      * @param args.senderAccount - Sender KeyPair
      * @returns `SignedTransaction`
+     * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
+     * node's (see `SupraConfig.verifyChainId`)
      */
-    signedTransaction(senderAccount: SupraAccount): TxnBuilderTypes.SignedTransaction {
+    signedTransaction(senderAccount: SupraAccount): Promise<TxnBuilderTypes.SignedTransaction> {
         return signedTransactionInternal({
             senderAccount,
             rawTxn: this
-        })
+        }, this.config)
     }
 
     /**
      * Create a send transaction payload
      * @param args.senderAccount - Sender KeyPair
      * @returns `SendTxnPayload`
+     * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
+     * node's (see `SupraConfig.verifyChainId`)
      */
-    sendTxnPayload(senderAccount: SupraAccount): SendTxnPayload {
+    sendTxnPayload(senderAccount: SupraAccount): Promise<SendTxnPayload> {
         return sendTxnPayloadInternal({
             senderAccount,
             rawTxn: this
-        })
+        }, this.config)
     }
 
     /**
@@ -541,15 +546,17 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
      * @returns `TransactionResponse` of the simulation, whose status is `Success`
      * @throws `SupraSimulationFailedError` when the simulated status is not `Success`
+     * @throws `SupraChainIdMismatchError` before signing with a `SupraAccount` when the client's or the transaction's
+     * chain ID is not the node's (see `SupraConfig.verifyChainId`)
      */
-    simulate(senderAccountOrAuthenticator: SupraAccount | MoveInnerAuthenticator): Promise<TransactionResponse> {
+    async simulate(senderAccountOrAuthenticator: SupraAccount | MoveInnerAuthenticator): Promise<TransactionResponse> {
 
         if (senderAccountOrAuthenticator instanceof SupraAccount) {
             return simulateTxnInternal({
-                sendTxPayload: sendTxnPayloadInternal({
+                sendTxPayload: await sendTxnPayloadInternal({
                     senderAccount: senderAccountOrAuthenticator,
                     rawTxn: this
-                })
+                }, this.config)
             }, this.config)
         }
 
@@ -564,6 +571,8 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * Submit the transaction
      * @param args.senderAccount - Sender KeyPair
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
+     * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
+     * node's (see `SupraConfig.verifyChainId`)
      */
     submitTransaction(args: {
         senderAccount: SupraAccount,
@@ -653,12 +662,14 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * Sign the transaction
      * @param senderAccount - Sender account
      * @returns ed25519 signature in `HexString` or signer authenticator
+     * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
+     * node's (see `SupraConfig.verifyChainId`)
      */
-    signTransaction(senderAccount: SupraAccount): HexString | TxnBuilderTypes.AccountAuthenticatorEd25519 {
+    signTransaction(senderAccount: SupraAccount): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519> {
         return signTransactionInternal({
             senderAccount: senderAccount,
             rawTxn: this
-        })
+        }, this.config)
     }
 }
 

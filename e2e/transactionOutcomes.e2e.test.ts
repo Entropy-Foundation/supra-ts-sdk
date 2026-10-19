@@ -201,7 +201,7 @@ describeE2E("transaction outcomes", () => {
     test("a failed simulation leaves the caller's payload unchanged", async () => {
         const account = createUnfundedAccount();
         const rawTxn = await transfer(account, 1n, { sequenceNumber: 0n });
-        const sendTxPayload = rawTxn.sendTxnPayload(account);
+        const sendTxPayload = await rawTxn.sendTxnPayload(account);
         const before = JSON.stringify(sendTxPayload, (_key, value: unknown) =>
             typeof value === "bigint" ? value.toString() : value,
         );

@@ -11,6 +11,8 @@ import { Coin } from "../coin";
 import { Events } from "../events";
 import { Block } from "../block";
 import { FungibleAsset } from "../fungibleAsset";
+import { SupraChainIdMismatchError } from "../../errors/chainIdError";
+import { SupraError } from "../../errors/supraError";
 
 jest.mock("../../client/get", () => ({
     get: jest.fn(),
@@ -166,25 +168,35 @@ describe("SupraClient", () => {
     });
 
     describe("getChainId", () => {
-        it("should return correct chain ID for testnet", () => {
+        beforeEach(() => {
+            jest.clearAllMocks();
+        });
+
+        it("returns the node's chain ID", async () => {
+            mockGet.mockResolvedValueOnce({ data: 6 });
             const client = new SupraClient({ network: Network.TESTNET });
-            const chainId = client.getChainId();
-            expect(chainId.value).toBe(6);
+            expect((await client.getChainId()).value).toBe(6);
+            expect(mockGet).toHaveBeenCalledWith({ path: "/transactions/chain_id" }, client.networkInformation);
         });
 
-        it("should return correct chain ID for mainnet", () => {
+        it("returns the node's chain ID when the configured one differs", async () => {
+            mockGet.mockResolvedValueOnce({ data: 6 });
+            const client = new SupraClient({ rpcUrl: "https://custom.example.com", chainId: 42 });
+            expect((await client.getChainId()).value).toBe(6);
+        });
+
+        it("reads the node once per client", async () => {
+            mockGet.mockResolvedValue({ data: 8 });
             const client = new SupraClient({ network: Network.MAINNET });
-            const chainId = client.getChainId();
-            expect(chainId.value).toBe(8);
+            expect((await client.getChainId()).value).toBe(8);
+            expect((await client.getChainId()).value).toBe(8);
+            expect(mockGet).toHaveBeenCalledTimes(1);
         });
 
-        it("should return correct chain ID for custom network", () => {
-            const client = new SupraClient({
-                rpcUrl: "https://custom.example.com",
-                chainId: 42,
-            });
-            const chainId = client.getChainId();
-            expect(chainId.value).toBe(42);
+        it("returns the configured chain ID without a request when verifyChainId is false", async () => {
+            const client = new SupraClient({ rpcUrl: "https://custom.example.com", chainId: 42, verifyChainId: false });
+            expect((await client.getChainId()).value).toBe(42);
+            expect(mockGet).not.toHaveBeenCalled();
         });
     });
 
@@ -202,7 +214,7 @@ describe("SupraClient", () => {
             expect(client.networkInformation.chainId).toBe(6);
         });
 
-        it("should throw on chainId mismatch without mutating networkInformation", async () => {
+        it("throws SupraChainIdMismatchError on a mismatch without mutating networkInformation", async () => {
             mockGet.mockResolvedValueOnce({ data: 6 });
 
             const client = new SupraClient({
@@ -210,10 +222,30 @@ describe("SupraClient", () => {
                 chainId: 99,
             });
 
-            await expect(client.validateChainId()).rejects.toThrow(
-                "SupraClient: configured chainId (99) does not match the network's chainId (6).",
-            );
+            const error: unknown = await client.validateChainId().catch((caught: unknown) => caught);
+            expect(error).toBeInstanceOf(SupraChainIdMismatchError);
+            expect(error).toBeInstanceOf(SupraError);
+            expect(error).toMatchObject({
+                configuredChainId: 99,
+                nodeChainId: 6,
+                transactionChainId: undefined,
+                message: "The configured chain ID 99 does not match the node's chain ID 6",
+            });
             expect(client.networkInformation.chainId).toBe(99);
+        });
+
+        it("shares the node's chain ID with getChainId", async () => {
+            mockGet.mockResolvedValueOnce({ data: 6 });
+            const client = new SupraClient({ network: Network.TESTNET });
+            await client.validateChainId();
+            expect((await client.getChainId()).value).toBe(6);
+            expect(mockGet).toHaveBeenCalledTimes(1);
+        });
+
+        it("rejects a body that is not a chain ID", async () => {
+            mockGet.mockResolvedValueOnce({ data: 256 });
+            const client = new SupraClient({ network: Network.TESTNET });
+            await expect(client.validateChainId()).rejects.toThrow(SupraError);
         });
     });
 

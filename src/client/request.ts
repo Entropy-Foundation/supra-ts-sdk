@@ -1,4 +1,5 @@
 import { retryAfterSecondsOf } from "../errors/apiError";
+import { recordChainIdHeader } from "./chainIdCache";
 import { SupraNetworkError, SupraTimeoutError } from "../errors/supraError";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RETRY_ATTEMPTS, DEFAULT_RETRY_MAX_DELAY_MS } from "../utils/constants";
@@ -17,6 +18,9 @@ const RETRY_BASE_DELAY_MS = 250;
  * of a 429 response (body, then `Retry-After` header) or else for an exponentially growing delay, never longer than
  * `retry.maxDelayMs`. A 429 that asks for a longer wait is returned without a retry, as is a timeout.
  * The response of the last attempt is returned whatever its status.
+ *
+ * The `x-supra-chain-id` header of a response is recorded as the node's chain ID for the client when the client has
+ * none yet.
  */
 export async function sendRequest(
     url: string,
@@ -45,6 +49,7 @@ export async function sendRequest(
             await sleep(backoffMs);
             continue;
         }
+        recordChainIdHeader(config, response.headers);
 
         if (last || (response.status !== 429 && response.status !== 503)) {
             return response;

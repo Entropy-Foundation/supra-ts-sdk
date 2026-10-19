@@ -20,6 +20,8 @@ const testConfig: NetworkConfig = {
     name: "testnet",
     chainId: 6,
     rpcUrl: "https://rpc-testnet.supra.com",
+    // The tests stub every response; the transactions are signed without reading the node's chain ID.
+    verifyChainId: false,
 };
 
 function mockResponse(body: unknown) {
@@ -100,7 +102,7 @@ describe("transaction request body precision", () => {
         });
 
         await simulateTxnInternal(
-            { sendTxPayload: sendTxnPayloadInternal({ senderAccount, rawTxn }) },
+            { sendTxPayload: await sendTxnPayloadInternal({ senderAccount, rawTxn }, testConfig) },
             testConfig,
         );
 
@@ -118,7 +120,7 @@ describe("transaction request body precision", () => {
         });
 
         await simulateTxnInternal(
-            { sendTxPayload: sendTxnPayloadInternal({ senderAccount, rawTxn }) },
+            { sendTxPayload: await sendTxnPayloadInternal({ senderAccount, rawTxn }, testConfig) },
             testConfig,
         );
 
@@ -137,7 +139,7 @@ describe("transaction request body precision", () => {
         });
 
         await simulateTxnInternal(
-            { sendTxPayload: sendTxnPayloadInternal({ senderAccount, rawTxn }) },
+            { sendTxPayload: await sendTxnPayloadInternal({ senderAccount, rawTxn }, testConfig) },
             testConfig,
         );
 
@@ -155,7 +157,7 @@ describe("transaction request body precision", () => {
         });
 
         await simulateTxnInternal(
-            { sendTxPayload: sendTxnPayloadInternal({ senderAccount, rawTxn }) },
+            { sendTxPayload: await sendTxnPayloadInternal({ senderAccount, rawTxn }, testConfig) },
             testConfig,
         );
 

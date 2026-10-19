@@ -358,18 +358,20 @@ export class Build {
      *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000)]
      *     });
      * 
-     *     const signedTransaction = supra.transaction.build.signedTransaction({
+     *     const signedTransaction = await supra.transaction.build.signedTransaction({
      *         senderAccount: account,
      *         rawTxn: supraCoinTransferRawTransaction
      *     });
-     *     
+     *
      *     // Convert to SendTxPayload to send transaction
      *     console.log(signedTransaction);
      * }
-     * 
+     *
      * runExample().catch(console.error);
-     *  
+     *
      * ```
+     * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
+     * node's (see `SupraConfig.verifyChainId`)
      * @group Transaction
      */
     signedTransaction(
@@ -377,8 +379,8 @@ export class Build {
             senderAccount: SupraAccount,
             rawTxn: TxnBuilderTypes.RawTransaction,
         }
-    ): TxnBuilderTypes.SignedTransaction {
-        return signedTransactionInternal(args);
+    ): Promise<TxnBuilderTypes.SignedTransaction> {
+        return signedTransactionInternal(args, this.networkInformation);
     }
 
 
@@ -404,7 +406,7 @@ export class Build {
      *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000)]
      *     });
      * 
-     *     const supraCoinTransferSendTxnPayload = supra.transaction.build.sendTxnPayload({
+     *     const supraCoinTransferSendTxnPayload = await supra.transaction.build.sendTxnPayload({
      *         senderAccount: account,
      *         rawTxn: supraCoinTransferRawTransaction
      *     });
@@ -423,7 +425,9 @@ export class Build {
      * 
      * runExample().catch(console.error);
      *  
-     * ```  
+     * ```
+     * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
+     * node's (see `SupraConfig.verifyChainId`)
      * @group Transaction
      */
     sendTxnPayload(
@@ -431,8 +435,8 @@ export class Build {
             senderAccount: SupraAccount,
             rawTxn: TxnBuilderTypes.RawTransaction,
         }
-    ): SendTxnPayload {
-        return sendTxnPayloadInternal(args);
+    ): Promise<SendTxnPayload> {
+        return sendTxnPayloadInternal(args, this.networkInformation);
     }
 
 

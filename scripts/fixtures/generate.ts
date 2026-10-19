@@ -349,12 +349,12 @@ function nodeSignature(transaction: NodeTransaction): string {
  * Completes a fixture recorded from a single-signer transaction the CLI signed: the derived values are
  * computed with the SDK, and the run fails unless they agree with what the node reported.
  */
-function completeEd25519Fixture(
+async function completeEd25519Fixture(
     node: Node,
     partial: Pick<Fixture, "name" | "description" | "signers">,
     transaction: NodeTransaction,
     payload: FixtureRaw["payload"],
-): Fixture {
+): Promise<Fixture> {
     const raw = rawFromNode(transaction, payload);
     const signer = partial.signers[0] ?? fail("A fixture needs a signer");
     const account = accountOf(signer);
@@ -366,12 +366,12 @@ function completeEd25519Fixture(
     const signingMessage = node.client.transaction.getTransactionSignatureMessage({ rawTxn });
     const sdkSignature = hex(
         (
-            node.client.transaction.signTransaction({ senderAccount: account, rawTxn }) as {
+            (await node.client.transaction.signTransaction({ senderAccount: account, rawTxn })) as {
                 toUint8Array(): Uint8Array;
             }
         ).toUint8Array(),
     );
-    const signed = rawTxn.signedTransaction(account);
+    const signed = await rawTxn.signedTransaction(account);
     const signedBcs = hex(BCS.bcsToBytes(signed));
     const hash = bare(node.client.transaction.deriveTransactionHash({ signedTransaction: signed }));
 
@@ -431,7 +431,7 @@ async function entryFunctionFixtures(node: Node, runId: string): Promise<Fixture
         "u64:12345",
     ]);
     fixtures.push(
-        completeEd25519Fixture(
+        await completeEd25519Fixture(
             node,
             {
                 name: "entry_function_ed25519",
@@ -464,7 +464,7 @@ async function entryFunctionFixtures(node: Node, runId: string): Promise<Fixture
         "u64:6789",
     ]);
     fixtures.push(
-        completeEd25519Fixture(
+        await completeEd25519Fixture(
             node,
             {
                 name: "entry_function_type_arguments",
@@ -753,12 +753,14 @@ async function submitSdkSigned(
 ): Promise<SdkSignedOutcome> {
     const rawTxn = buildRawTransaction(node, raw);
     const target = signingTarget(kind, rawTxn, signers);
-    const authenticators = signers.map(
-        (signer) =>
-            node.client.transaction.signTransaction({
-                senderAccount: accountOf(signer),
-                rawTxn: target,
-            }) as TxnBuilderTypes.AccountAuthenticatorEd25519,
+    const authenticators = await Promise.all(
+        signers.map(
+            async (signer) =>
+                (await node.client.transaction.signTransaction({
+                    senderAccount: accountOf(signer),
+                    rawTxn: target,
+                })) as TxnBuilderTypes.AccountAuthenticatorEd25519,
+        ),
     );
     const [senderAuthenticator, secondaryAuthenticator] = authenticators as [
         TxnBuilderTypes.AccountAuthenticatorEd25519,

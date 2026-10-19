@@ -97,7 +97,8 @@ interface FixtureFile {
 
 const fixtureFile = JSON.parse(readFileSync(join(__dirname, "fixtures", "transactions.json"), "utf8")) as FixtureFile;
 
-const supra = new SupraClient({ rpcUrl: "http://127.0.0.1:1", chainId: 1 });
+// Offline signing: the fixtures carry their own chain IDs and no node is reachable.
+const supra = new SupraClient({ rpcUrl: "http://127.0.0.1:1", chainId: 1, verifyChainId: false });
 
 function hex(bytes: Uint8Array): string {
     return Buffer.from(bytes).toString("hex");
@@ -136,7 +137,7 @@ function scriptArgument(argument: FixtureScriptArgument): TxnBuilderTypes.Transa
 
 function buildRawTransaction(fixture: TransactionFixture) {
     const { raw } = fixture;
-    const client = new SupraClient({ rpcUrl: "http://127.0.0.1:1", chainId: fixture.chainId });
+    const client = new SupraClient({ rpcUrl: "http://127.0.0.1:1", chainId: fixture.chainId, verifyChainId: false });
     const optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs = {
         maxGas: BigInt(raw.maxGasAmount),
         gasUnitPrice: BigInt(raw.gasUnitPrice),
@@ -216,12 +217,12 @@ function signingTarget(fixture: TransactionFixture, rawTxn: TxnBuilderTypes.RawT
     }
 }
 
-function signedTransaction(
+async function signedTransaction(
     fixture: TransactionFixture,
     rawTxn: TxnBuilderTypes.RawTransaction,
     accounts: SupraAccount[],
     target: ReturnType<typeof signingTarget>,
-): TxnBuilderTypes.SignedTransaction {
+): Promise<TxnBuilderTypes.SignedTransaction> {
     if (fixture.authenticator === "ed25519") {
         const [sender] = accounts;
         if (sender === undefined) {
@@ -230,12 +231,14 @@ function signedTransaction(
         return supra.transaction.build.signedTransaction({ senderAccount: sender, rawTxn });
     }
 
-    const authenticators = accounts.map(
-        (account) =>
-            supra.transaction.signTransaction({
-                senderAccount: account,
-                rawTxn: target,
-            }) as TxnBuilderTypes.AccountAuthenticatorEd25519,
+    const authenticators = await Promise.all(
+        accounts.map(
+            async (account) =>
+                (await supra.transaction.signTransaction({
+                    senderAccount: account,
+                    rawTxn: target,
+                })) as TxnBuilderTypes.AccountAuthenticatorEd25519,
+        ),
     );
     const roles = fixture.signers.map((signer) => signer.role);
     const senderAuthenticator = authenticators[roles.indexOf("sender")];
@@ -325,20 +328,22 @@ describe("fixtures recorded from a Supra node", () => {
             expect(hex(message)).toBe(fixture.expected.signingMessage);
         });
 
-        test("each signature is the recorded bytes", () => {
-            const signatures = accounts.map((account) =>
-                signatureHex(supra.transaction.signTransaction({ senderAccount: account, rawTxn: target })),
+        test("each signature is the recorded bytes", async () => {
+            const signatures = await Promise.all(
+                accounts.map(async (account) =>
+                    signatureHex(await supra.transaction.signTransaction({ senderAccount: account, rawTxn: target })),
+                ),
             );
             expect(signatures).toEqual(fixture.expected.signatures);
         });
 
-        test("the BCS of the signed transaction is the recorded bytes", () => {
-            const signed = signedTransaction(fixture, rawTxn, accounts, target);
+        test("the BCS of the signed transaction is the recorded bytes", async () => {
+            const signed = await signedTransaction(fixture, rawTxn, accounts, target);
             expect(hex(BCS.bcsToBytes(signed))).toBe(fixture.expected.signedTransactionBcs);
         });
 
-        test("the transaction hash is the recorded hash", () => {
-            const signed = signedTransaction(fixture, rawTxn, accounts, target);
+        test("the transaction hash is the recorded hash", async () => {
+            const signed = await signedTransaction(fixture, rawTxn, accounts, target);
             expect(supra.transaction.deriveTransactionHash({ signedTransaction: signed })).toBe(
                 fixture.expected.transactionHash,
             );

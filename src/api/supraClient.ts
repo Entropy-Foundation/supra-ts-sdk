@@ -7,7 +7,10 @@ import { Faucet } from "./faucet";
 import { Methods } from "./methods";
 import { Table } from "./table";
 import { Transaction } from "./transaction";
-import { getChainIdInternal, getGasPriceInternal, getMinGasUnitPriceInternal } from "../internal/supraClient";
+import { getGasPriceInternal, getMinGasUnitPriceInternal } from "../internal/supraClient";
+import { getNodeChainIdInternal } from "../internal/chainId";
+import { parseChainId } from "../client/chainIdCache";
+import { SupraChainIdMismatchError } from "../errors/chainIdError";
 import { Coin } from "./coin";
 import { Events } from "./events";
 import { Block } from "./block";
@@ -103,9 +106,14 @@ export class SupraClient {
     * 
     * 
     * // Options:3 (Custom configuration)
-    * const supra = new SupraClient({ rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 }); 
-    * 
-    * ```  
+    * const supra = new SupraClient({ rpcUrl: "https://rpc-testnet.supra.com", chainId: 6 });
+    *
+    * // Offline signing: no request reads the node's chain ID
+    * const offline = new SupraClient({ network: Network.MAINNET, verifyChainId: false });
+    *
+    * ```
+    * The constructor sends no request. The node's chain ID is read before the first signature and checked against
+    * the configured one; see {@link SupraConfig}.
     * @group SupraClient
     */
     constructor(config: SupraConfig) {
@@ -117,6 +125,9 @@ export class SupraClient {
         // use default network configuration if network is mainnet, testnet or devnet
         if ('rpcUrl' in config && 'chainId' in config) {
             // Custom network
+            if (typeof config.chainId !== "number" || parseChainId(config.chainId) === undefined) {
+                throw new RangeError(`chainId must be an integer from 0 to 255, got ${String(config.chainId)}`);
+            }
             this.networkInformation = {
                 name: Network.CUSTOM,
                 chainId: config.chainId,
@@ -143,6 +154,14 @@ export class SupraClient {
             this.networkInformation.waitTimeoutMs = validateWaitTimeoutMs(config.waitTimeoutMs, "waitTimeoutMs");
         }
 
+        // Optional opt-out of the chain ID check
+        if (config.verifyChainId !== undefined) {
+            if (typeof config.verifyChainId !== "boolean") {
+                throw new TypeError(`verifyChainId must be a boolean, got ${String(config.verifyChainId)}`);
+            }
+            this.networkInformation.verifyChainId = config.verifyChainId;
+        }
+
 
         /**
          * Initialize all the classes that will be used to interact with the Supra API.
@@ -161,12 +180,12 @@ export class SupraClient {
 
 
     /**
-     * Verifies the configured chainId against the network's real chain_id
-     * (`GET /rpc/v3/transactions/chain_id`). Throws if they don't match, since a mismatch
-     * means either misconfiguration or a Byzantine RPC reporting a chain_id different from
-     * the one it accepts transactions for. Call this explicitly before submitting
-     * transactions if you want that guarantee; the constructor never calls it.
-     * @throws {Error} If the RPC's chain_id does not match the configured chainId.
+     * Checks the configured chain ID against the node's. The node's chain ID is the one the client keeps for its
+     * signatures: read from the `x-supra-chain-id` header of an earlier response or with
+     * `GET /rpc/v3/transactions/chain_id`, once per client. Every signature performs the same check, so calling this
+     * method is optional; it reports a mismatch before any transaction is built. It reads the node's chain ID also
+     * when `verifyChainId` is `false`.
+     * @throws {SupraChainIdMismatchError} If the configured chain ID is not the node's.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -182,38 +201,40 @@ export class SupraClient {
      * @group SupraClient
      */
     async validateChainId(): Promise<void> {
-        const actualChainId = await getChainIdInternal(this.networkInformation);
+        const nodeChainId = await getNodeChainIdInternal(this.networkInformation);
 
-        if (actualChainId !== this.networkInformation.chainId) {
-            throw new Error(
-                `SupraClient: configured chainId (${this.networkInformation.chainId}) does not match the network's chainId (${actualChainId}).`,
-            );
+        if (nodeChainId !== this.networkInformation.chainId) {
+            throw new SupraChainIdMismatchError({ configuredChainId: this.networkInformation.chainId, nodeChainId });
         }
     }
 
 
     /**
-     * Get Chain Id Of Supra Network
-     * @returns Chain Id of network
+     * Returns the chain ID of the node the client is configured for. It is read from the `x-supra-chain-id` header of
+     * an earlier response or with `GET /rpc/v3/transactions/chain_id`, once per client, and it is the chain ID that
+     * signatures are checked against. It is not compared with the configured chain ID; `validateChainId()` does that.
+     * With `verifyChainId: false` the configured chain ID is returned and no request is sent.
+     * @returns Chain ID of the node
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const chainId = await supra.getChainId();
-     *    console.log(chainId);
+     *    console.log(chainId.value);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group SupraClient
      */
-    getChainId(): TxnBuilderTypes.ChainId {
-        return new TxnBuilderTypes.ChainId(
-            Number(this.networkInformation.chainId),
-        );
+    async getChainId(): Promise<TxnBuilderTypes.ChainId> {
+        const chainId = this.networkInformation.verifyChainId === false
+            ? this.networkInformation.chainId
+            : await getNodeChainIdInternal(this.networkInformation);
+        return new TxnBuilderTypes.ChainId(chainId);
     }
 
 

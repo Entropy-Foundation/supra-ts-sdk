@@ -11,6 +11,7 @@ import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../type
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
 import { getAccountInfoInternal } from "./account";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
+import { checkChainIdBeforeSigningInternal } from "./chainId";
 import sha3 from 'js-sha3';
 
 /**
@@ -158,12 +159,20 @@ export function getTransactionSignatureMessageInternal(
 }
 
 
-export function signTransactionInternal(
+/**
+ * Signs a raw, multi-agent or fee-payer transaction. Every signature of the SDK is made here, after
+ * {@link checkChainIdBeforeSigningInternal}.
+ * @throws {SupraChainIdMismatchError} Before signing, if the configured chain ID or the transaction's chain ID is not
+ * the node's.
+ */
+export async function signTransactionInternal(
     args: {
         senderAccount: SupraAccount,
         rawTxn: AnyRawTransaction,
-    }
-): HexString | TxnBuilderTypes.AccountAuthenticatorEd25519 {
+    },
+    config: NetworkConfig
+): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519> {
+    await checkChainIdBeforeSigningInternal(args.rawTxn, config);
 
     let signatureBuffer = args.senderAccount.signBuffer(getTransactionSignatureMessageInternal({ rawTxn: args.rawTxn }));
 
@@ -203,7 +212,7 @@ export async function publishPackageInternal(
 
     BCS.serializeVector(modulesTypeCode, codeSerializer);
 
-    let sendTxPayload = sendTxnPayloadInternal({
+    let sendTxPayload = await sendTxnPayloadInternal({
         senderAccount: args.senderAccount,
         rawTxn: await rawTxnObjectInternal({
             senderAddress: args.senderAccount.address(),
@@ -213,7 +222,7 @@ export async function publishPackageInternal(
             functionArgs: [BCS.bcsSerializeBytes(args.packageMetadata), codeSerializer.getBytes()],
             optionalTransactionPayloadArgs: args.optionalTransactionArgs?.optionalTransactionPayloadArgs ?? {},
         }, config)
-    });
+    }, config);
 
     return await submitTxnInternal({
         sendTxJsonPayload: sendTxPayload,
