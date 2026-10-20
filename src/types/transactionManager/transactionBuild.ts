@@ -6,7 +6,11 @@ import type { MoveInnerAuthenticator } from "../move";
  *
  * - `maxGas`: max gas of the transaction, in gas units. When absent, the client's `maxGas` applies; when that is absent
  *   too, the max gas is estimated (see `estimateMaxGas`).
- * - `gasUnitPrice`: gas unit price, in quants. Default the client's `minGasUnitPrice`, else `DEFAULT_GAS_PRICE`.
+ * - `gasUnitPrice`: gas unit price, in quants, used as given. Default the client's `gasUnitPrice`, else the node's
+ *   estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, read for each
+ *   transaction when it is built, before the sender's account is held. The max gas estimate uses the same price. A
+ *   price below the node's minimum is refused by the node with `SupraGasUnitPriceBelowMinimumError`; the SDK does not
+ *   change it. A failed read of the estimate throws its error and nothing is submitted.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
  *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole
  *   seconds when the transaction is built, at most 595 seconds after it (`MAX_TX_EXPIRATION_DURATION -
@@ -47,8 +51,11 @@ import type { MoveInnerAuthenticator } from "../move";
  * the number of gas units the sender's balance pays for. The builders that make no request (`rawTxnObject`,
  * `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and
  * `multisigProposalTxRawTxnObject`) use `DEFAULT_MAX_GAS_UNITS` (20,000 units). The node requires the sender's SUPRA
- * balance to cover `max gas × gas unit price` at validation: at the default gas unit price of 100,000 quants, 20,000
- * units need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
+ * balance to cover `max gas × gas unit price` at validation: 20,000 units at a gas unit price of 100,000 quants need
+ * 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
+ *
+ * The gas unit price is not estimated by the builders that make no request: without a `gasUnitPrice` on the call or
+ * the client they throw a `RangeError` before building.
  */
 export interface OptionalTransactionPayloadArgs {
     maxGas?: bigint;

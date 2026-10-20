@@ -4,7 +4,6 @@ import type { TransactionResponse } from "../../types/transaction";
 import type { OptionalTransactionPayloadArgs } from "../../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import {
-    DEFAULT_GAS_PRICE,
     DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER,
     DEFAULT_MAX_GAS_UNITS,
     MAX_GAS_UNITS_PER_TRANSACTION,
@@ -16,6 +15,8 @@ import { SupraSimulationFailedError } from "../../errors/transactionError";
 import { viewRawInternal } from "../methods";
 import { sequenceNumberTrackerOf, type SequenceNumberReservation } from "../sequenceNumber";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
+import { SupraGasUnitPriceBelowMinimumError } from "../../errors/apiError";
+import { resolveGasUnitPriceInternal } from "./gasPrice";
 import { simulateTxnInternal } from "./txnSimulate";
 import { sendTxnPayloadInternal, withSequenceNumber } from "./txnBuild";
 
@@ -25,14 +26,6 @@ export function validateMaxGasEstimateMultiplier(value: number): number {
         throw new Error(`maxGasEstimateMultiplier must be a finite number of at least 1, got ${String(value)}`);
     }
     return value;
-}
-
-/** The gas unit price of a transaction: the call's, else the client's, else `DEFAULT_GAS_PRICE`. */
-export function gasUnitPriceOf(
-    optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs | undefined,
-    config: NetworkConfig,
-): bigint {
-    return optionalTransactionPayloadArgs?.gasUnitPrice ?? config.minGasUnitPrice ?? DEFAULT_GAS_PRICE;
 }
 
 /**
@@ -89,8 +82,13 @@ export interface ResolvedMaxGas {
  *    `ceil(gas used × multiplier)`, at least `MIN_ESTIMATED_MAX_GAS_UNITS`, at most `affordable`. The multiplier is the
  *    client's `maxGasEstimateMultiplier`, else `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`.
  *
+ * The balance limit uses the transaction's gas unit price: the call's, else the client's, else the node's estimate
+ * (`resolveGasUnitPriceInternal`). The builders pass the price resolved for the transaction, so the estimate is read
+ * once. A failed read of the estimate is thrown.
+ *
  * A simulation whose status is not `Success` (a `Fail` with an abort, `OUT_OF_GAS`, `PendingAfterExecution`,
- * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. When the transaction's sequence number
+ * `Invalid`) throws its `SupraSimulationFailedError`, except one refused for a gas unit price below the node's minimum,
+ * which throws `SupraGasUnitPriceBelowMinimumError`. Nothing is submitted. When the transaction's sequence number
  * is ahead of the account's number on the chain, the simulation reports `SEQUENCE_NUMBER_TOO_NEW`, and
  * `resolveSequenceNumberTooNewInternal` reads the account and the latest block:
  *
@@ -133,12 +131,11 @@ export async function resolveMaxGasInternal(
         return { maxGas: DEFAULT_MAX_GAS_UNITS, sequenceNumber: undefined };
     }
 
+    // The builders pass a price already resolved; a failed read of the node's estimate is thrown, not a fallback case.
+    const gasUnitPrice = await resolveGasUnitPriceInternal(options, config);
     let affordable: bigint;
     try {
-        affordable = await affordableGasUnitsInternal(
-            { senderAddress: args.senderAddress, gasUnitPrice: gasUnitPriceOf(options, config) },
-            config,
-        );
+        affordable = await affordableGasUnitsInternal({ senderAddress: args.senderAddress, gasUnitPrice }, config);
     } catch {
         return { maxGas: DEFAULT_MAX_GAS_UNITS, sequenceNumber: undefined };
     }
@@ -271,6 +268,9 @@ class EstimateSimulations {
             try {
                 return await simulateTxnInternal({ sendTxPayload }, this.config);
             } catch (error) {
+                if (error instanceof SupraGasUnitPriceBelowMinimumError) {
+                    throw error;
+                }
                 if (!(error instanceof SupraSimulationFailedError)) {
                     return undefined;
                 }

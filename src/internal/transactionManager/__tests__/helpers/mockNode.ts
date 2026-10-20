@@ -18,6 +18,10 @@
  *   full), for an expiration time not after the node's clock, and for an expiration time more than 600 s after the
  *   node's clock in whole seconds. Otherwise it is accepted. `refuseNext` answers the next submissions of a number with
  *   the status and message given, and pools the transaction when `pool` is set.
+ * - `GET /transactions/estimate_gas_price` returns `gasPrice` (median and minimum, 100,000 each by default) without
+ *   latency. A
+ *   submission or simulation whose gas unit price is below `gasPrice.min` is refused with `GAS_UNIT_PRICE_BELOW_MIN_BOUND`,
+ *   as the nodes do (400 for a submission, status `Invalid` for a simulation).
  * - A read by hash returns `Success` once committed, `Pending` while pooled (HTTP 404 instead with
  *   `pendingVisible: false`, as from an RPC node that did not receive the transaction), `Invalid` for a transaction
  *   dropped as discarded, and 404 for an expired or unknown one.
@@ -100,6 +104,12 @@ export class MockNode {
     failAccountReads = 0;
     /** The number of the next block reads answered with HTTP 503. */
     failBlockReads = 0;
+    /** The node's gas unit price statistics, in quants. */
+    gasPrice = { median: 100_000, min: 100_000 };
+    /** The number of the next gas price reads answered with HTTP 503. */
+    failEstimateReads = 0;
+    /** The gas unit price of every submission, in order of arrival. */
+    readonly gasUnitPrices: bigint[] = [];
 
     private hashes = 0;
     private seed: number;
@@ -230,6 +240,25 @@ export class MockNode {
             this.count("view");
             return this.respond({ status: 200, body: { result: ["50000000000"] } });
         }
+        if (method === "GET" && path === "/transactions/estimate_gas_price") {
+            this.count("estimate_gas_price");
+            if (this.failEstimateReads > 0) {
+                this.failEstimateReads -= 1;
+                return this.respond({ status: 503, body: { message: "Service Unavailable" } }, true);
+            }
+            return this.respond(
+                {
+                    status: 200,
+                    body: {
+                        mean_gas_price: this.gasPrice.median,
+                        max_gas_price: this.gasPrice.median,
+                        median_gas_price: this.gasPrice.median,
+                        min_configured_gas_price: this.gasPrice.min,
+                    },
+                },
+                true,
+            );
+        }
         if (method === "GET" && path === "/transactions/chain_id") {
             this.count("chain_id");
             return this.respond({ status: 200, body: 255 });
@@ -238,11 +267,31 @@ export class MockNode {
             const body = String(init?.body);
             const raw = (
                 JSON.parse(body) as {
-                    Move: { raw_txn: { sender: string; sequence_number: number; expiration_timestamp_secs: number } };
+                    Move: {
+                        raw_txn: {
+                            sender: string;
+                            sequence_number: number;
+                            expiration_timestamp_secs: number;
+                            gas_unit_price: number;
+                        };
+                    };
                 }
             ).Move.raw_txn;
             const sequenceNumber = Number(raw.sequence_number);
             const expiration = Number(raw.expiration_timestamp_secs);
+            const price = BigInt(raw.gas_unit_price);
+            if (path === "/transactions/submit") {
+                this.gasUnitPrices.push(price);
+            }
+            if (price < BigInt(this.gasPrice.min)) {
+                if (path === "/transactions/submit") {
+                    return this.refuseBelowMinimum(sequenceNumber, expiration, body, raw.sender);
+                }
+                this.count("simulate");
+                return this.respond(
+                    transaction("0x00", "Invalid", "Status Code: GAS_UNIT_PRICE_BELOW_MIN_BOUND, Type Validation", 0),
+                );
+            }
             return path === "/transactions/simulate"
                 ? this.simulate(sequenceNumber, expiration, body)
                 : this.submit(sequenceNumber, expiration, body);
@@ -356,6 +405,25 @@ export class MockNode {
         return this.respond(answer);
     }
 
+    private refuseBelowMinimum(
+        sequenceNumber: number,
+        expiration: number,
+        body: string,
+        sender: string,
+    ): Promise<Response> {
+        this.count("submit");
+        this.submitted.push(sequenceNumber);
+        const answer: Answer = {
+            status: 400,
+            body: {
+                message: `General err: MoveTransactionValidationFailed(${sender.replace(/^0x/, "")}, ${sequenceNumber}, GAS_UNIT_PRICE_BELOW_MIN_BOUND)`,
+            },
+        };
+        this.submissions.push({ sequenceNumber, expiration, body, status: answer.status });
+        this.log.push(`SUBMIT ${sequenceNumber} (chain ${this.chain}) -> 400 below the minimum gas unit price`);
+        return this.respond(answer);
+    }
+
     private accept(sequenceNumber: number, expiration: number): string {
         this.hashes += 1;
         const hash = "0x" + this.hashes.toString(16).padStart(64, "0");
@@ -392,7 +460,20 @@ export class MockNode {
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     }
 
-    private respond(answer: Answer): Promise<Response> {
+    /**
+     * Answers after the latency, or at once with `immediate`. An immediate answer draws no number from the generator, so
+     * the latencies of the other answers do not depend on the gas price reads, and the reads of calls made one after
+     * another finish in that order.
+     */
+    private respond(answer: Answer, immediate = false): Promise<Response> {
+        if (immediate) {
+            return Promise.resolve(
+                new Response(JSON.stringify(answer.body), {
+                    status: answer.status,
+                    headers: { "Content-Type": "application/json" },
+                }),
+            );
+        }
         const delay = this.latencyMs[0] + this.random() * this.latencyMs[1];
         return new Promise((resolve) =>
             setTimeout(

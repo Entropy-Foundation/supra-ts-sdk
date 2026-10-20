@@ -87,6 +87,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const txn = await supra.transaction.submit.submitRawTransaction({
@@ -139,6 +140,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const supraCoinTransferRawTransactionSerializer = new BCS.Serializer();
@@ -193,6 +195,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *   const supraCoinTransferSerializedRawTransaction = BCS.bcsToBytes(supraCoinTransferRawTransaction);
      *
@@ -256,6 +259,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const sponsorTransactionPayload = new TxnBuilderTypes.FeePayerRawTransaction(
@@ -331,7 +335,8 @@ export class Submit {
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
      *         function: "0x1234::wrapper::two_signers", // a function of a published module that takes two signers
      *         functionTypeArgs: [],
-     *         functionArgs: []
+     *         functionArgs: [],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *     });
      *
      *     // Creating Multi-Agent Transaction Payload

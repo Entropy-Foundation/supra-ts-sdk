@@ -23,6 +23,7 @@ import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../..
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateTxnInternal } from "./txnSimulate";
+import { mapGasUnitPriceRefusalInternal, withResolvedGasUnitPriceInternal } from "./gasPrice";
 import {
     buildWithResolvedMaxGasInternal,
     getRawTxnJSONInternal,
@@ -150,7 +151,12 @@ export async function submitTxnInternal(
             config,
         );
     } catch (error) {
-        throw settleFailedSubmissionInternal({ rawTxn, reservation }, error, config);
+        // The refusal for a price below the node's minimum is a known outcome: the number is handed out again.
+        throw await mapGasUnitPriceRefusalInternal(
+            settleFailedSubmissionInternal({ rawTxn, reservation }, error, config),
+            BigInt(rawTxn.gas_unit_price),
+            config,
+        );
     }
     // The record keeps the number from the counter until the transaction has committed or can no longer commit.
     tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, txHash);
@@ -185,8 +191,9 @@ export async function submitTxnInternal(
  * and released when the node answers the submission or one of those steps throws. The max gas estimate simulates the
  * transaction with that number, and the submission uses it, unless the estimate or the simulation before submission
  * gave the reservation a lower number that has no submission of this client (the transaction is then built and signed
- * again with it). When building, estimating or signing throws, the number is handed out next, or the chain is read
- * before the next number when the error reports a stale number.
+ * again with it). The gas unit price is the call's, else the client's, else the node's estimate, which is read once
+ * before the lock is taken; a failed read throws and no number is used. When building, estimating or signing throws,
+ * the number is handed out next, or the chain is read before the next number when the error reports a stale number.
  */
 export async function buildAndSubmitEntryFunctionInternal(
     args: {
@@ -197,8 +204,13 @@ export async function buildAndSubmitEntryFunctionInternal(
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     const senderAddress = args.senderAccount.address();
-    const optionalTransactionPayloadArgs = args.optionalTransactionArgs?.optionalTransactionPayloadArgs;
     validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
+    // The node's gas unit price estimate is read before the account's lock is taken, so that sends from one account
+    // do not wait behind the read.
+    const optionalTransactionPayloadArgs = await withResolvedGasUnitPriceInternal(
+        args.optionalTransactionArgs?.optionalTransactionPayloadArgs,
+        config,
+    );
     return withSequenceNumberInternal(
         { address: senderAddress, sequenceNumber: optionalTransactionPayloadArgs?.sequenceNumber },
         config,

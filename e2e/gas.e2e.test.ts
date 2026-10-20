@@ -4,13 +4,22 @@ import type {
     SubmitTransactionResponse,
     SupraAccount,
 } from "../src/index";
-import { MoveVmError, SupraSimulationFailedError, TransactionStatus, TypeTagParser } from "../src/index";
+import {
+    BCS,
+    MoveVmError,
+    SupraAPIError,
+    SupraClient,
+    SupraGasUnitPriceBelowMinimumError,
+    SupraSimulationFailedError,
+    TransactionStatus,
+    TypeTagParser,
+} from "../src/index";
 import { COIN_ABI } from "./helpers/abi";
 import { createFundedAccount, createMigratedAccount, createUnfundedAccount, waitForBalance } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import { fixtureModuleFor, fixturePackageMetadata } from "./helpers/fixturePackage";
-import { SUPRA_COIN_TYPE, rawPost, rawSupraBalance, type RawTransaction } from "./helpers/raw";
+import { SUPRA_COIN_TYPE, rawGet, rawPost, rawSupraBalance, type RawTransaction } from "./helpers/raw";
 
 /**
  * Gas settings with the client's defaults (no `maxGas` anywhere): the max gas is estimated by simulation, or defaulted
@@ -328,6 +337,146 @@ describeE2E("gas settings", () => {
                 enableTransactionWaitAndSimulationArgs: WAIT,
             });
             expectSettings(txn);
+        });
+    });
+
+    describe("gas unit price", () => {
+        /** The gas unit price the node reports for a transaction, read with a plain request. */
+        async function rawEstimate(): Promise<{ median: bigint; min: bigint }> {
+            const response = await rawGet<{ median_gas_price: number; min_configured_gas_price: number }>(
+                ctx,
+                "/rpc/v3/transactions/estimate_gas_price",
+            );
+            return {
+                median: BigInt(response.body.median_gas_price),
+                min: BigInt(response.body.min_configured_gas_price),
+            };
+        }
+
+        test("a transfer with no price carries max(median, minimum) of the node's estimate", async () => {
+            const account = await createFundedAccount(ctx);
+
+            const txn = await ctx.supra.coin.transferSupraCoin({
+                senderAccount: account,
+                receiverAccountAddress: createUnfundedAccount().address().toString(),
+                amount: 1n,
+                optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: WAIT },
+            });
+
+            const { median, min } = await rawEstimate();
+            expect(txn.status).toBe(TransactionStatus.Success);
+            expect(BigInt(committed(txn).header?.gas_unit_price ?? 0)).toBe(median > min ? median : min);
+            expect(await ctx.supra.getEstimatedGasUnitPrice()).toBe(median > min ? median : min);
+        });
+
+        test("a transfer from a client with a price carries that price", async () => {
+            const account = await createFundedAccount(ctx);
+            const price = (await ctx.supra.getMinGasUnitPrice()) + 7n;
+            const client = new SupraClient({ rpcUrl: ctx.rpcUrl, chainId: ctx.chainId, gasUnitPrice: price });
+
+            const txn = await client.coin.transferSupraCoin({
+                senderAccount: account,
+                receiverAccountAddress: createUnfundedAccount().address().toString(),
+                amount: 1n,
+                optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: WAIT },
+            });
+
+            expect(BigInt(committed(txn).header?.gas_unit_price ?? 0)).toBe(price);
+        });
+
+        test("a price below the node's minimum is refused on submission and the sequence number is reused", async () => {
+            const account = await createFundedAccount(ctx);
+            const minimum = await ctx.supra.getMinGasUnitPrice();
+
+            const error: unknown = await ctx.supra.coin
+                .transferSupraCoin({
+                    senderAccount: account,
+                    receiverAccountAddress: createUnfundedAccount().address().toString(),
+                    amount: 1n,
+                    optionalTransactionArgs: {
+                        optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 1n },
+                    },
+                })
+                .catch((e: unknown) => e);
+
+            expect(error).toBeInstanceOf(SupraGasUnitPriceBelowMinimumError);
+            expect(error).toBeInstanceOf(SupraAPIError);
+            expect((error as SupraGasUnitPriceBelowMinimumError).gasUnitPrice).toBe(1n);
+            expect((error as SupraGasUnitPriceBelowMinimumError).minimumGasUnitPrice).toBe(minimum);
+            expect((error as SupraGasUnitPriceBelowMinimumError).status).toBe(400);
+
+            const next = await ctx.supra.coin.transferSupraCoin({
+                senderAccount: account,
+                receiverAccountAddress: createUnfundedAccount().address().toString(),
+                amount: 1n,
+                optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: WAIT },
+            });
+            expect(next.status).toBe(TransactionStatus.Success);
+            expect(BigInt(committed(next).header?.sequence_number ?? -1)).toBe(0n);
+        });
+
+        test("a price below the node's minimum is refused by the max gas estimate's simulation", async () => {
+            const account = await createFundedAccount(ctx);
+
+            const error: unknown = await ctx.supra.coin
+                .transferSupraCoin({
+                    senderAccount: account,
+                    receiverAccountAddress: createUnfundedAccount().address().toString(),
+                    amount: 1n,
+                    optionalTransactionArgs: { optionalTransactionPayloadArgs: { gasUnitPrice: 1n } },
+                })
+                .catch((e: unknown) => e);
+
+            expect(error).toBeInstanceOf(SupraGasUnitPriceBelowMinimumError);
+            expect((error as SupraGasUnitPriceBelowMinimumError).minimumGasUnitPrice).toBe(
+                await ctx.supra.getMinGasUnitPrice(),
+            );
+            expect((error as SupraGasUnitPriceBelowMinimumError).status).toBe(200);
+        });
+
+        test("a price below the node's minimum is refused by the simulation before submission", async () => {
+            const account = await createFundedAccount(ctx);
+
+            const error: unknown = await ctx.supra.coin
+                .transferSupraCoin({
+                    senderAccount: account,
+                    receiverAccountAddress: createUnfundedAccount().address().toString(),
+                    amount: 1n,
+                    optionalTransactionArgs: {
+                        optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 1n },
+                        enableTransactionWaitAndSimulationArgs: { enableTransactionSimulation: true },
+                    },
+                })
+                .catch((e: unknown) => e);
+
+            expect(error).toBeInstanceOf(SupraGasUnitPriceBelowMinimumError);
+            expect((error as SupraGasUnitPriceBelowMinimumError).gasUnitPrice).toBe(1n);
+        });
+
+        test("a built transaction below the minimum is refused when simulated", async () => {
+            const account = await createFundedAccount(ctx);
+            const rawTxn = ctx.supra.transaction.build.rawTxnObject({
+                senderAddress: account.address(),
+                senderSequenceNumber: 0n,
+                function: "0x1::supra_account::transfer" as MoveFunctionId,
+                functionTypeArgs: [],
+                functionArgs: [createUnfundedAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1n)],
+                optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 1n },
+            });
+
+            await expect(rawTxn.simulate(account)).rejects.toBeInstanceOf(SupraGasUnitPriceBelowMinimumError);
+        });
+
+        test("the builders that make no request throw without a price", () => {
+            expect(() =>
+                ctx.supra.transaction.build.rawTxnObject({
+                    senderAddress: createUnfundedAccount().address(),
+                    senderSequenceNumber: 0n,
+                    function: "0x1::supra_account::transfer" as MoveFunctionId,
+                    functionTypeArgs: [],
+                    functionArgs: [],
+                }),
+            ).toThrow(RangeError);
         });
     });
 });

@@ -75,9 +75,11 @@ describe("request counts", () => {
 
         const estimate = options.maxGas === undefined;
         const simulate = options.simulate === true;
-        // The first call reads the account and the latest block, the chain ID before signing, the balance and one
-        // simulation for an estimate, one simulation before submission, and the transaction after submission.
+        // Every call reads the node's gas unit price estimate once, before it takes its number. The first call reads the
+        // account and the latest block, the chain ID before signing, the balance and one simulation for an estimate,
+        // one simulation before submission, and the transaction after submission.
         expect(single).toEqual({
+            estimate_gas_price: 1,
             account: 1,
             block: 1,
             chain_id: 1,
@@ -90,6 +92,7 @@ describe("request counts", () => {
         // chain's number after a read of the account and the latest block.
         const checks = (estimate ? 1 : 0) + (simulate ? 1 : 0);
         expect(behind).toEqual({
+            estimate_gas_price: 1,
             ...(checks > 0 ? { account: checks, block: checks } : {}),
             ...(estimate ? { view: 1 } : {}),
             ...(checks > 0 ? { simulate: 2 * checks } : {}),
@@ -97,6 +100,7 @@ describe("request counts", () => {
             transaction: 1,
         });
         expect(all.counts).toEqual({
+            estimate_gas_price: 5,
             account: 1 + 4 * checks,
             block: 1 + 4 * checks,
             chain_id: 1,
@@ -592,6 +596,7 @@ describe("reads of the chain, chain time and expiration times", () => {
             function: "0x1::supra_account::transfer",
             functionTypeArgs: [],
             functionArgs: [],
+            optionalTransactionPayloadArgs: { gasUnitPrice: 100_000n },
         });
         expect(Number(built.expiration_timestamp_secs) - Math.floor(Date.now() / 1000)).toBe(60);
 

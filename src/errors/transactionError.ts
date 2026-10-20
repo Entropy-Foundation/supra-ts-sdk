@@ -68,7 +68,8 @@ export class SupraTransactionFailedError extends SupraError {
  * - `Invalid`: it would be discarded.
  *
  * The node answers a simulation with HTTP 200 whatever its status, so this error derives from {@link SupraError}, not
- * from {@link SupraAPIError}. The simulated transaction is available as `transaction`.
+ * from {@link SupraAPIError}. The simulated transaction is available as `transaction`. A simulation refused for a gas
+ * unit price below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead.
  * @group Errors
  */
 export class SupraSimulationFailedError extends SupraError {

@@ -6,12 +6,14 @@ import type { SendTxnPayload } from "../../types/transactionManager/transactionB
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { getRawTxnJSONInternal } from "./txnBuild";
 import { SupraSimulationFailedError } from "../../errors/transactionError";
+import { mapGasUnitPriceRefusalInternal } from "./gasPrice";
 
 /**
  * Simulates a transaction and returns the simulated transaction when its status is `Success`.
  *
  * The request carries a copy of the payload whose signatures are zero; the caller's payload is not modified.
- * A simulation with any other status throws `SupraSimulationFailedError` carrying the simulated transaction.
+ * A simulation with any other status throws `SupraSimulationFailedError` carrying the simulated transaction, except one
+ * refused for a gas unit price below the node's minimum, which throws `SupraGasUnitPriceBelowMinimumError`.
  */
 export async function simulateTxnInternal(
     args: { sendTxPayload: SendTxnPayload },
@@ -34,7 +36,11 @@ export async function simulateTxnInternal(
 
     // The node answers a simulation with HTTP 200 whatever the simulated status.
     if (simulatedTxnResponse.status !== TransactionStatus.Success) {
-        throw new SupraSimulationFailedError(simulatedTxnResponse);
+        throw await mapGasUnitPriceRefusalInternal(
+            new SupraSimulationFailedError(simulatedTxnResponse),
+            BigInt(args.sendTxPayload.Move.raw_txn.gas_unit_price),
+            config,
+        );
     }
 
     return simulatedTxnResponse;

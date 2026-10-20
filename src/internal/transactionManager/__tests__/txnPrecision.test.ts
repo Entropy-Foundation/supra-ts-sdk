@@ -20,6 +20,7 @@ const testConfig: NetworkConfig = {
     name: "testnet",
     chainId: 6,
     rpcUrl: "https://rpc-testnet.supra.com",
+    gasUnitPrice: 100_000n,
     // The tests stub every response; the transactions are signed without reading the node's chain ID.
     verifyChainId: false,
 };

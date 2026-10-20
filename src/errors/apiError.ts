@@ -22,6 +22,7 @@ export interface SupraAPIErrorOptions {
  * | {@link SupraRateLimitError} | HTTP 429, with `retryAfterSeconds` |
  * | {@link SupraServiceUnavailableError} | HTTP 503 |
  * | {@link SupraAccountQueueFullError} | HTTP 400 for a submission beyond the sequence numbers the node queues for the account |
+ * | {@link SupraGasUnitPriceBelowMinimumError} | A submission or simulation whose gas unit price is below the node's minimum |
  *
  * Errors that are not error statuses of the node derive from {@link SupraError}: {@link SupraTimeoutError} and
  * {@link SupraNetworkError} (a request that timed out or never reached the node), the faucet errors, and the
@@ -158,6 +159,40 @@ export class SupraAccountQueueFullError extends SupraAPIError {
 
     override toJSON() {
         return { ...super.toJSON(), sequenceNumber: this.sequenceNumber.toString() };
+    }
+}
+
+/**
+ * SupraGasUnitPriceBelowMinimumError is thrown when the node refuses a transaction because its gas unit price is below
+ * the node's minimum (`GAS_UNIT_PRICE_BELOW_MIN_BOUND`). The node refuses a submission with HTTP 400; a simulation
+ * answers HTTP 200 with the status `Invalid`, and the error then reports that response (`status` 200, `data` holding
+ * the simulated transaction). The price is never changed by the SDK: it is the price of the call, else the client's
+ * `gasUnitPrice`, and the transaction is not sent again.
+ *
+ * `gasUnitPrice` is the price the transaction carried, in quants. `minimumGasUnitPrice` is the node's minimum
+ * (`getMinGasUnitPrice()`), read after the refusal, or `undefined` when that read failed. The helpers that take the
+ * sequence number from the client's counter hand the number out again.
+ * @group SupraAPIError
+ */
+export class SupraGasUnitPriceBelowMinimumError extends SupraAPIError {
+    /** The gas unit price of the refused transaction, in quants. */
+    readonly gasUnitPrice: bigint;
+    /** The node's minimum gas unit price in quants, or `undefined` when reading it failed. */
+    readonly minimumGasUnitPrice: bigint | undefined;
+
+    constructor(args: SupraAPIErrorOptions & { gasUnitPrice: bigint; minimumGasUnitPrice?: bigint | undefined }) {
+        super(args);
+        this.name = "SupraGasUnitPriceBelowMinimumError";
+        this.gasUnitPrice = args.gasUnitPrice;
+        this.minimumGasUnitPrice = args.minimumGasUnitPrice;
+    }
+
+    override toJSON() {
+        return {
+            ...super.toJSON(),
+            gasUnitPrice: this.gasUnitPrice.toString(),
+            minimumGasUnitPrice: this.minimumGasUnitPrice?.toString(),
+        };
     }
 }
 

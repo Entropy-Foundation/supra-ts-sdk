@@ -22,6 +22,8 @@ runExample(async () => {
         function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
         functionTypeArgs: [],
         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10_000n)],
+        // The builder makes no request, so the node's gas unit price estimate is read here.
+        optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
     };
 
     // ---------------------------------------------------------------------------

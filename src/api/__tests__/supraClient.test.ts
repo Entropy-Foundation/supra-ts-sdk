@@ -1,6 +1,5 @@
 import { SupraClient } from "../supraClient";
 import { Network } from "../../utils/apiEndpoints";
-import { DEFAULT_GAS_PRICE } from "../../utils/constants";
 import { Account } from "../account";
 import { Transaction } from "../transaction";
 import { Contract } from "../contract";
@@ -134,19 +133,19 @@ describe("SupraClient", () => {
             expect(client.networkInformation.maxGas).toBeUndefined();
             expect(client.networkInformation.estimateMaxGas).toBeUndefined();
             expect(client.networkInformation.maxGasEstimateMultiplier).toBeUndefined();
-            expect(client.networkInformation.minGasUnitPrice).toBe(DEFAULT_GAS_PRICE);
+            expect(client.networkInformation.gasUnitPrice).toBeUndefined();
         });
 
         it("should use custom gas values when provided", () => {
             const client = new SupraClient({
                 network: Network.TESTNET,
                 maxGas: 5000n,
-                minGasUnitPrice: 200_000n,
+                gasUnitPrice: 200_000n,
                 estimateMaxGas: false,
                 maxGasEstimateMultiplier: 2,
             });
             expect(client.networkInformation.maxGas).toBe(5000n);
-            expect(client.networkInformation.minGasUnitPrice).toBe(200_000n);
+            expect(client.networkInformation.gasUnitPrice).toBe(200_000n);
             expect(client.networkInformation.estimateMaxGas).toBe(false);
             expect(client.networkInformation.maxGasEstimateMultiplier).toBe(2);
         });

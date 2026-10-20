@@ -27,6 +27,18 @@ export async function getMinGasUnitPriceInternal(config: NetworkConfig): Promise
 }
 
 /**
+ * Reads the gas unit price that a transaction without a price of the call or the client carries:
+ * `max(median_gas_price, min_configured_gas_price)` of `GET /rpc/v3/transactions/estimate_gas_price`. The median is
+ * taken over recent transactions and can be below the node's current minimum.
+ */
+export async function getEstimatedGasUnitPriceInternal(config: NetworkConfig): Promise<bigint> {
+    const { data } = await get<GasPrice>({ path: `/transactions/estimate_gas_price` }, config);
+    const median = BigInt(data.median_gas_price);
+    const minimum = BigInt(data.min_configured_gas_price);
+    return median > minimum ? median : minimum;
+}
+
+/**
  * Reads the node's chain ID with `GET /rpc/v3/transactions/chain_id`.
  * @throws {SupraError} If the body is not an integer from 0 to 255.
  */

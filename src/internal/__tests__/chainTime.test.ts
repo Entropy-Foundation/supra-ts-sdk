@@ -42,7 +42,10 @@ function rawTxn(supra: SupraClient, txExpiryTime?: bigint) {
         function: "0x1::supra_account::transfer",
         functionTypeArgs: [],
         functionArgs: [],
-        ...(txExpiryTime === undefined ? {} : { optionalTransactionPayloadArgs: { txExpiryTime } }),
+        optionalTransactionPayloadArgs: {
+            gasUnitPrice: 100_000n,
+            ...(txExpiryTime === undefined ? {} : { txExpiryTime }),
+        },
     });
 }
 

@@ -3,6 +3,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal, withSequenceNumber } from "./transactionManager/txnBuild";
 import { bindReservation, withSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
+import { withResolvedGasUnitPriceInternal } from "./transactionManager/gasPrice";
 import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
 import type {
@@ -46,12 +47,18 @@ export async function callContractInternal(
     }
 
     validateSubmitOptions(args.enableTransactionWaitAndSimulationArgs ?? {});
+    // The gas unit price is resolved before the lock, so that sends from one account do not wait behind the read of
+    // the node's estimate.
+    const optionalTransactionPayloadArgs = await withResolvedGasUnitPriceInternal(
+        args.optionalTransactionPayloadArgs,
+        config,
+    );
     // A number from the client's counter is taken under the account's lock, which the submission releases when the
     // node answers it (`withSequenceNumberInternal`).
     return withSequenceNumberInternal(
         {
             address: senderAccount.address(),
-            sequenceNumber: args.optionalTransactionPayloadArgs?.sequenceNumber,
+            sequenceNumber: optionalTransactionPayloadArgs.sequenceNumber,
         },
         config,
         async (senderSequenceNumber, reservation) => {
@@ -63,7 +70,7 @@ export async function callContractInternal(
                     function: args.function,
                     functionTypeArgs: args.typeArguments ?? [],
                     functionArgs: functionArguments,
-                    optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+                    optionalTransactionPayloadArgs,
                     abi: args.abi as MoveModule,
                     senderAccount,
                     reservation,

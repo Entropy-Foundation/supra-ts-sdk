@@ -7,7 +7,6 @@ import type {
     TransactionPayloadJSON,
 } from "../../types/transactionManager/transactionBuild";
 import {
-    DEFAULT_GAS_PRICE,
     DEFAULT_MAX_GAS_UNITS,
     DEFAULT_TX_EXPIRATION_DURATION,
     MAX_TX_EXPIRATION_DURATION,
@@ -44,6 +43,7 @@ import type {
 } from "../../types/transactionManager/transactionSubmit";
 import sha3 from "js-sha3";
 import { resolveMaxGasInternal } from "./maxGas";
+import { requireGasUnitPrice, withResolvedGasUnitPriceInternal } from "./gasPrice";
 import type { SequenceNumberReservation } from "../sequenceNumber";
 
 /**
@@ -143,8 +143,9 @@ export async function simpleInternal(
 }
 
 /**
- * Builds a transaction with `buildRawTxn` and the caller's settings, with the max gas that `resolveMaxGasInternal`
- * resolves. The caller's `optionalTransactionPayloadArgs` is copied, not modified.
+ * Builds a transaction with `buildRawTxn` and the caller's settings, with the gas unit price (the call's, else the
+ * client's, else the node's estimate) and the max gas that `resolveMaxGasInternal` resolves. The caller's
+ * `optionalTransactionPayloadArgs` is copied, not modified.
  */
 export async function buildWithResolvedMaxGasInternal(
     args: {
@@ -157,7 +158,9 @@ export async function buildWithResolvedMaxGasInternal(
     },
     config: NetworkConfig,
 ): Promise<TxnBuilderTypes.RawTransaction> {
-    const options = args.optionalTransactionPayloadArgs ?? {};
+    // The gas unit price is resolved once; the max gas estimate and the transaction use that value. A call that took
+    // the account's lock has resolved it already, so no request is made here.
+    const options = await withResolvedGasUnitPriceInternal(args.optionalTransactionPayloadArgs, config);
     const resolved = await resolveMaxGasInternal(
         {
             senderAddress: args.senderAddress,
@@ -227,9 +230,9 @@ export function rawTxnObjectInnerInternal(
         args.payload,
         // The builders that make no request use `DEFAULT_MAX_GAS_UNITS`; the others pass a resolved `maxGas`.
         args.optionalTransactionPayloadArgs?.maxGas ?? config.maxGas ?? DEFAULT_MAX_GAS_UNITS,
-        // Without a `gasUnitPrice` on the call, the price is `SupraConfig.minGasUnitPrice` (`DEFAULT_GAS_PRICE` when
-        // the client sets none); the node's current minimum is not read.
-        args.optionalTransactionPayloadArgs?.gasUnitPrice ?? config.minGasUnitPrice ?? DEFAULT_GAS_PRICE,
+        // The call's price, else the client's. The builders that make no request throw without one; the others pass
+        // a price resolved with the node's estimate.
+        requireGasUnitPrice(args.optionalTransactionPayloadArgs, config),
         args.optionalTransactionPayloadArgs?.txExpiryTime ?? defaultTxExpiryTime(config),
         new TxnBuilderTypes.ChainId(config.chainId),
     );

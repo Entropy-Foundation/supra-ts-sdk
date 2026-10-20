@@ -207,6 +207,7 @@ export class Transaction {
      *     function: "0x1::supra_account::transfer",
      *     functionTypeArgs: [],
      *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *     optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const signatureMessage = supra.transaction.getTransactionSignatureMessage({ rawTxn });
@@ -247,6 +248,7 @@ export class Transaction {
      *     function: "0x1::supra_account::transfer",
      *     functionTypeArgs: [],
      *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *     optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const signature = await supra.transaction.signTransaction({ senderAccount: account, rawTxn });

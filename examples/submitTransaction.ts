@@ -12,6 +12,10 @@ runExample(async () => {
     const receiverAddress = new SupraAccount().address();
     const waitForCommit = { enableTransactionSimulation: true, enableWaitForTransaction: true };
 
+    // The builders that make no request cannot read the node's gas unit price estimate; the example reads it once and
+    // passes it to each of them.
+    const gas = { gasUnitPrice: await supra.getEstimatedGasUnitPrice() };
+
     // The builders take the sequence number of the transaction. Every transaction below waits for its commit and the
     // account sends nothing else, so the account's sequence number on chain is the number of the first transaction
     // and each transaction uses the next one.
@@ -25,6 +29,7 @@ runExample(async () => {
         function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
         functionTypeArgs: [],
         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10_000n)],
+        optionalTransactionPayloadArgs: gas,
     });
 
     // ---------------------------------------------------------------------------
@@ -110,6 +115,7 @@ runExample(async () => {
         function: twoSignersFunction as MoveFunctionId,
         functionTypeArgs: [],
         functionArgs: [],
+        optionalTransactionPayloadArgs: gas,
     });
 
     // The payload that the sender and the secondary signer sign

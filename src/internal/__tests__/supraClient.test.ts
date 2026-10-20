@@ -1,4 +1,9 @@
-import { getChainIdInternal, getGasPriceInternal, getMinGasUnitPriceInternal } from "../supraClient";
+import {
+    getChainIdInternal,
+    getEstimatedGasUnitPriceInternal,
+    getGasPriceInternal,
+    getMinGasUnitPriceInternal,
+} from "../supraClient";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 
 jest.mock("../../client/get", () => ({
@@ -39,6 +44,29 @@ describe("internal/supraClient", () => {
             const price = await getGasPriceInternal(testConfig);
 
             expect(price).toBe(100n);
+            expect(mockGet).toHaveBeenCalledWith({ path: "/transactions/estimate_gas_price" }, testConfig);
+        });
+    });
+
+    describe("getEstimatedGasUnitPriceInternal", () => {
+        it.each([
+            [100, 50, 100n],
+            [30, 50, 50n],
+            [50, 50, 50n],
+        ])("returns max(median %p, minimum %p) = %p from one request", async (median, min, expected) => {
+            mockGet.mockResolvedValueOnce({
+                data: {
+                    mean_gas_price: 1,
+                    max_gas_price: 2,
+                    median_gas_price: median,
+                    min_configured_gas_price: min,
+                },
+            });
+
+            const price = await getEstimatedGasUnitPriceInternal(testConfig);
+
+            expect(price).toBe(expected);
+            expect(mockGet).toHaveBeenCalledTimes(1);
             expect(mockGet).toHaveBeenCalledWith({ path: "/transactions/estimate_gas_price" }, testConfig);
         });
     });

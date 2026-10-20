@@ -54,6 +54,8 @@ interface Node {
     /** SUPRA balance of every account, in quants, or an error answer. */
     balance: () => Answer;
     simulate: () => Answer;
+    /** The answer to `GET /transactions/estimate_gas_price`. */
+    gasPrice: () => Answer;
 }
 
 interface RecordedRequest {
@@ -80,6 +82,15 @@ function moveTxn(status: TransactionStatus, vmStatus: string, gasUsed: number) {
     };
 }
 
+function gasPriceAnswer(median: bigint, minimum: bigint): Answer {
+    return json({
+        mean_gas_price: Number(median),
+        max_gas_price: Number(median),
+        median_gas_price: Number(median),
+        min_configured_gas_price: Number(minimum),
+    });
+}
+
 function simulated(gasUsed: number): Answer {
     return json(moveTxn(TransactionStatus.Success, "Executed successfully", gasUsed));
 }
@@ -101,6 +112,8 @@ function stubFetch(): void {
             answer = json(HASH);
         } else if (method === "GET" && path === "/transactions/chain_id") {
             answer = json(255);
+        } else if (method === "GET" && path === "/transactions/estimate_gas_price") {
+            answer = node.gasPrice();
         } else if (method === "GET" && path.startsWith("/transactions/")) {
             answer = json(moveTxn(TransactionStatus.Success, "Executed successfully", 7));
         } else if (method === "GET" && /^\/accounts\/0x[0-9a-f]+$/.test(path)) {
@@ -224,6 +237,7 @@ describe("gas settings", () => {
         node = {
             balance: () => json({ result: [String(1_000n * 100_000_000n)] }),
             simulate: () => simulated(2_000),
+            gasPrice: () => gasPriceAnswer(PRICE, PRICE),
         };
         stubFetch();
     });
@@ -237,7 +251,7 @@ describe("gas settings", () => {
             const options = { maxGas: 5_000n, gasUnitPrice: 123_456n, txExpiryTime: 4_000_000_000n };
             const before = { ...options };
 
-            await helper(newClient({ maxGas: 9_999n, minGasUnitPrice: 200_000n }), options);
+            await helper(newClient({ maxGas: 9_999n, gasUnitPrice: 200_000n }), options);
 
             expect(submitted()).toMatchObject({
                 max_gas_amount: 5_000,
@@ -457,11 +471,18 @@ describe("gas settings", () => {
             expect(rawTxn.max_gas_amount).toBe(3_000n);
         });
 
-        it("makes no request when the estimate is turned off", async () => {
-            const rawTxn = await build(newClient(), { estimateMaxGas: false });
+        it("makes no request when the estimate is turned off and the call sets the gas unit price", async () => {
+            const rawTxn = await build(newClient(), { estimateMaxGas: false, gasUnitPrice: PRICE });
 
             expect(rawTxn.max_gas_amount).toBe(DEFAULT_MAX_GAS_UNITS);
             expect(requests).toHaveLength(0);
+        });
+
+        it("reads only the gas unit price estimate when the estimate is turned off", async () => {
+            const rawTxn = await build(newClient(), { estimateMaxGas: false });
+
+            expect(rawTxn.max_gas_amount).toBe(DEFAULT_MAX_GAS_UNITS);
+            expect(requests.map((r) => r.path)).toStrictEqual(["/transactions/estimate_gas_price"]);
         });
     });
 
@@ -474,8 +495,12 @@ describe("gas settings", () => {
             functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1n)],
         };
 
-        expect(newClient().transaction.build.rawTxnObject(args).max_gas_amount).toBe(DEFAULT_MAX_GAS_UNITS);
-        expect(newClient({ maxGas: 777n }).transaction.build.rawTxnObject(args).max_gas_amount).toBe(777n);
+        expect(newClient({ gasUnitPrice: PRICE }).transaction.build.rawTxnObject(args).max_gas_amount).toBe(
+            DEFAULT_MAX_GAS_UNITS,
+        );
+        expect(
+            newClient({ gasUnitPrice: PRICE, maxGas: 777n }).transaction.build.rawTxnObject(args).max_gas_amount,
+        ).toBe(777n);
         expect(requests).toHaveLength(0);
     });
 
