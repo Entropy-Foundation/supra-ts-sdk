@@ -36,6 +36,7 @@ export class Events {
     /**
      * Get the events of the given type.
      * @param args.eventType - Type of event
+     * @param args.options - The options object is required and can be empty.
      * @param args.options.startHeight - Starting block height (inclusive)
      * @param args.options.endHeight - Ending block height (exclusive)
      * @param args.options.limit - Maximum number of events to return. Defaults to 20, max 100.

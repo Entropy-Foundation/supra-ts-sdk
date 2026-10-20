@@ -1,13 +1,10 @@
-export const DEFAULT_CHAIN_ID = 6;
-export const MAX_RETRY_FOR_TRANSACTION_COMPLETION = 300;
-export const DELAY_BETWEEN_POOLING_REQUEST = 1000; // 1 Second
-export const DEFAULT_RECORDS_ITEMS_COUNT = 15;
 /**
  * Max gas, in gas units, of a transaction whose max gas is neither set by the caller nor estimated: estimation is
  * turned off (`estimateMaxGas: false`), the builder has no signer to simulate with, or the estimating simulation
- * could not run to a result (a request error, a response without `gas_used`). It covers a one-module publish (about 2,000 units), a multisig account creation
- * (about 1,700) and a transfer that creates the receiver (about 1,000). The node accepts a transaction only when the
- * sender's balance covers `max gas × gas unit price`: at the minimum gas unit price of 100,000 quants this is 20 SUPRA.
+ * could not run to a result (a request error, a response without `gas_used`). It covers a one-module publish (about
+ * 2,000 units), a multisig account creation (about 1,700) and a transfer that creates the receiver (about 1,000). The
+ * node accepts a transaction only when the sender's balance covers `max gas × gas unit price`: at the default gas unit
+ * price of 100,000 quants this is 20 SUPRA (2,000,000,000 quants).
  */
 export const DEFAULT_MAX_GAS_UNITS = BigInt(20_000);
 /**

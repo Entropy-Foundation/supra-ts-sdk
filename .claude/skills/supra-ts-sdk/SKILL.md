@@ -1,14 +1,16 @@
 ---
 name: supra-ts-sdk
 description: |
-  Guide for integrating the Supra L1 blockchain TypeScript SDK (supra-ts-sdk) into React or Next.js projects. Covers client setup, account queries, coin/fungible asset transfers, smart contract interaction via ABI proxies, transaction lifecycle (build/simulate/submit/wait), view functions, events, and Move type mapping.
+  Guide for integrating the Supra L1 blockchain TypeScript SDK (supra-ts-sdk) into React or Next.js projects. Covers client setup, account queries, coin/fungible asset transfers, smart contract interaction via ABI proxies, transaction lifecycle (build/simulate/submit/wait), gas, sequence numbers, the chain ID check, errors, view functions, events, and Move type mapping.
 when_to_use: |
   Use when: user asks to integrate Supra blockchain into a React/Next.js app; user wants to query Supra accounts, balances, or transactions from a frontend; user needs to build/sign/submit Supra transactions; user wants to interact with Move smart contracts from TypeScript; user asks about supra-ts-sdk usage patterns.
 ---
 
 # supra-ts-sdk Integration Guide for React / Next.js
 
-You are helping a developer integrate the `supra-ts-sdk` package into a React or Next.js project. Follow these patterns and API references exactly.
+You are helping a developer integrate the `supra-ts-sdk` package (version 2.0.0 or later) into a React or Next.js project. Follow these patterns and API references exactly. The SDK supports nodes from v11.7.0 onwards.
+
+SUPRA amounts are integers in **quants**, the smallest unit (1 SUPRA = 100,000,000 quants). Gas unit prices are in quants.
 
 ## Installation
 
@@ -18,7 +20,7 @@ npm install supra-ts-sdk
 pnpm add supra-ts-sdk
 ```
 
-The SDK requires Node.js >= 18 (uses native `fetch` and `AbortSignal.timeout()`). For Next.js, all SDK calls must run server-side or in client components that handle async correctly.
+The SDK requires Node.js >= 18 (uses native `fetch` and `AbortSignal.timeout()`). Calls that sign a transaction need the account's private key, so they belong in server-side code (see Important Caveats).
 
 ## Key Import
 
@@ -34,6 +36,7 @@ import {
   type SupraConfig,
   type TransactionResponse,
   type CommittedTransactionResponse,
+  type SubmitTransactionResponse,
   type PaginatedResponse,
   type AccountData,
   type MoveModule,
@@ -51,28 +54,29 @@ import {
 
 ## Client Initialization
 
-`SupraClient` is synchronous to construct. Create one instance and reuse it.
+`SupraClient` is synchronous to construct and sends no request. Create one instance and reuse it: it keeps the sequence-number counters and the node's chain ID.
 
 ```typescript
-// Predefined network (recommended)
+// Predefined networks: Network.MAINNET (chain ID 8), Network.TESTNET (6) and Network.DEVNET (50)
 const supra = new SupraClient({ network: Network.TESTNET });
-const supra = new SupraClient({ network: Network.MAINNET });
-
-// Custom RPC
-const supra = new SupraClient({
-    rpcUrl: "https://rpc-testnet.supra.com",
-    chainId: 6,
-});
-
-// With gas settings for every transaction of the client (without maxGas, it is estimated per transaction)
-const supra = new SupraClient({
-    network: Network.TESTNET,
-    maxGas: 20_000n,
-    minGasUnitPrice: 100_000n,
-});
 ```
 
-Network defaults: mainnet = chainId 8, testnet = chainId 6.
+```typescript
+// Any other node: its RPC URL and chain ID (an integer from 0 to 255)
+const local = new SupraClient({ rpcUrl: "http://localhost:27001", chainId: 255 });
+```
+
+```typescript
+// Settings for every transaction of the client; a setting on a call replaces the client's
+const configured = new SupraClient({
+    network: Network.TESTNET,
+    maxGas: 20_000n,             // without it the max gas is estimated per transaction (see Gas)
+    minGasUnitPrice: 100_000n,   // gas unit price in quants (default 100,000)
+    timeoutMs: 10_000,           // request timeout (default 30,000)
+    retry: { attempts: 3, maxDelayMs: 5_000 }, // retries of GET requests that fail with 429, 503 or a connection error; off by default
+    waitTimeoutMs: 30_000,       // how long a wait for a final transaction status lasts (default 60,000)
+});
+```
 
 ### React Pattern: Singleton Client
 
@@ -113,75 +117,126 @@ export async function getBalance(address: string): Promise<string> {
 
 ---
 
+## Chain ID Check and Async Signing
+
+Before its first signature a client reads the chain ID of its node and keeps it. Every signing path (`signTransaction`, `transaction.build.signedTransaction` and `sendTxnPayload`, the signing methods of a built transaction, the `transaction.submit` methods that take a `senderAccount`, the coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`) throws `SupraChainIdMismatchError` before signing when the configured chain ID or the transaction's chain ID is not the node's. Nothing is signed or sent in that case.
+
+Signing methods return promises: `await` `signTransaction`, `transaction.build.signedTransaction`, `transaction.build.sendTxnPayload` and the `signTransaction`, `signedTransaction` and `sendTxnPayload` methods of a built transaction.
+
+```typescript
+import { SupraChainIdMismatchError } from "supra-ts-sdk";
+
+const checked = new SupraClient({ rpcUrl: "http://localhost:27001", chainId: 8 });
+
+try {
+    await checked.validateChainId();   // optional: reports a mismatch before any transaction is built
+} catch (error) {
+    if (error instanceof SupraChainIdMismatchError) {
+        console.log(error.configuredChainId, error.nodeChainId);
+    }
+}
+
+const nodeChainId = (await checked.getChainId()).value; // getChainId() is async: the node's chain ID
+```
+
+`verifyChainId: false` turns the check off for offline signing: the client signs with its configured chain ID and sends no request to do so.
+
+```typescript
+const offline = new SupraClient({ network: Network.MAINNET, verifyChainId: false });
+const sender = new SupraAccount();
+
+const rawTxn = offline.transaction.build.rawTxnObject({
+    senderAddress: sender.address(),
+    senderSequenceNumber: 0n,   // the account's sequence number, obtained separately
+    function: "0x1::supra_account::transfer",
+    functionTypeArgs: [],
+    functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
+    optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n },
+});
+const signedTransaction = await rawTxn.signedTransaction(sender);
+```
+
+---
+
 ## Account Module
 
 All account methods accept `accountAddress` as `string` (hex) or `HexString`.
 
 ```typescript
-// Check if account exists
+// Check if an account exists: false when the node has no such account.
+// Any other failure (unreachable node, timeout, 429, 5xx) is thrown and does not mean the account is absent.
 const exists: boolean = await supra.account.isAccountExists({
-    accountAddress: "0x88fbd33f54e1126269769780feb24480428179f552e2313fbe571b72e62a1c55",
+    accountAddress: "0x1",
 });
 
-// Get account info (sequence number, auth key)
+// Get account info (sequence number, auth key); throws SupraAPIError for an account that does not exist
 const info: AccountData = await supra.account.getAccountInfo({
-    accountAddress: address,
+    accountAddress: account.address(),
 });
 // info.sequence_number is bigint
 
-// Get SUPRA coin balance
+// Get the SUPRA balance in quants: the CoinStore balance plus the fungible asset store balance
 const balance: bigint = await supra.account.getAccountSupraCoinBalance({
-    accountAddress: address,
+    accountAddress: account.address(),
 });
 
-// Get any coin balance (legacy coin type or fungible asset address)
-const balance: bigint = await supra.account.getAccountCoinBalance({
-    accountAddress: address,
-    asset: "0x1::supra_coin::SupraCoin",  // MoveStructId for legacy
+// Get the SUPRA balance by form
+const { total, coin, fungibleAsset } = await supra.account.getAccountSupraBalance({
+    accountAddress: account.address(),
 });
-const balance: bigint = await supra.account.getAccountCoinBalance({
-    accountAddress: address,
-    asset: "0xa",  // address for fungible asset
+
+// Get the balance of a coin type (total of CoinStore and paired fungible asset store)
+const coinBalance: bigint = await supra.account.getAccountCoinBalance({
+    accountAddress: account.address(),
+    asset: "0x1::supra_coin::SupraCoin",
+});
+
+// Get the balance of a fungible asset: its primary store only, so 0xa is 0 for SUPRA that was never migrated
+const assetBalance: bigint = await supra.account.getAccountCoinBalance({
+    accountAddress: account.address(),
+    asset: "0xa",
 });
 
 // Get account resources (paginated)
 const { response: resources, cursor } = await supra.account.getAccountResources({
-    accountAddress: address,
+    accountAddress: account.address(),
     options: { count: 10 },
 });
 
 // Get specific resource
 const resource = await supra.account.getAccountResource<{ coin: { value: string } }>({
-    accountAddress: address,
+    accountAddress: account.address(),
     resourceType: "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
 });
 
 // Get account modules (paginated)
 const { response: modules } = await supra.account.getAccountModules({
-    accountAddress: address,
+    accountAddress: "0x1",
 });
 
 // Get specific module
 const module = await supra.account.getAccountModule({
-    accountAddress: address,
+    accountAddress: "0x1",
     moduleName: "acl",
 });
 
 // Get account transactions (paginated)
 const { response: txns } = await supra.account.getAccountTransactions({
-    accountAddress: address,
+    accountAddress: account.address(),
     options: { count: 10, ascending: false },
 });
 
-// Get coin transaction count
+// Count the coin types the account holds (SUPRA counts once, in either form)
 const count: number = await supra.account.getAccountCoinsCount({
-    accountAddress: address,
+    accountAddress: account.address(),
 });
 ```
 
 ---
 
 ## Coin Module
+
+`transferSupraCoin` and `transferCoin` take the amount in the coin's smallest unit (quants for SUPRA) as `number` (a safe integer) or `bigint`. `transferSupraCoin` moves SUPRA held in the `CoinStore` or in the fungible asset store.
 
 ```typescript
 // Get coin metadata
@@ -190,11 +245,11 @@ const coinInfo: CoinInfo = await supra.coin.getCoinInfo({
 });
 // { name: string, symbol: string, decimals: number }
 
-// Transfer SUPRA coin (high-level, handles build+submit)
-const txn: TransactionResponse = await supra.coin.transferSupraCoin({
+// Transfer SUPRA (high-level: estimates gas, takes the sequence number, signs and submits)
+const transfer: SubmitTransactionResponse = await supra.coin.transferSupraCoin({
     senderAccount: account,  // SupraAccount instance
-    receiverAccountAddress: "0x...",
-    amount: 10000,  // in smallest unit (octas)
+    receiverAccountAddress: "0x2",
+    amount: 10_000n,         // quants
     optionalTransactionArgs: {
         enableTransactionWaitAndSimulationArgs: {
             enableTransactionSimulation: true,
@@ -204,10 +259,10 @@ const txn: TransactionResponse = await supra.coin.transferSupraCoin({
 });
 
 // Transfer any coin type
-const txn: TransactionResponse = await supra.coin.transferCoin({
+const coinTransfer: SubmitTransactionResponse = await supra.coin.transferCoin({
     senderAccount: account,
-    receiverAccountAddress: "0x...",
-    amount: 10000,
+    receiverAccountAddress: "0x2",
+    amount: 10_000n,
     coinType: "0x1::supra_coin::SupraCoin",
     optionalTransactionArgs: {
         enableTransactionWaitAndSimulationArgs: {
@@ -221,25 +276,33 @@ const txn: TransactionResponse = await supra.coin.transferCoin({
 
 ## Fungible Asset Module
 
+SUPRA that an account received as a coin (for example from the faucet) is in its `CoinStore`. The fungible asset transfers move only the primary fungible store. `transferSupraFungibleAsset`, and `transferFungibleAsset` with the SUPRA fungible asset address (`0xa`), read the sender's fungible asset balance first and throw `SupraInsufficientFungibleAssetBalanceError` without submitting when it is below `amount`. `migrateCoinToFungibleStore` moves the coin balance into the fungible store; `supra.coin.transferSupraCoin` moves SUPRA held in either form.
+
 ```typescript
 // Get fungible asset metadata
-const metadata: CoinInfo = await supra.fungibleAsset.getFungibleAssetMetadata({
+const metadata = await supra.fungibleAsset.getFungibleAssetMetadata({
     assetAddress: "0xa",
 });
 
-// Transfer SUPRA as fungible asset
-const txn = await supra.fungibleAsset.transferSupraFungibleAsset({
+// Move the SUPRA held in the CoinStore to the fungible asset store
+await supra.fungibleAsset.migrateCoinToFungibleStore({
     senderAccount: account,
-    receiverAccountAddress: "0x...",
-    amount: 10000n,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+// Transfer SUPRA as fungible asset (amount in quants)
+const faTransfer = await supra.fungibleAsset.transferSupraFungibleAsset({
+    senderAccount: account,
+    receiverAccountAddress: "0x2",
+    amount: 10_000n,
 });
 
 // Transfer any fungible asset
-const txn = await supra.fungibleAsset.transferFungibleAsset({
+const assetTransfer = await supra.fungibleAsset.transferFungibleAsset({
     senderAccount: account,
-    receiverAccountAddress: "0x...",
-    amount: 10000n,
-    assetAddress: "0x...",
+    receiverAccountAddress: "0x2",
+    amount: 10_000n,
+    assetAddress: "0x1234",
 });
 ```
 
@@ -250,17 +313,17 @@ const txn = await supra.fungibleAsset.transferFungibleAsset({
 Two approaches: typed `view` and untyped `viewRaw`.
 
 ```typescript
-// Typed view - returns values converted to TS types
+// Typed view - arguments are encoded and results converted by the function's ABI
 const [balance] = await supra.methods.view<[bigint]>({
     function: "0x1::coin::balance",
-    functionArguments: ["0x..."],  // account address
+    functionArguments: ["0x1"],  // account address
     typeArguments: [new TypeTagParser("0x1::supra_coin::SupraCoin").parseTypeTag()],
 });
 
 // Raw view - returns raw JSON values (u64/u128/u256 come as strings)
 const [balanceRaw] = await supra.methods.viewRaw({
     function: "0x1::coin::balance",
-    functionArguments: ["0x..."],
+    functionArguments: ["0x1"],
     typeArguments: ["0x1::supra_coin::SupraCoin"],
 });
 ```
@@ -337,14 +400,14 @@ const { contracts } = supra.contract.fromABI([MY_CONTRACT_ABI] as const);
 
 // View function call (read-only)
 const [balance] = await contracts.coin.view.balance({
-    functionArguments: ["0x..."],
+    functionArguments: ["0x1"],
     typeArguments: ["0x1::supra_coin::SupraCoin"],
 });
 // balance is typed as bigint (from u64 return)
 
 // Entry function call (state-changing, requires signer)
 const txn = await contracts.coin.entry.transfer({
-    functionArguments: [account, "0x...", 1000n],
+    functionArguments: [account, "0x2", 1000n],
     typeArguments: [new TypeTagParser("0x1::supra_coin::SupraCoin").parseTypeTag()],
     enableTransactionWaitAndSimulationArgs: {
         enableTransactionSimulation: true,
@@ -357,7 +420,7 @@ const txn = await contracts.coin.entry.transfer({
 - ABI array must be `as const` for type inference to work
 - `is_view: true` functions appear under `.view`, `is_entry: true` under `.entry`
 - `&signer` params in entry functions expect a `SupraAccount` instance
-- Entry functions accept optional `optionalTransactionPayloadArgs` and `enableTransactionWaitAndSimulationArgs`
+- Entry functions accept optional `optionalTransactionPayloadArgs` and `enableTransactionWaitAndSimulationArgs`; they estimate the max gas, take the sequence number from the client's counter and check the chain ID like the transfers
 
 ---
 
@@ -366,31 +429,35 @@ const txn = await contracts.coin.entry.transfer({
 ### 1. Build
 
 ```typescript
-// High-level simple build (auto-serializes args based on ABI or type inference)
-const rawTxn = await supra.transaction.build.simple({
+// High-level simple build (auto-serializes args based on the function's ABI, which it reads from the node)
+const simpleTxn = await supra.transaction.build.simple({
     senderAddress: account.address(),
     senderSequenceNumber: (await supra.account.getAccountInfo({
         accountAddress: account.address(),
     })).sequence_number,
     function: "0x1::supra_account::transfer_coins",
     functionTypeArgs: ["0x1::supra_coin::SupraCoin"],
-    functionArgs: ["0x...", 10000],
+    functionArgs: ["0x2", 10000n],
 });
 
-// Low-level build (pre-serialized BCS args)
+// Low-level build (pre-serialized BCS args, no request)
 const rawTxn = supra.transaction.build.rawTxnObject({
     senderAddress: account.address(),
-    senderSequenceNumber: seqNum,
-    function: "0x1::supra_account::transfer" as MoveFunctionId,
+    senderSequenceNumber: 0n,   // the account's next sequence number
+    function: "0x1::supra_account::transfer",
     functionTypeArgs: [],
-    functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000)],
+    functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
 });
 ```
 
+The builders take the sequence number as `senderSequenceNumber`; they do not use the client's counter.
+
 ### 2. Simulate
 
+`simulate` throws `SupraSimulationFailedError` when the simulated status is not `Success`.
+
 ```typescript
-// Build a sendTxnPayload for simulation
+// Build a sendTxnPayload for simulation (signing is async)
 const sendPayload = await supra.transaction.build.sendTxnPayload({
     senderAccount: account,
     rawTxn: rawTxn,
@@ -401,14 +468,16 @@ const simResult = await supra.transaction.simulate.simple({
 });
 
 // Or use shorthand on ExtendedRawTransaction
-const simResult = await rawTxn.simulate(account);
+const simResult2 = await rawTxn.simulate(account);
 ```
 
 ### 3. Submit
 
+The `submit` methods that take a `senderAccount` sign with it and check the chain ID first.
+
 ```typescript
 // Submit raw transaction (signs internally)
-const txn = await supra.transaction.submit.submitRawTransaction({
+const submitted = await supra.transaction.submit.submitRawTransaction({
     senderAccount: account,
     rawTransaction: rawTxn,
     enableTransactionWaitAndSimulationArgs: {
@@ -418,43 +487,108 @@ const txn = await supra.transaction.submit.submitRawTransaction({
 });
 
 // Submit serialized bytes
-const txn = await supra.transaction.submit.submitSerializedRawTransaction({
+const submittedBytes = await supra.transaction.submit.submitSerializedRawTransaction({
     senderAccount: account,
-    serializedRawTransaction: rawTxn.toBytes(),
+    serializedRawTransaction: BCS.bcsToBytes(rawTxn),
     enableTransactionWaitAndSimulationArgs: {
         enableWaitForTransaction: true,
     },
 });
 
-// Submit with pre-computed signature
+// Submit with a signature made elsewhere
 const signature = await supra.transaction.signTransaction({
     senderAccount: account,
     rawTxn: rawTxn,
 });
-const txn = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
+const submittedSigned = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
     senderPubkey: account.pubKey(),
     signature: signature,
-    serializedRawTransaction: rawTxn.toBytes(),
+    serializedRawTransaction: BCS.bcsToBytes(rawTxn),
 });
 ```
+
+Outcome of a submission (every submit helper, transfer, `publishPackage` and contract entry function):
+- With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws `SupraSimulationFailedError` and nothing is submitted.
+- With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed and failed) and `Invalid` (discarded) throw `SupraTransactionFailedError` unless `checkSuccess: false` is passed. No final status within `waitTimeoutMs` throws `SupraTransactionTimeoutError`.
+- Without `enableWaitForTransaction`, the call returns the transaction as the node reports it right after the submission (usually `Pending`), or `{ hash, status: "NotReadBack", readError }` when that read fails; the node has accepted the transaction in both cases.
 
 ### 4. Wait & Query
 
 ```typescript
 // Wait for transaction confirmation
 const committed: CommittedTransactionResponse = await supra.transaction.waitForTransaction({
-    transactionHash: txn.hash,
+    transactionHash: submitted.hash,
     options: { timeoutMs: 30_000, checkSuccess: true },
 });
 
 // Check if pending
 const isPending: boolean = await supra.transaction.isPendingTransaction({
-    transactionHash: "0x...",
+    transactionHash: submitted.hash,
 });
 
 // Get transaction by hash
 const txnData = await supra.transaction.getTransactionByHash({
-    transactionHash: "0x...",
+    transactionHash: submitted.hash,
+});
+```
+
+---
+
+## Sequence Numbers
+
+A transaction executes only when its sequence number is the account's next number. The transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
+
+- The first use reads the number from the chain. Each transaction the node accepts advances the counter, so transactions sent without waiting get consecutive numbers, also with `Promise.all`.
+- A transaction the node refuses for another reason (for example an insufficient balance) gives its number back.
+- When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number beyond what it queues, or a number that already has a pending transaction), the client reads the number from the chain again and sends the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
+- `supra.resetSequenceNumber(address)` forgets the counter of an account. Call it after the account sent transactions by other means.
+- `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given, without using or changing the counter.
+
+The max gas estimate simulates against committed state. A transaction sent while an earlier one of the account has not committed is simulated with the account's number on the chain and submitted with the counter's number, so pipelined helper calls work with the default gas settings. A transaction that depends on an earlier uncommitted one (for example a call to a module that the earlier one publishes) fails the estimate and throws `SupraSimulationFailedError`; pass `maxGas` for it.
+
+A node holds at most 25 queued transactions per account by default, so wait for commits (`enableWaitForTransaction: true`) when sending more than that from one account.
+
+```typescript
+// Ten transfers from one account, accepted without waiting for each other
+const responses = await Promise.all(
+    Array.from({ length: 10 }, () =>
+        supra.coin.transferSupraCoin({ senderAccount: account, receiverAccountAddress: "0x2", amount: 100n }),
+    ),
+);
+
+// An explicit sequence number
+await supra.coin.transferSupraCoin({
+    senderAccount: account,
+    receiverAccountAddress: "0x2",
+    amount: 100n,
+    optionalTransactionArgs: { optionalTransactionPayloadArgs: { sequenceNumber: 5n } },
+});
+
+supra.resetSequenceNumber(account.address());
+```
+
+---
+
+## Gas
+
+Each transaction has a max gas (gas units), a gas unit price (quants) and an expiration time. `optionalTransactionPayloadArgs` sets `maxGas`, `gasUnitPrice` and `txExpiryTime` per transaction on every method that builds a transaction; `SupraConfig` sets `maxGas` and `minGasUnitPrice` for the client. A per-call setting replaces the client's. The SDK does not modify the options object.
+
+The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas used. Without a `maxGas` on the call or the client:
+
+- The transfers, `publishPackage` and contract entry functions estimate it: they read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and use `ceil(gas used × 1.5)` (`SupraConfig.maxGasEstimateMultiplier` replaces 1.5), at least 1,500 units and at most what the balance pays for. A simulation whose status is not `Success` (abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and nothing is submitted. When the balance read or the simulation request fails, `DEFAULT_MAX_GAS_UNITS` applies, at most what the balance pays for.
+- `transaction.build.simple` has no key pair to simulate with: it uses `DEFAULT_MAX_GAS_UNITS`, at most what the sender's balance pays for.
+- `rawTxnObject`, `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and `multisigProposalTxRawTxnObject` make no request and use `DEFAULT_MAX_GAS_UNITS`.
+
+`DEFAULT_MAX_GAS_UNITS` is 20,000 units. At the default gas unit price of 100,000 quants the node requires the sender's SUPRA balance to cover 20,000 × 100,000 = 2,000,000,000 quants (20 SUPRA) at validation, so a sender with less must set `maxGas` on the builders that make no request. `estimateMaxGas: false`, per call or in `SupraConfig`, turns the estimate off and uses `DEFAULT_MAX_GAS_UNITS` without a request.
+
+```typescript
+await supra.coin.transferSupraCoin({
+    senderAccount: account,
+    receiverAccountAddress: "0x2",
+    amount: 100n,
+    optionalTransactionArgs: {
+        optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n },
+    },
 });
 ```
 
@@ -463,10 +597,16 @@ const txnData = await supra.transaction.getTransactionByHash({
 ## Sponsored Transactions
 
 ```typescript
-const rawTxn = supra.transaction.build.rawTxnObject({ /* ... */ });
+const sponsoredTxn = supra.transaction.build.rawTxnObject({
+    senderAddress: account.address(),
+    senderSequenceNumber: 0n,   // the account's next sequence number
+    function: "0x1::supra_account::transfer",
+    functionTypeArgs: [],
+    functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+});
 
 const feePayerPayload = new TxnBuilderTypes.FeePayerRawTransaction(
-    rawTxn,
+    sponsoredTxn,
     [],
     new TxnBuilderTypes.AccountAddress(feePayerAccount.address().toUint8Array()),
 );
@@ -481,10 +621,10 @@ const feePayerAuth = await supra.transaction.signTransaction({
     rawTxn: feePayerPayload,
 });
 
-const txn = await supra.transaction.submit.submitSponsorTransaction({
+const sponsored = await supra.transaction.submit.submitSponsorTransaction({
     feePayerAddress: feePayerAccount.address().toString(),
     secondarySignersAccountAddress: [],
-    rawTxn: rawTxn,
+    rawTxn: sponsoredTxn,
     senderAuthenticator: senderAuth,
     feePayerAuthenticator: feePayerAuth,
     secondarySignersAuthenticator: [],
@@ -501,7 +641,7 @@ const txn = await supra.transaction.submit.submitSponsorTransaction({
 ```typescript
 const { response: events, cursor } = await supra.events.getEventsByType({
     eventType: "0x1::fungible_asset::Deposit",
-    options: { limit: 100, startHeight: 1000, endHeight: 2000 },
+    options: { limit: 100, startHeight: 1000, endHeight: 2000 }, // endHeight is exclusive
 });
 ```
 
@@ -511,16 +651,18 @@ const { response: events, cursor } = await supra.events.getEventsByType({
 
 ```typescript
 const latestBlock = await supra.block.getLatestBlock();
-const block = await supra.block.getBlockByHeight({
+const blockByHeight = await supra.block.getBlockByHeight({
     height: 1000,
     options: { withFinalizedTransactions: true },
 });
-const block = await supra.block.getBlockByHash({ blockHash: "0x..." });
+const blockByHash = await supra.block.getBlockByHash({ blockHash: "0x1234" });
 const txHashes = await supra.block.getTransactionsByBlockHash({
-    blockHash: "0x...",
+    blockHash: "0x1234",
     options: { type: "user" },
 });
 ```
+
+Nodes from v12 onwards also return settlement transactions; they have no `header`, `payload` or `authenticator`, so narrow on `txn_type` (`TransactionType.User` or `TransactionType.Auto`) before reading those fields.
 
 ---
 
@@ -528,10 +670,10 @@ const txHashes = await supra.block.getTransactionsByBlockHash({
 
 ```typescript
 const item = await supra.table.getTableItem({
-    handle: "0x...",
+    handle: "0x1234",
     data: {
         key_type: "u64",
-        value_type: "0x...::pool::Position",
+        value_type: "0x1234::pool::Position",
         key: "1",
     },
 });
@@ -539,13 +681,26 @@ const item = await supra.table.getTableItem({
 
 ---
 
-## Faucet (Testnet Only)
+## Faucet
+
+`fundAccountWithFaucet` sends the request on every network; a node that does not serve a faucet (Mainnet nodes) answers with an error status, thrown as `SupraAPIError`. Devnet and Testnet serve one. The faucet answers before its transaction executes, so wait for the returned hash before spending the funds.
 
 ```typescript
-const result = await supra.faucet.fundAccountWithFaucet({
-    accountAddress: "0x...",
-});
-// result.hash contains the faucet transaction hash
+import { SupraFaucetUnavailableError } from "supra-ts-sdk";
+
+try {
+    const result = await supra.faucet.fundAccountWithFaucet({
+        accountAddress: account.address(),
+    });
+    // result.hash is the faucet transaction hash
+    await supra.transaction.waitForTransaction({ transactionHash: result.hash });
+} catch (error) {
+    if (error instanceof SupraFaucetUnavailableError) {
+        // the node answered "TryLater": no faucet account is free; repeat the request later
+    } else {
+        throw error;
+    }
+}
 ```
 
 ---
@@ -558,45 +713,72 @@ const result = await supra.faucet.fundAccountWithFaucet({
 import { SupraAccount } from "supra-ts-sdk";
 
 // Generate new account
-const account = new SupraAccount();
+const generated = new SupraAccount();
 
 // From existing keys
-const account = SupraAccount.fromSupraAccountObject({
+const restored = SupraAccount.fromSupraAccountObject({
     address: "0x...",
     privateKeyHex: "PRIVATE_KEY" + "PUBLIC_KEY_WITHOUT_0x",
     publicKeyHex: "0x" + "PUBLIC_KEY_WITHOUT_0x",
 });
 
 // Get address
-const address: HexString = account.address();
-const addressStr: string = account.address().toString();
+const address: HexString = generated.address();
+const addressStr: string = generated.address().toString();
 ```
 
 ---
 
 ## Error Handling
 
+Every error the SDK raises on its own behalf derives from `SupraError`. Errors that carry an error status of the node derive from `SupraAPIError`.
+
+| Class | Raised when |
+|---|---|
+| `SupraAPIError` | the node answers with an error status (`status`, `statusText`, `url`, `data`, `major_status`, `sub_status`) |
+| `SupraNotFoundError`, `SupraGoneError`, `SupraRateLimitError`, `SupraServiceUnavailableError` (extend `SupraAPIError`) | HTTP 404, 410 (pruned data), 429 (`retryAfterSeconds`), 503 |
+| `SupraTimeoutError`, `SupraNetworkError` | a request times out, or fails before the node answers |
+| `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet answers `"TryLater"`, or answers unexpectedly |
+| `SupraChainIdMismatchError` | before signing, the configured or the transaction's chain ID is not the node's |
+| `SupraSimulationFailedError` | a simulation returns a status other than `Success` |
+| `SupraTransactionFailedError` | a transaction the SDK waited for ends with `Fail` or `Invalid` |
+| `SupraTransactionTimeoutError` | a transaction the SDK waited for has no final status within the wait timeout |
+| `SupraInsufficientFungibleAssetBalanceError` | a SUPRA fungible asset transfer exceeds the sender's fungible asset balance |
+
+`SupraAPIError.message` is the node's message when the error body has one. `major_status` is the name of the Move VM status the message reports (for example `SEQUENCE_NUMBER_TOO_OLD`, `ABORTED`) and `sub_status` is the abort code of an `ABORTED` status; both are `undefined` when the message names no status.
+
 ```typescript
-import { SupraAPIError, MoveVmError, isMoveVmError } from "supra-ts-sdk";
+import {
+    SupraAPIError,
+    SupraTransactionFailedError,
+    MoveVmError,
+    isMoveVmError,
+} from "supra-ts-sdk";
 
 try {
-    const balance = await supra.account.getAccountSupraCoinBalance({
-        accountAddress: "0xinvalid",
+    await supra.coin.transferSupraCoin({
+        senderAccount: account,
+        receiverAccountAddress: "0x2",
+        amount: 100n,
+        optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
     });
 } catch (err) {
-    if (err instanceof SupraAPIError) {
+    if (err instanceof SupraTransactionFailedError) {
+        console.error(err.hash, err.status, err.vm_status);
+    } else if (err instanceof SupraAPIError) {
         console.error(err.status);       // HTTP status code
         console.error(err.statusText);   // HTTP status text
         console.error(err.url);          // Request URL
         console.error(err.data);         // Response body
-        console.error(err.major_status); // Move VM error code (if applicable)
+        console.error(err.major_status); // Move VM status name, if the message names one
 
         if (isMoveVmError(err.major_status)) {
-            // Handle specific Move VM errors
             if (err.major_status === MoveVmError.INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE) {
-                // ...
+                // the balance does not cover max gas × gas unit price
             }
         }
+    } else {
+        throw err;
     }
 }
 ```
@@ -605,7 +787,7 @@ try {
 
 ## Pagination Pattern
 
-All paginated methods return `PaginatedResponse<T>`:
+All paginated methods return `PaginatedResponse<T>`: `{ response, cursor }`. Pass `cursor` back unchanged (as `start`, or `cursor` for `getAccountAutoTransactions`) until it is `undefined`. A page can be empty and still carry a cursor, so stop only on `undefined`.
 
 ```typescript
 // Fetch all pages
@@ -613,13 +795,13 @@ let cursor: string | undefined;
 const allResources = [];
 
 do {
-    const { response, cursor: nextCursor } = await supra.account.getAccountResources({
-        accountAddress: address,
+    const page = await supra.account.getAccountResources({
+        accountAddress: account.address(),
         options: { count: 25, start: cursor },
     });
-    allResources.push(...response);
-    cursor = nextCursor;
-} while (cursor);
+    allResources.push(...page.response);
+    cursor = page.cursor;
+} while (cursor !== undefined);
 ```
 
 ---
@@ -646,7 +828,7 @@ export function useAccountBalance(address: string | undefined) {
     });
 }
 
-export function useCoinInfo(coinType: string) {
+export function useCoinInfo(coinType: MoveStructId) {
     return useQuery({
         queryKey: ["supra", "coinInfo", coinType],
         queryFn: async () => {
@@ -661,6 +843,8 @@ export function useCoinInfo(coinType: string) {
 
 ```typescript
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { getSupraClient } from "@/lib/supra";
+import type { SupraAccount } from "supra-ts-sdk";
 
 export function useTransferSupra() {
     const queryClient = useQueryClient();
@@ -696,12 +880,9 @@ export function useTransferSupra() {
 
 1. **`bigint` serialization**: JSON.stringify cannot handle `bigint`, which built transactions, `sendTxnPayload` results, balances and view results hold. `stringifyWithBigInt` (exported by the SDK) writes them as exact JSON numbers, the form the node accepts in a request body. When passing data from server to client in Next.js, convert to `string` first. Use a custom serializer or SuperJSON if needed.
 2. **Private keys on client**: Never expose `SupraAccount` private keys in client-side code. Sign transactions server-side or use a wallet adapter.
-3. **RPC rate limits**: Create one `SupraClient` instance and reuse it. Do not create a new client per request.
+3. **RPC rate limits**: Create one `SupraClient` instance and reuse it. Do not create a new client per request. `retry` retries GET requests only; submit, simulate and view POST requests are never retried.
 4. **`as const` for ABIs**: The ABI proxy type system requires `as const` assertion on the ABI array for TypeScript to infer the literal types.
 5. **Pagination limits**: The `count` option accepts 1-100 per page.
-6. **Transaction wait**: By default `enableWaitForTransaction` is `false`. Pass `true` to get a `CommittedTransactionResponse` instead of a `PendingTransactionResponse`.
-7. **Gas**: `maxGas`, `gasUnitPrice` and `txExpiryTime` in `optionalTransactionPayloadArgs` apply to the transaction on every method that builds one (transfers, `publishPackage`, contract entry functions, `transaction.build.*`) and replace the client's `maxGas` / `minGasUnitPrice` from `SupraConfig`. The SDK does not modify the options object. Without `maxGas` on the call or the client:
-   - the transfers, `publishPackage` and contract entry functions simulate the transaction and use `ceil(gas used × 1.5)` (`SupraConfig.maxGasEstimateMultiplier`), at least 1,500 units and at most what the sender's SUPRA balance pays for at the gas unit price; a simulation whose status is not `Success` (abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` before submitting, while a balance-read or simulation request error falls back to `DEFAULT_MAX_GAS_UNITS` at most what the balance pays for;
-   - `transaction.build.simple` uses `DEFAULT_MAX_GAS_UNITS` (20,000), at most what the sender's balance pays for;
-   - `rawTxnObject`, `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and `multisigProposalTxRawTxnObject` use `DEFAULT_MAX_GAS_UNITS`; a sender with less than 20 SUPRA must set `maxGas` there.
-   `estimateMaxGas: false` (per call or in `SupraConfig`) uses `DEFAULT_MAX_GAS_UNITS` without a request. The node requires the sender's balance to pay for `max gas × gas unit price` (20 SUPRA for 20,000 units at the minimum price of 100,000 quants) and charges the gas used. The default gas unit price is 100,000 quants.
+6. **Transaction wait**: By default `enableWaitForTransaction` is `false`; the call returns the transaction as the node reports it right after the submission (usually `Pending`). Pass `true` to get the `Success` transaction, or a thrown `SupraTransactionFailedError` or `SupraTransactionTimeoutError`.
+7. **Gas**: see the Gas section. The default gas unit price is 100,000 quants and `DEFAULT_MAX_GAS_UNITS` is 20,000, which needs a balance of 20 SUPRA at validation; the estimate used by the transfers, `publishPackage` and contract entry functions needs only what the transaction uses times 1.5.
+8. **Node versions**: a v12 node answers some conditions with a different HTTP status than a v11 node (for example an absent account is 404 on v12 and 400 on v11). `isAccountExists` returns `false` on both; branch on the error class, not on a specific `status`, where possible.

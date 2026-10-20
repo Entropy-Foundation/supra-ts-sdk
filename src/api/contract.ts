@@ -52,15 +52,42 @@ export class Contract {
 
     /**
      * The fromABI function takes an array of MoveModule (Contract ABI) objects as input.
+     *
+     * `contracts.<module name>.view.<function>(args)` calls a view function and returns its results converted to
+     * TypeScript values. `contracts.<module name>.entry.<function>(args)` builds, signs and submits an entry function
+     * transaction: the `&signer` argument is the sender's `SupraAccount`, `optionalTransactionPayloadArgs` and
+     * `enableTransactionWaitAndSimulationArgs` are optional, the sequence number comes from the client's counter unless
+     * `optionalTransactionPayloadArgs.sequenceNumber` is set, and the client checks the chain ID of its node before it
+     * signs; see {@link SupraConfig}. Without a `maxGas` the max gas is estimated (see
+     * {@link OptionalTransactionPayloadArgs}).
      * @beta
      * @param abis - An array of MoveModule (Contract ABI) objects.
      * @returns An object with a contracts property which contains view and entry properties.
+     * @throws {Error} From a call, when the module name is not in `abis`.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { Network, SupraClient } from "supra-ts-sdk";
+     *
+     * const COIN_ABI = {
+     *     address: "0x1",
+     *     name: "coin",
+     *     friends: [],
+     *     exposed_functions: [
+     *         {
+     *             name: "balance",
+     *             visibility: "public",
+     *             is_entry: false,
+     *             is_view: true,
+     *             generic_type_params: [{ constraints: [] }],
+     *             params: ["address"],
+     *             return: ["u64"],
+     *         },
+     *     ],
+     *     structs: [],
+     * } as const;
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const instance = supra.contract.fromABI([COIN_ABI] as const);
      *    let balance = await instance.contracts.coin.view.balance({

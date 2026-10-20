@@ -35,9 +35,10 @@ export class Faucet {
 
     /**
      * Fund an account with the node's faucet. The request is sent on any network; a node that does not serve
-     * the faucet answers with an error status, which is thrown as a SupraAPIError.
+     * the faucet answers with an error status, which is thrown as a SupraAPIError. The faucet answers before its
+     * transaction executes: pass the returned hash to `supra.transaction.waitForTransaction` before spending the funds.
      * @param args.accountAddress - The address to fund.
-     * @returns A Promise that resolves to a FaucetTransactionResponse object.
+     * @returns A Promise that resolves to a FaucetTransactionResponse object, the hash of the faucet transaction.
      * @throws SupraFaucetUnavailableError when the node has no free faucet account (answer `"TryLater"`).
      * @throws SupraFaucetResponseError when the node answers with an unexpected body.
      * @example

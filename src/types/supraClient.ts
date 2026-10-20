@@ -31,7 +31,8 @@ export interface RetryConfig {
  * `SupraTransactionTimeoutError`.
  *
  * Every setting belongs to the client it is passed to: `network`, `rpcUrl`, `chainId`, `maxGas`,
- * `minGasUnitPrice`, `timeoutMs`, `retry` and `waitTimeoutMs`. The client copies the configuration, so later changes
+ * `minGasUnitPrice`, `estimateMaxGas`, `maxGasEstimateMultiplier`, `timeoutMs`, `retry`, `waitTimeoutMs` and
+ * `verifyChainId`. The client copies the configuration, so later changes
  * to the object passed in do not reach it, and two clients never share settings, including two clients of the same
  * predefined network. `rpcUrl` must be an absolute `http:` or `https:` URL, with or without trailing slashes and with
  * or without a path prefix; the constructor throws a `TypeError` otherwise. `chainId` must be an integer from 0 to

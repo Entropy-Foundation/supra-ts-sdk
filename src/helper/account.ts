@@ -8,11 +8,10 @@ import type { AccountAddressInput } from "../types/account";
  * @throws {RangeError} When the address has more than 64 hex digits
  * @example
  * ```typescript
- * import { functions } from "supra-l1-sdk";
- * 
- * const address = "1234...";
- * const standardizedAddress = functions.standardizeAddress(address);
- * console.log(standardizedAddress); // "0x1234..."
+ * import { standardizeAddress } from "supra-ts-sdk";
+ *
+ * const standardizedAddress = standardizeAddress("0x1234");
+ * console.log(standardizedAddress); // "0x" followed by 64 hex digits, "1234" at the end
  * ```
  */
 export function standardizeAddress(address: AccountAddressInput): string {

@@ -105,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pnpm examples` runs every example in `examples/` against the network that `SUPRA_RPC_URL`/`SUPRA_CHAIN_ID` or
   `SUPRA_NETWORK` names (default Devnet). The examples create or query the data they need instead of using hard-coded
   hashes, heights and Testnet addresses. CI type-checks the examples, and a scheduled workflow runs them on Devnet.
+- `pnpm check:jsdoc` type-checks the ```` ```typescript ```` blocks of the JSDoc under `src/` and of `SKILL.md`
+  against `src/index.ts`; CI runs it with the lint and type-check steps.
 
 ### Changed
 
@@ -327,6 +329,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TypeTagParserError: Invalid type tag.`
 - Script arguments of type `u16` are accepted by `parseScriptArgs`; previously they threw
   `Invalid script argument variant`. `u32` and `u256` script arguments are covered by tests.
+- Every example in the JSDoc of the public API compiles against the 2.0.0 API (imports from `supra-ts-sdk`, awaited
+  signing, current option names, self-contained accounts and addresses); several imported from `supra-l1-sdk` or
+  called methods that do not exist. The descriptions of `getCoinInfo`, the transfers, `publishPackage`, the
+  `transaction.submit` methods, `fundAccountWithFaucet`, `methods.view`, `getGasPrice`, `getMinGasUnitPrice` and the
+  `SupraClient` constructor state the behaviour of 2.0.0: units, the sequence-number counter, the chain ID check, the
+  errors thrown, and where the gas unit price comes from.
+- `.claude/skills/supra-ts-sdk/SKILL.md`, which the package ships, describes 2.0.0: gas estimation, per-call gas
+  settings and the 20,000-unit default of the builders, the faucet on every network and `SupraFaucetUnavailableError`,
+  `isAccountExists`, the typed errors, async signing, the chain ID check, the sequence-number counter,
+  `Network.DEVNET`, `migrateCoinToFungibleStore`, cursors, and quants as the smallest SUPRA unit. Its code blocks
+  type-check.
 
 ### Removed
 
@@ -334,6 +347,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS` and
   `DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS`; the max gas estimate replaces the transfers'
   receiver-dependent max gas.
+- **Breaking:** the constants `DEFAULT_CHAIN_ID`, `MAX_RETRY_FOR_TRANSACTION_COMPLETION`,
+  `DELAY_BETWEEN_POOLING_REQUEST` and `DEFAULT_RECORDS_ITEMS_COUNT`. No function of the SDK read them; the chain ID
+  comes from `SupraConfig` and the wait is set by `waitTimeoutMs`.
 
 ## [1.2.0] - 2026-09-22
 

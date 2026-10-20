@@ -60,22 +60,31 @@ export class Submit {
 
 
     /**
-     * Send `entry_function_payload` type tx using raw transaction data
+     * Signs a raw transaction with the sender's key and submits it. The client checks the chain ID of its node before
+     * it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The sender account
      * @param args.rawTransaction - The raw transaction to be submitted
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
+     * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // an account that holds SUPRA
+     *
      * async function runExample() {
-     *  
-     *   let supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload)
-     * 
-     *   let txn = await supra.transaction.submit.submitRawTransaction({
+     *
+     *   const supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject({
+     *       senderAddress: account.address(),
+     *       senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *       function: "0x1::supra_account::transfer",
+     *       functionTypeArgs: [],
+     *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
+     *
+     *   const txn = await supra.transaction.submit.submitRawTransaction({
      *       senderAccount: account,
      *       rawTransaction: supraCoinTransferRawTransaction,
      *       enableTransactionWaitAndSimulationArgs: {
@@ -83,9 +92,11 @@ export class Submit {
      *           enableWaitForTransaction: true
      *       }
      *   });
-     * 
+     *
      *   console.log("Transaction submitted:", txn);
      * }
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Transaction
      */
@@ -100,27 +111,36 @@ export class Submit {
     }
 
     /**
-     * Send `entry_function_payload` type tx using serialized raw transaction data
+     * Signs a serialized raw transaction with the sender's key and submits it. The client checks the chain ID of its
+     * node before it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The sender account
      * @param args.serializedRawTransaction - Serialized raw transaction data
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
+     * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // an account that holds SUPRA
+     *
      * async function runExample() {
-     *  
-     *   let supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload)
-     * 
-     *   let supraCoinTransferRawTransactionSerializer = new BCS.Serializer();
+     *
+     *   const supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject({
+     *       senderAddress: account.address(),
+     *       senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *       function: "0x1::supra_account::transfer",
+     *       functionTypeArgs: [],
+     *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
+     *
+     *   const supraCoinTransferRawTransactionSerializer = new BCS.Serializer();
      *   supraCoinTransferRawTransaction.serialize(
      *       supraCoinTransferRawTransactionSerializer
      *   );
-     * 
-     *   let txn = await supra.transaction.submit.submitSerializedRawTransaction({
+     *
+     *   const txn = await supra.transaction.submit.submitSerializedRawTransaction({
      *       senderAccount: account,
      *       serializedRawTransaction: supraCoinTransferRawTransactionSerializer.getBytes(),
      *       enableTransactionWaitAndSimulationArgs: {
@@ -148,7 +168,8 @@ export class Submit {
 
 
     /**
-     * Send `entry_function_payload` type tx using serialized raw transaction data and ed25519 signature
+     * Submits a serialized raw transaction with an ed25519 signature made elsewhere. No key is used and the chain ID
+     * is not checked; the node rejects a signature that does not match.
      * @param args.senderPubkey - Sender ed25519 pubkey
      * @param args.signature - Ed25519 signature
      * @param args.serializedRawTransaction - Serialized raw transaction data
@@ -156,21 +177,29 @@ export class Submit {
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { BCS, Network, SupraAccount, SupraClient, TxnBuilderTypes } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // an account that holds SUPRA
+     *
      * async function runExample() {
-     *  
-     *   let supraCoinTransferSerializedRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload)
-     * 
-     *   let raw_txn = TxnBuilderTypes.RawTransaction.deserialize(
+     *
+     *   const supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject({
+     *       senderAddress: account.address(),
+     *       senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *       function: "0x1::supra_account::transfer",
+     *       functionTypeArgs: [],
+     *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
+     *   const supraCoinTransferSerializedRawTransaction = BCS.bcsToBytes(supraCoinTransferRawTransaction);
+     *
+     *   const raw_txn = TxnBuilderTypes.RawTransaction.deserialize(
      *       new BCS.Deserializer(supraCoinTransferSerializedRawTransaction),
      *   );
-     * 
-     *   let signature = supra.transaction.signTransaction({ senderAccount: account, rawTxn: raw_txn });
-     * 
-     *   let txn = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
+     *
+     *   const signature = await supra.transaction.signTransaction({ senderAccount: account, rawTxn: raw_txn });
+     *
+     *   const txn = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
      *       senderPubkey: account.pubKey(),
      *       signature,
      *       serializedRawTransaction: supraCoinTransferSerializedRawTransaction,
@@ -202,10 +231,11 @@ export class Submit {
 
 
     /**
-     * Sends sponsor transaction
+     * Sends sponsor transaction. The authenticators are made with `supra.transaction.signTransaction` on a
+     * `FeePayerRawTransaction`, which checks the chain ID of the node before it signs; this method signs nothing.
      * @param args.feePayerAddress - Account address of tx fee payer
      * @param args.secondarySignersAccountAddress - List of account address of tx secondary signers
-     * @param args.rawTransaction - The raw transaction to be submitted
+     * @param args.rawTxn - The raw transaction to be submitted
      * @param args.senderAuthenticator - The sender account authenticator
      * @param args.feePayerAuthenticator - The fee payer account authenticator
      * @param args.secondarySignersAuthenticator - An optional array of the secondary signers account authenticator
@@ -213,31 +243,39 @@ export class Submit {
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { BCS, Network, SupraAccount, SupraClient, TxnBuilderTypes } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // the sender
+     * const feePayerAccount = new SupraAccount(); // an account that holds SUPRA and pays the fee
+     *
      * async function runExample() {
-     *  
-     *   let supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload);
-     * 
-     *   let sponsorTransactionPayload = new TxnBuilderTypes.FeePayerRawTransaction(
+     *
+     *   const supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject({
+     *       senderAddress: account.address(),
+     *       senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *       function: "0x1::supra_account::transfer",
+     *       functionTypeArgs: [],
+     *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
+     *
+     *   const sponsorTransactionPayload = new TxnBuilderTypes.FeePayerRawTransaction(
      *       supraCoinTransferSponsoredRawTransaction,
      *       [],
      *       new TxnBuilderTypes.AccountAddress(feePayerAccount.address().toUint8Array())
      *   );
-     * 
-     *   let sponsorTxnSenderAuthenticator = supra.transaction.signTransaction({
+     *
+     *   const sponsorTxnSenderAuthenticator = await supra.transaction.signTransaction({
      *       senderAccount: account,
      *       rawTxn: sponsorTransactionPayload
      *   });
-     * 
-     *   let feePayerAuthenticator = supra.transaction.signTransaction({
+     *
+     *   const feePayerAuthenticator = await supra.transaction.signTransaction({
      *       senderAccount: feePayerAccount,
      *       rawTxn: sponsorTransactionPayload
      *   });
-     * 
-     *   let txn = await supra.transaction.submit.submitSponsorTransaction({
+     *
+     *   const txn = await supra.transaction.submit.submitSponsorTransaction({
      *       feePayerAddress: feePayerAccount.address().toString(),
      *       secondarySignersAccountAddress: [],
      *       rawTxn: supraCoinTransferSponsoredRawTransaction,
@@ -276,7 +314,8 @@ export class Submit {
 
 
     /**
-     * Sends multi-agent transaction
+     * Sends multi-agent transaction. The authenticators are made with `supra.transaction.signTransaction` on a
+     * `MultiAgentRawTransaction`, which checks the chain ID of the node before it signs; this method signs nothing.
      * @param args.secondarySignersAccountAddress - List of account address of tx secondary signers
      * @param args.rawTxn - The raw transaction to be submitted
      * @param args.senderAuthenticator - The sender account authenticator
@@ -285,42 +324,44 @@ export class Submit {
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
-     * import {SupraClient,Network} from "supra-ts-sdk";
-     * 
+     * import { Network, SupraAccount, SupraClient, TxnBuilderTypes } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // an account that holds SUPRA
+     * const secondarySignerAccount = new SupraAccount();
+     *
      * async function runExample() {
-     * 
-     *     let multiAgentRawTransaction = supra.transaction.build.rawTxnObject({
+     *
+     *     const multiAgentRawTransaction = supra.transaction.build.rawTxnObject({
      *         senderAddress: account.address(),
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-     *         function: "0x7c6033ca961856298e1412fddf5ebb732c247436046d33016a5bd10f7e090a07::wrapper::two_signers" as MoveFunctionId,
+     *         function: "0x1234::wrapper::two_signers", // a function of a published module that takes two signers
      *         functionTypeArgs: [],
      *         functionArgs: []
      *     });
-     * 
+     *
      *     // Creating Multi-Agent Transaction Payload
-     *     let multiAgentTransactionPayload =
+     *     const multiAgentTransactionPayload =
      *         new TxnBuilderTypes.MultiAgentRawTransaction(multiAgentRawTransaction, [
      *             new TxnBuilderTypes.AccountAddress(
      *                 secondarySignerAccount.address().toUint8Array()
      *             ),
      *         ]);
-     * 
+     *
      *     // Generating sender authenticator
-     *     let multiAgentSenderAuthenticator = supra.transaction.signTransaction({
+     *     const multiAgentSenderAuthenticator = await supra.transaction.signTransaction({
      *         senderAccount: account,
      *         rawTxn: multiAgentTransactionPayload
      *     });
-     * 
+     *
      *     // Generating Secondary Signer authenticator
-     *     let secondarySignerAuthenticator = supra.transaction.signTransaction({
+     *     const secondarySignerAuthenticator = await supra.transaction.signTransaction({
      *         senderAccount: secondarySignerAccount,
      *         rawTxn: multiAgentTransactionPayload
      *     });
-     * 
+     *
      *     // Sending Multi-Agent transaction
-     *     let txn = await supra.transaction.submit.submitMultiAgentTransaction({
+     *     const txn = await supra.transaction.submit.submitMultiAgentTransaction({
      *         secondarySignersAccountAddress: [secondarySignerAccount.address().toString()],
      *         rawTxn: multiAgentRawTransaction,
      *         senderAuthenticator: multiAgentSenderAuthenticator,

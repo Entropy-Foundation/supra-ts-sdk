@@ -49,7 +49,7 @@ export class Account {
      * 
      * async function runExample() {
      *    const accountAddress = "0x1"; 
-     *    const isAccountExists = await supra.account.isAccountExists({ account: accountAddress});
+     *    const isAccountExists = await supra.account.isAccountExists({ accountAddress });
      *    console.log(isAccountExists);
      * }
      * 
@@ -76,7 +76,7 @@ export class Account {
      * 
      * async function runExample() {
      *    const accountAddress = "0x1"; 
-     *    const accountData = await supra.account.getAccountInfo({ accountAddress: accountAddress}); });
+     *    const accountData = await supra.account.getAccountInfo({ accountAddress: accountAddress });
      *   console.log(accountData);
      * }
      * 

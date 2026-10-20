@@ -42,10 +42,15 @@ export type AccountAddressInput = string | HexString;
  * `undefined`:
  *
  * ```typescript
+ * import { Network, SupraClient } from "supra-ts-sdk";
+ *
+ * const supra = new SupraClient({ network: Network.TESTNET });
+ * const accountAddress = "0x1";
+ *
  * let cursor: string | undefined;
  * do {
  *     const page = await supra.account.getAccountResources({ accountAddress, options: { start: cursor } });
- *     handle(page.response);
+ *     console.log(page.response.length);
  *     cursor = page.cursor;
  * } while (cursor !== undefined);
  * ```

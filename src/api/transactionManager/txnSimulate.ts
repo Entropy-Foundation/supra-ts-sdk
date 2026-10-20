@@ -43,15 +43,23 @@ export class Simulate {
      * carries the simulated transaction and its `vm_status`
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // an account that holds SUPRA
+     *
      * async function runExample() {
-     *   // Simulate a transaction use sendTxPayload
-     *   const response = await supra.transaction.simulate.simple({ sendTxPayload: { ... } }); // replace with a real transaction payload
-     * 
-     *   console.log(response);
+     *   const rawTxn = supra.transaction.build.rawTxnObject({
+     *     senderAddress: account.address(),
+     *     senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *     function: "0x1::supra_account::transfer",
+     *     functionTypeArgs: [],
+     *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
+     *   const sendTxPayload = await supra.transaction.build.sendTxnPayload({ senderAccount: account, rawTxn });
+     *
+     *   const response = await supra.transaction.simulate.simple({ sendTxPayload });
+     *   console.log(response.status, response.output);
      * }
      * runExample().catch(console.error);
      * ```
@@ -71,15 +79,25 @@ export class Simulate {
      * @throws `SupraSimulationFailedError` when the simulated status is not `Success`, as for {@link Simulate.simple}
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const account = new SupraAccount(); // an account that holds SUPRA
+     *
      * async function runExample() {
-     *   // Simulate a transaction use serializedRawTransaction
-     *   const response = await supra.transaction.simulate.serialized({ txAuthenticator: { ... }, serializedRawTransaction: Uint8Array.from([1,2,3]) }); // replace with a real transaction payload
-     * 
-     *   console.log(response);
+     *   const rawTxn = supra.transaction.build.rawTxnObject({
+     *     senderAddress: account.address(),
+     *     senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *     function: "0x1::supra_account::transfer",
+     *     functionTypeArgs: [],
+     *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *   });
+     *
+     *   const response = await supra.transaction.simulate.serialized({
+     *     txAuthenticator: { Ed25519: { public_key: account.pubKey().toString(), signature: "0x" + "00".repeat(64) } },
+     *     serializedRawTransaction: BCS.bcsToBytes(rawTxn),
+     *   });
+     *   console.log(response.status, response.output);
      * }
      * runExample().catch(console.error);
      * ```

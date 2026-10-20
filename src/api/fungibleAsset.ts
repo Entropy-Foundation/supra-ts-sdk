@@ -39,17 +39,19 @@ export class FungibleAsset {
 
 
     /**
-     * Get the metadata of a fungible asset.
+     * Get the metadata of a fungible asset: the `0x1::fungible_asset::Metadata` resource stored at the address of the
+     * asset.
      * @param args.assetAddress - The address of the fungible asset.
      * @returns A Promise that resolves to the metadata of the fungible asset.
+     * @throws {SupraNotFoundError} When the address holds no fungible asset metadata.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
-     *    const assetAddress = "0x1";
+     *    const assetAddress = "0xa"; // the SUPRA fungible asset
      *    const fungibleAssetMetadata = await supra.fungibleAsset.getFungibleAssetMetadata({ assetAddress: assetAddress });
      *    console.log(fungibleAssetMetadata);
      * }
@@ -71,6 +73,9 @@ export class FungibleAsset {
      * {@link SupraInsufficientFungibleAssetBalanceError}, naming the fungible asset balance and the coin balance,
      * without submitting a transaction. {@link migrateCoinToFungibleStore} moves the coin balance into the fungible
      * store; `supra.coin.transferSupraCoin` transfers SUPRA held in either form.
+     *
+     * The sequence number comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is
+     * set. The client checks the chain ID of its node before it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The account sending the SUPRA.
      * @param args.receiverAccountAddress - The address of the account receiving the SUPRA.
      * @param args.amount - The amount of SUPRA to transfer, in quants.
@@ -79,15 +84,20 @@ export class FungibleAsset {
      * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
      * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
      * errors of a submission.
+     * @throws {SupraInsufficientFungibleAssetBalanceError} When the sender's fungible asset balance is below `amount`.
+     * @throws {SupraSimulationFailedError} When the estimating simulation or an enabled simulation does not succeed.
+     * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
+     * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const senderAccount = new SupraAccount(); // an account that holds SUPRA in its fungible asset store
+     *
      * async function runExample() {
      *    const receiverAccountAddress = "0x2";
-     *    const amount = 100;
+     *    const amount = 100n;
      *    const transactionResponse = await supra.fungibleAsset.transferSupraFungibleAsset({ senderAccount: senderAccount, receiverAccountAddress: receiverAccountAddress, amount: amount });
      *    console.log(transactionResponse);
      * }
@@ -129,9 +139,10 @@ export class FungibleAsset {
      * errors of a submission.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
+     * import { Network, SupraAccount, SupraClient } from "supra-ts-sdk";
      *
      * const supra = new SupraClient({ network: Network.TESTNET });
+     * const senderAccount = new SupraAccount(); // an account that holds SUPRA in its CoinStore
      *
      * async function runExample() {
      *    const transactionResponse = await supra.fungibleAsset.migrateCoinToFungibleStore({
@@ -166,24 +177,30 @@ export class FungibleAsset {
      * `assetAddress` is the SUPRA fungible asset (`0xa`) the method behaves as {@link transferSupraFungibleAsset}:
      * it throws {@link SupraInsufficientFungibleAssetBalanceError} without submitting when the sender's fungible
      * asset balance is below `amount`.
-     * @param args.senderAccount - The account sending the coin.
-     * @param args.receiverAccountAddress - The address of the account receiving the coin.
-     * @param args.amount - The amount of the coin to transfer.
-     * @param args.assetAddress - The address of the coin to transfer.
+     * The sequence number comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is
+     * set. The client checks the chain ID of its node before it signs; see {@link SupraConfig}.
+     * @param args.senderAccount - The account sending the fungible asset.
+     * @param args.receiverAccountAddress - The address of the account receiving the fungible asset.
+     * @param args.amount - The amount of the fungible asset to transfer, in its smallest unit.
+     * @param args.assetAddress - The address of the fungible asset to transfer.
      * @param args.optionalTransactionArgs - Optional transaction arguments. The gas settings in
      * `optionalTransactionPayloadArgs` apply to the transaction; without `maxGas` it is estimated
      * (see {@link OptionalTransactionPayloadArgs}). The object is not modified.
      * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
      * errors of a submission.
+     * @throws {SupraSimulationFailedError} When the estimating simulation or an enabled simulation does not succeed.
+     * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
+     * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript
-     * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     * import { Network, SupraAccount, SupraClient } from "supra-ts-sdk";
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     * const senderAccount = new SupraAccount(); // an account that holds the fungible asset
+     *
      * async function runExample() {
      *    const receiverAccountAddress = "0x2";
-     *    const amount = 100;
+     *    const amount = 100n;
      *    const assetAddress = "0x000000000000000000000000000000000000000000000000000000000000000a";
      *    const transactionResponse = await supra.fungibleAsset.transferFungibleAsset({ senderAccount: senderAccount, receiverAccountAddress: receiverAccountAddress, amount: amount, assetAddress: assetAddress });
      *    console.log(transactionResponse);

@@ -139,9 +139,8 @@ export function rawTxnObjectInnerInternal(
         args.payload,
         // The builders that make no request use `DEFAULT_MAX_GAS_UNITS`; the others pass a resolved `maxGas`.
         args.optionalTransactionPayloadArgs?.maxGas ?? config.maxGas ?? DEFAULT_MAX_GAS_UNITS,
-        // If the user has not passed `gasUnitPrice` value then, we will use cached value of the
-        // `min_gas_unit_price` assigned to `this.minGasUnitPrice` at the time of `SupraClient`
-        // instantiation.
+        // Without a `gasUnitPrice` on the call, the price is `SupraConfig.minGasUnitPrice` (`DEFAULT_GAS_PRICE` when
+        // the client sets none); the node's current minimum is not read.
         args.optionalTransactionPayloadArgs?.gasUnitPrice ?? config.minGasUnitPrice ?? DEFAULT_GAS_PRICE,
         args.optionalTransactionPayloadArgs?.txExpiryTime ??
         BigInt(
