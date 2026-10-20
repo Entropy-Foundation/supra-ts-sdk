@@ -14,9 +14,9 @@ import { MockNode } from "./helpers/mockNode";
 import { ClientClock, newClient, RECEIVER, transfer } from "./helpers/transfers";
 
 /**
- * Submissions whose request times out or fails before the node answers: the SDK derives the transaction's hash before
- * the request, reports it in `SupraSubmissionOutcomeUnknownError`, records it for the sequence-number counter, and
- * waits for it with `enableWaitForTransaction`.
+ * Submissions whose request times out, fails before the node answers, or is answered with a 5xx other than 503: the
+ * SDK derives the transaction's hash before the request, reports it in `SupraSubmissionOutcomeUnknownError`, records
+ * it for the sequence-number counter, and waits for it with `enableWaitForTransaction`.
  */
 
 const RPC_URL = "http://node.test";
@@ -200,46 +200,80 @@ function hashOfSubmittedBody(body: string): string {
     });
 }
 
-describe("a submission without an answer", () => {
-    it.each([
-        ["times out", "timeout" as const, SupraTimeoutError],
-        ["fails to connect", new TypeError("fetch failed"), SupraNetworkError],
-    ])("that %s throws SupraSubmissionOutcomeUnknownError with the derived hash", async (_name, submit, causeClass) => {
-        const requests = stubNode({ submit: () => submit, reads: [json({ message: "Not Found" }, 404)] });
-        const sender = new SupraAccount();
-        const rawTxn = rawTransfer(sender);
-        const derived = supra.transaction.deriveTransactionHash({
-            signedTransaction: await rawTxn.signedTransaction(sender),
-        });
+/** The submission failures after which the node may have accepted the transaction, and the class of each `cause`. */
+const MAY_HAVE_ACCEPTED: Array<[string, () => Read | "timeout" | Error, abstract new (...args: never[]) => Error]> = [
+    ["times out", () => "timeout", SupraTimeoutError],
+    ["fails to connect", () => new TypeError("fetch failed"), SupraNetworkError],
+    ["is answered with a 500", () => json({ message: "Internal Server Error" }, 500), SupraAPIError],
+    ["is answered with a 502", () => json({ message: "Bad Gateway" }, 502), SupraAPIError],
+];
 
-        const error = (await rejection(
-            rawTxn.submitTransaction({ senderAccount: sender }),
-        )) as SupraSubmissionOutcomeUnknownError;
+describe("a submission whose outcome is unknown", () => {
+    it.each(MAY_HAVE_ACCEPTED)(
+        "that %s throws SupraSubmissionOutcomeUnknownError with the derived hash",
+        async (_name, submit, causeClass) => {
+            const requests = stubNode({ submit, reads: [json({ message: "Not Found" }, 404)] });
+            const sender = new SupraAccount();
+            const rawTxn = rawTransfer(sender);
+            const derived = supra.transaction.deriveTransactionHash({
+                signedTransaction: await rawTxn.signedTransaction(sender),
+            });
 
-        expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
-        expect(error).toBeInstanceOf(SupraTransactionTimeoutError);
-        expect(error.name).toBe("SupraSubmissionOutcomeUnknownError");
-        expect(error.transactionHash).toBe(derived);
-        expect(error.hash).toBe(derived);
-        expect(error.sender).toBe(sender.address().toString());
-        expect(error.sequenceNumber).toBe(7n);
-        expect(error.expirationTimestampSecs).toBe(EXPIRATION);
-        expect(error.cause).toBeInstanceOf(causeClass);
-        expect(error.waitError).toBeUndefined();
-        expect(error.timeoutMs).toBe(0);
-        expect(error.lastStatus).toBeUndefined();
-        expect(error.message).toContain(derived);
-        expect(error.message).toContain("may have accepted");
-        expect(error.message).toContain("before resending");
-        expect(JSON.parse(JSON.stringify(error))).toMatchObject({
-            name: "SupraSubmissionOutcomeUnknownError",
-            transactionHash: derived,
-            sequenceNumber: "7",
-            expirationTimestampSecs: EXPIRATION.toString(),
-        });
-        // Without a wait, the transaction is not read.
-        expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual(["POST /transactions/submit"]);
-    });
+            const error = (await rejection(
+                rawTxn.submitTransaction({ senderAccount: sender }),
+            )) as SupraSubmissionOutcomeUnknownError;
+
+            expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+            expect(error).not.toBeInstanceOf(SupraTransactionTimeoutError);
+            expect(error).not.toBeInstanceOf(SupraAPIError);
+            expect(error.name).toBe("SupraSubmissionOutcomeUnknownError");
+            expect(error.hash).toBe(derived);
+            expect(error.sender).toBe(sender.address().toString());
+            expect(error.sequenceNumber).toBe(7n);
+            expect(error.expirationTimestampSecs).toBe(EXPIRATION);
+            expect(error.cause).toBeInstanceOf(causeClass);
+            expect(error.waitError).toBeUndefined();
+            expect(error.message).toContain(derived);
+            expect(error.message).toContain("may have accepted");
+            expect(error.message).toContain("before resending");
+            expect(JSON.parse(JSON.stringify(error))).toEqual({
+                name: "SupraSubmissionOutcomeUnknownError",
+                message: error.message,
+                hash: derived,
+                sender: sender.address().toString(),
+                sequenceNumber: "7",
+                expirationTimestampSecs: EXPIRATION.toString(),
+            });
+            // Without a wait, the transaction is not read.
+            expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+                "POST /transactions/submit",
+            ]);
+        },
+    );
+
+    it.each(MAY_HAVE_ACCEPTED)(
+        "that %s, with enableWaitForTransaction, resolves to the transaction committed under the derived hash",
+        async (_name, submit) => {
+            const sender = new SupraAccount();
+            const rawTxn = rawTransfer(sender);
+            const derived = supra.transaction.deriveTransactionHash({
+                signedTransaction: await rawTxn.signedTransaction(sender),
+            });
+            const requests = stubNode({
+                submit,
+                reads: [json({ message: "Not Found" }, 404), json(moveTxn(derived, TransactionStatus.Success))],
+            });
+
+            const committed = await rawTxn.submitTransaction({
+                senderAccount: sender,
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true, waitTimeoutMs: 10_000 },
+            });
+
+            expect(committed).toMatchObject({ hash: derived, status: TransactionStatus.Success });
+            const reads = requests.filter((request) => request.method === "GET");
+            expect(reads.every((request) => request.path === `/transactions/${derived}`)).toBe(true);
+        },
+    );
 
     it("is derived from the transaction a signature made elsewhere signs", async () => {
         stubNode({ submit: () => new TypeError("fetch failed"), reads: [json({ message: "Not Found" }, 404)] });
@@ -255,7 +289,7 @@ describe("a submission without an answer", () => {
         )) as SupraSubmissionOutcomeUnknownError;
 
         expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
-        expect(error.transactionHash).toBe(supra.transaction.deriveTransactionHash({ signedTransaction: signed }));
+        expect(error.hash).toBe(supra.transaction.deriveTransactionHash({ signedTransaction: signed }));
     });
 
     it("with enableWaitForTransaction, resolves to the transaction committed under the derived hash", async () => {
@@ -313,32 +347,33 @@ describe("a submission without an answer", () => {
         ).resolves.toMatchObject({ hash: derived, status: TransactionStatus.Fail });
     });
 
-    it("with enableWaitForTransaction, throws SupraSubmissionOutcomeUnknownError when the wait ends without a final status", async () => {
-        stubNode({ submit: () => "timeout", reads: [json({ message: "Not Found" }, 404)] });
-        const sender = new SupraAccount();
-        const rawTxn = rawTransfer(sender);
+    it.each(MAY_HAVE_ACCEPTED)(
+        "that %s, with enableWaitForTransaction, throws SupraSubmissionOutcomeUnknownError when the wait ends without a final status",
+        async (_name, submit, causeClass) => {
+            stubNode({ submit, reads: [json({ message: "Not Found" }, 404)] });
+            const sender = new SupraAccount();
+            const rawTxn = rawTransfer(sender);
 
-        const error = (await rejection(
-            rawTxn.submitTransaction({
-                senderAccount: sender,
-                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true, waitTimeoutMs: 300 },
-            }),
-        )) as SupraSubmissionOutcomeUnknownError;
+            const error = (await rejection(
+                rawTxn.submitTransaction({
+                    senderAccount: sender,
+                    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true, waitTimeoutMs: 300 },
+                }),
+            )) as SupraSubmissionOutcomeUnknownError;
 
-        expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
-        expect(error.cause).toBeInstanceOf(SupraTimeoutError);
-        expect(error.waitError).toBeInstanceOf(SupraTransactionTimeoutError);
-        expect(error.waitError?.hash).toBe(error.transactionHash);
-        expect(error.timeoutMs).toBe(300);
-        expect(error.lastStatus).toBeUndefined();
-        expect(error.message).toContain("no final status after a wait of 300 ms");
-    });
+            expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+            expect(error.cause).toBeInstanceOf(causeClass);
+            expect(error.waitError).toBeInstanceOf(SupraTransactionTimeoutError);
+            expect(error.waitError?.hash).toBe(error.hash);
+            expect(error.waitError?.timeoutMs).toBe(300);
+            expect(error.message).toContain("no final status after a wait of 300 ms");
+        },
+    );
 });
 
-describe("a submission the node answers with an error", () => {
+describe("a submission the node refuses", () => {
     it.each([
         ["400", json({ message: "Transaction validation failed: invalid signature" }, 400)],
-        ["500", json({ message: "Internal Server Error" }, 500)],
         ["503", json({ message: "Service Unavailable" }, 503)],
     ])("throws the SupraAPIError of a %s", async (status, answer) => {
         stubNode({ submit: () => answer, reads: [json({ message: "Not Found" }, 404)] });
@@ -376,9 +411,9 @@ describe("the counter's record of a submission without an answer", () => {
         expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
         expect(error.sequenceNumber).toBe(5n);
         const tracker = sequenceNumberTrackerOf(client.networkInformation);
-        expect(tracker.recorded(address).get(5n)?.hash).toBe(error.transactionHash);
+        expect(tracker.recorded(address).get(5n)?.hash).toBe(error.hash);
 
-        await client.transaction.getTransactionByHash({ transactionHash: error.transactionHash });
+        await client.transaction.getTransactionByHash({ transactionHash: error.hash });
         expect(tracker.recorded(address).has(5n)).toBe(false);
 
         // The number of the discarded transaction is handed out again.
@@ -393,22 +428,39 @@ describe("the counter's record of a submission without an answer", () => {
         expect(sequenceNumbers).toEqual([5, 5]);
     });
 
-    it("keeps the derived hash for a 500, which is thrown as before", async () => {
+    it.each(MAY_HAVE_ACCEPTED)(
+        "for a submission that %s, keeps the hash of the submitted transaction, the one the error reports",
+        async (_name, submit) => {
+            const client = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false, timeoutMs: 50 });
+            const sender = new SupraAccount();
+            const requests = stubNode({ submit, reads: [json({ message: "Not Found" }, 404)] });
+
+            const error = (await rejection(counterTransfer(client, sender))) as SupraSubmissionOutcomeUnknownError;
+
+            expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+            const body = requests.find((request) => request.path === "/transactions/submit")?.body as string;
+            const record = sequenceNumberTrackerOf(client.networkInformation)
+                .recorded(standardizeAddress(sender.address().toString()))
+                .get(5n);
+            expect(record?.hash).toBe(hashOfSubmittedBody(body));
+            expect(error.hash).toBe(record?.hash);
+        },
+    );
+
+    it.each([
+        ["400", json({ message: "Transaction validation failed: invalid signature" }, 400)],
+        ["503", json({ message: "Service Unavailable" }, 503)],
+    ])("records nothing for a %s refusal", async (_status, answer) => {
         const client = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false });
         const sender = new SupraAccount();
-        const requests = stubNode({
-            submit: () => json({ message: "Internal Server Error" }, 500),
-            reads: [json({ message: "Not Found" }, 404)],
-        });
+        stubNode({ submit: () => answer, reads: [json({ message: "Not Found" }, 404)] });
 
-        const error = await rejection(counterTransfer(client, sender));
+        await expect(counterTransfer(client, sender)).rejects.toBeInstanceOf(SupraAPIError);
 
-        expect(error).toBeInstanceOf(SupraAPIError);
-        const body = requests.find((request) => request.path === "/transactions/submit")?.body as string;
-        const record = sequenceNumberTrackerOf(client.networkInformation)
-            .recorded(standardizeAddress(sender.address().toString()))
-            .get(5n);
-        expect(record?.hash).toBe(hashOfSubmittedBody(body));
+        expect(
+            sequenceNumberTrackerOf(client.networkInformation).recorded(standardizeAddress(sender.address().toString()))
+                .size,
+        ).toBe(0);
     });
 });
 
@@ -450,6 +502,6 @@ describe("a transaction signed again before its submission", () => {
         expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
         expect(error.sequenceNumber).toBe(6n);
         expect(failedBody).toBeDefined();
-        expect(error.transactionHash).toBe(hashOfSubmittedBody(failedBody as string));
+        expect(error.hash).toBe(hashOfSubmittedBody(failedBody as string));
     });
 });

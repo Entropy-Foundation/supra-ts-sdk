@@ -146,15 +146,33 @@ try {
 
 `SupraConfig.timeoutMs` sets the request timeout and `SupraConfig.retry` turns on retries of GET requests. The faucet request is sent once.
 
-A submit helper whose submission request times out or fails before the node answers throws
-`SupraSubmissionOutcomeUnknownError` instead, with the `SupraTimeoutError` or `SupraNetworkError` as `cause`. The node
-may have accepted the transaction, and in 1.2.0 the caller had no hash to check that with. The error carries the
-transaction's hash (`transactionHash`), derived from the signed transaction before the submission, with `sender`,
-`sequenceNumber` and `expirationTimestampSecs`. Look the hash up or wait for it before sending the transaction again;
-sending a new transaction for the same purpose can execute it twice. With `enableWaitForTransaction`, the helper waits
-for the hash itself and throws this error only when the wait ends without a final status (`waitError`).
-`SupraSubmissionOutcomeUnknownError` extends `SupraTransactionTimeoutError`, so code that handles a wait timeout by
-reading `hash` later handles it too.
+### A submission whose outcome is unknown throws `SupraSubmissionOutcomeUnknownError`
+
+A submit helper whose submission request times out, fails before the node answers, or is answered with a 5xx status
+other than 503 throws `SupraSubmissionOutcomeUnknownError` (extends `SupraError`), with the error of the request
+(`SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`) as `cause`. 1.2.0 threw the `DOMException`, `TypeError`
+or `SupraAPIError` of the request. In each of these cases the node may have accepted the transaction, and in 1.2.0 the
+caller had no hash to check that with. The error carries the transaction's `hash`, derived from the signed transaction
+before the submission, with `sender`, `sequenceNumber` and `expirationTimestampSecs`. Look the hash up or wait for it
+before sending the transaction again: a new transaction for the same purpose can execute it a second time. With
+`enableWaitForTransaction`, the helper waits for the hash itself and throws this error only when the wait ends without
+a final status, with the wait's `SupraTransactionTimeoutError` as `waitError`. Code that caught `SupraTimeoutError`,
+`SupraNetworkError` or a 5xx `SupraAPIError` around a submission catches `SupraSubmissionOutcomeUnknownError`
+instead. A v11 node answers a submission with 500 when its transaction pool is full; that is reported this way too.
+
+1.2.0:
+
+```typescript 1.2.0
+try {
+    await supra.coin.transferSupraCoin({ senderAccount: account, receiverAccountAddress: receiver, amount: 1_000n });
+} catch (error) {
+    if (error instanceof DOMException || error instanceof TypeError) {
+        // the request timed out or failed; no hash to look up
+    }
+}
+```
+
+2.0.0:
 
 ```typescript
 import { SupraAccount, SupraSubmissionOutcomeUnknownError } from "supra-ts-sdk";
@@ -168,7 +186,7 @@ try {
 } catch (error) {
     if (error instanceof SupraSubmissionOutcomeUnknownError) {
         // The node may have accepted the transaction: wait for it before sending it again.
-        const committed = await supra.transaction.waitForTransaction({ transactionHash: error.transactionHash });
+        const committed = await supra.transaction.waitForTransaction({ transactionHash: error.hash });
         console.log(committed.status);
     } else {
         throw error;

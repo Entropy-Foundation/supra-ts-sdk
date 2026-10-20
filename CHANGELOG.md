@@ -39,17 +39,17 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `major_status`, `sub_status` and `transaction`) and `SupraTransactionTimeoutError` (no final status within the wait
   timeout; carries `hash`, `timeoutMs`, `lastStatus`, `transaction` and the last read error as `cause`). All three
   extend `SupraError`.
-- **`SupraSubmissionOutcomeUnknownError`** (extends `SupraTransactionTimeoutError`; carries `transactionHash`, `sender`,
-  `sequenceNumber`, `expirationTimestampSecs`, `waitError`, and the `SupraTimeoutError` or `SupraNetworkError` of the
-  request as `cause`) is thrown by every submit helper when the submission request times out or fails before the node
-  answers. The node may have accepted the transaction; look `transactionHash` up or wait for it before sending the
-  transaction again. The submit helpers derive the hash from the signed transaction before they submit it (the
-  Keccak-256 of its BCS bytes, as `deriveTransactionHash` does), which is the hash v11.7.0 and v12 nodes give a
-  transaction of every kind the SDK submits. With `enableWaitForTransaction`, the helper first waits for that hash
-  within the wait timeout: a transaction that commits is returned, or throws `SupraTransactionFailedError`, as after an
-  answered submission, and the error is thrown, with the wait's `SupraTransactionTimeoutError` as `waitError`, when the
-  wait ends without a final status. An answer of the node with an error status is thrown as a `SupraAPIError` as
-  before.
+- **`SupraSubmissionOutcomeUnknownError`** (extends `SupraError`; carries `hash`, `sender`, `sequenceNumber`,
+  `expirationTimestampSecs`, `waitError`, and the error of the request as `cause`) is thrown by every submit helper
+  when the submission request times out (`SupraTimeoutError`), fails before the node answers (`SupraNetworkError`), or
+  is answered with a 5xx status other than 503 (`SupraAPIError`). In each case the node may have accepted the
+  transaction; look `hash` up or wait for it before sending the transaction again. The submit helpers derive the hash
+  from the signed transaction before they submit it (the Keccak-256 of its BCS bytes, as `deriveTransactionHash`
+  does), which is the hash v11.7.0 and v12 nodes give a transaction of every kind the SDK submits. With
+  `enableWaitForTransaction`, the helper first waits for that hash within the wait timeout: a transaction that reaches
+  a final status is returned, or throws `SupraTransactionFailedError`, as after an accepted submission, and the error
+  is thrown, with the wait's `SupraTransactionTimeoutError` as `waitError`, when the wait ends without a final status.
+  A refusal of the node (a 4xx status or 503) is thrown as a `SupraAPIError`.
 - **`SubmitTransactionResponse`** and **`NotReadBackTransactionResponse`** types.
 - **`SupraConfig.waitTimeoutMs`** sets how long `waitForTransaction` and submissions with `enableWaitForTransaction`
   wait for a final status (default `DEFAULT_TXN_WAIT_TIMEOUT_MS`, 60000 ms).
@@ -192,8 +192,12 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `SupraAPIError`s and keep their names.
 - **Breaking:** a request that times out or fails before the node answers, or whose response body cannot be read,
   rejects with `SupraTimeoutError` or
-  `SupraNetworkError` instead of a raw `DOMException` or `TypeError`. A submission request that does so makes the submit
-  helper throw `SupraSubmissionOutcomeUnknownError` with that error as `cause`.
+  `SupraNetworkError` instead of a raw `DOMException` or `TypeError`.
+- **Breaking:** a submission request that times out, fails before the node answers, or is answered with a 5xx status
+  other than 503 makes the submit helper throw `SupraSubmissionOutcomeUnknownError` with the error of the request as
+  `cause`, and with `enableWaitForTransaction` wait for the derived hash first (see Added). It threw that request's
+  `DOMException`, `TypeError` or `SupraAPIError`. This includes the 500 that a v11 node answers when its transaction
+  pool is full.
 - **Breaking:** a submission with `enableWaitForTransaction: true` throws `SupraTransactionFailedError` when the
   transaction ends with `Fail` or `Invalid`, unless `checkSuccess: false` is passed. It resolved with the failed
   transaction. This applies to every submit helper: `transaction.submit.*`, the submit methods of a built transaction,

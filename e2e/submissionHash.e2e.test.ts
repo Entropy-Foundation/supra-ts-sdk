@@ -2,6 +2,7 @@ import type { MoveFunctionId, SupraAccount } from "../src/index";
 import {
     BCS,
     HexString,
+    SupraAPIError,
     SupraClient,
     SupraNetworkError,
     SupraSubmissionOutcomeUnknownError,
@@ -18,7 +19,8 @@ import { rawPost, rawWaitForCommit } from "./helpers/raw";
 /**
  * The hash the SDK derives before it submits a transaction is the hash the node gives it, for every kind of
  * transaction the SDK submits. Each submission request reaches the node, and the node's answer is then withheld from
- * the SDK: the connection fails after the answer, or the request is held until the client's request timeout. The SDK
+ * the SDK: the connection fails after the answer, the request is held until the client's request timeout, or a 502
+ * replaces the answer. The SDK
  * throws `SupraSubmissionOutcomeUnknownError` with the derived hash, which must be the hash in the node's answer, and
  * the transaction must commit under it.
  */
@@ -36,8 +38,11 @@ const SUPRA_ACCOUNT_TRANSFER = "0x1::supra_account::transfer" as MoveFunctionId;
 /** The request timeout of the client used with `"timeout"`: longer than every other request of a submission. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
-/** How the node's answer to the submission is withheld. */
-type Withhold = "connection" | "timeout";
+/**
+ * How the node's answer to the submission is withheld: a failed connection, no answer until the request timeout, or
+ * an HTTP 502 from a proxy in its place.
+ */
+type Withhold = "connection" | "timeout" | "gateway";
 
 interface Outcome {
     /** The hash in the node's answer to the submission request. */
@@ -48,8 +53,9 @@ interface Outcome {
 
 /**
  * Runs `submit` with `fetch` replaced for its first submission request: the request is sent to the node, whose answer
- * is read here, and the SDK sees a failed connection after the answer (`"connection"`) or no answer until its request
- * timeout aborts the request (`"timeout"`). Every other request is sent as it is.
+ * is read here, and the SDK sees a failed connection after the answer (`"connection"`), no answer until its request
+ * timeout aborts the request (`"timeout"`), or an HTTP 502 after the answer (`"gateway"`). Every other request is sent
+ * as it is.
  */
 async function withheldSubmission(withhold: Withhold, submit: () => Promise<unknown>): Promise<Outcome> {
     const realFetch = global.fetch;
@@ -64,12 +70,23 @@ async function withheldSubmission(withhold: Withhold, submit: () => Promise<unkn
         nodeAnswer = realFetch(input, rest).then(async (response) => {
             const body = (await response.json()) as unknown;
             if (!response.ok || typeof body !== "string") {
-                throw new Error(`The node answered the submission with HTTP ${response.status}: ${JSON.stringify(body)}`);
+                throw new Error(
+                    `The node answered the submission with HTTP ${response.status}: ${JSON.stringify(body)}`,
+                );
             }
             return body;
         });
         if (withhold === "connection") {
             return nodeAnswer.then(() => Promise.reject(new TypeError("fetch failed")));
+        }
+        if (withhold === "gateway") {
+            return nodeAnswer.then(
+                () =>
+                    new Response(JSON.stringify({ message: "Bad Gateway" }), {
+                        status: 502,
+                        headers: { "Content-Type": "application/json" },
+                    }),
+            );
         }
         return new Promise<Response>((_, reject) => {
             signal?.addEventListener("abort", () => reject(signal.reason));
@@ -98,16 +115,17 @@ async function expectDerivedHash(ctx: E2EContext, outcome: Outcome, withhold: Wi
     expect(outcome.result.status).toBe("rejected");
     const error = (outcome.result as PromiseRejectedResult).reason as SupraSubmissionOutcomeUnknownError;
     expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
-    expect(error.cause).toBeInstanceOf(withhold === "connection" ? SupraNetworkError : SupraTimeoutError);
-    expect(error.transactionHash).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(error.transactionHash).toBe(outcome.nodeHash.toLowerCase());
+    const causeClass = { connection: SupraNetworkError, timeout: SupraTimeoutError, gateway: SupraAPIError }[withhold];
+    expect(error.cause).toBeInstanceOf(causeClass);
+    expect(error.hash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(error.hash).toBe(outcome.nodeHash.toLowerCase());
     const committed = await ctx.supra.transaction.waitForTransaction({
-        transactionHash: error.transactionHash,
+        transactionHash: error.hash,
         options: { timeoutMs: 180_000 },
     });
     expect(committed.status).toBe(TransactionStatus.Success);
-    expect(committed.hash).toBe(error.transactionHash);
-    return error.transactionHash;
+    expect(committed.hash).toBe(error.hash);
+    return error.hash;
 }
 
 describeE2E("the transaction hash derived before submitting", () => {
@@ -154,6 +172,13 @@ describeE2E("the transaction hash derived before submitting", () => {
         await expectDerivedHash(ctx, outcome, "timeout");
     });
 
+    test("an entry function whose submission is answered with a 502", async () => {
+        const sender = await createFundedAccount(ctx);
+        const rawTxn = await transferRawTxn(sender);
+        const outcome = await withheldSubmission("gateway", () => rawTxn.submitTransaction({ senderAccount: sender }));
+        await expectDerivedHash(ctx, outcome, "gateway");
+    });
+
     test("with enableWaitForTransaction, a submission without an answer resolves to the committed transaction", async () => {
         const client = new SupraClient({ rpcUrl: ctx.rpcUrl, chainId: ctx.chainId, timeoutMs: REQUEST_TIMEOUT_MS });
         const sender = await createFundedAccount(ctx);
@@ -190,7 +215,9 @@ describeE2E("the transaction hash derived before submitting", () => {
             scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(1_000n)],
             optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice },
         });
-        const outcome = await withheldSubmission("connection", () => rawTxn.submitTransaction({ senderAccount: sender }));
+        const outcome = await withheldSubmission("connection", () =>
+            rawTxn.submitTransaction({ senderAccount: sender }),
+        );
         await expectDerivedHash(ctx, outcome, "connection");
     });
 
@@ -355,7 +382,9 @@ describeE2E("the transaction hash derived before submitting", () => {
             automationAuxData: [],
             optionalTransactionPayloadArgs: { maxGas: 20_000n, gasUnitPrice },
         });
-        const outcome = await withheldSubmission("connection", () => rawTxn.submitTransaction({ senderAccount: sender }));
+        const outcome = await withheldSubmission("connection", () =>
+            rawTxn.submitTransaction({ senderAccount: sender }),
+        );
         await expectDerivedHash(ctx, outcome, "connection");
     });
 

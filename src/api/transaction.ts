@@ -277,7 +277,7 @@ export class Transaction {
     /**
      * Derives the transaction hash from a signed transaction: the Keccak-256 of its BCS bytes, the hash the node gives
      * the transaction. The submit helpers derive the hash the same way before they submit, and report it in
-     * `SupraSubmissionOutcomeUnknownError` when the submission request gets no answer.
+     * `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown.
      * @param args.signedTransaction - The signed transaction.
      * @returns The transaction hash as a `0x`-prefixed lower-case hex string, the form `getTransactionByHash` and
      * `waitForTransaction` accept.

@@ -1,6 +1,6 @@
 import { HexString, SupraAccount } from "supra-l1-sdk-core";
 import { SupraAccountQueueFullError, SupraAPIError } from "../../../errors/apiError";
-import { SupraSimulationFailedError } from "../../../errors/transactionError";
+import { SupraSimulationFailedError, SupraSubmissionOutcomeUnknownError } from "../../../errors/transactionError";
 import { MockNode, u64Mark, type MockNodeOptions } from "./helpers/mockNode";
 import { MAX_TX_EXPIRATION_DURATION, TX_EXPIRATION_MARGIN_SECS } from "../../../utils/constants";
 import { ClientClock, newClient, transfer, type TransferOptions } from "./helpers/transfers";
@@ -182,7 +182,7 @@ describe("transfers whose transactions the node drops or never receives", () => 
             transfer(supra, sender, { txExpiryTime: later(mock) }),
             transfer(supra, sender, { txExpiryTime: later(mock) }),
         ]);
-        expect(results).toEqual(["fulfilled", "SupraAPIError", "fulfilled", "fulfilled"]);
+        expect(results).toEqual(["fulfilled", "SupraSubmissionOutcomeUnknownError", "fulfilled", "fulfilled"]);
         // 7 and 8 wait in the node behind 6; nothing commits after 5.
         mock.tick();
         expect(mock.chain).toBe(6);
@@ -208,7 +208,7 @@ describe("transfers whose transactions the node drops or never receives", () => 
         const gas = { maxGas: 5_000n };
         mock.refuseNext.set(6, { status: 500, message: "Internal error" });
         await transfer(supra, sender, { ...gas, txExpiryTime: later(mock) });
-        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraAPIError);
+        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
         await transfer(supra, sender, { ...gas, txExpiryTime: later(mock) });
         const reads = mock.counts["account"];
 
@@ -230,7 +230,7 @@ describe("transfers whose transactions the node drops or never receives", () => 
         mock.refuseNext.set(6, { status: 500, message: "Internal error", pool: true });
 
         const results = await outcomes(Array.from({ length: 4 }, () => transfer(supra, sender)));
-        expect(results).toEqual(["fulfilled", "SupraAPIError", "fulfilled", "fulfilled"]);
+        expect(results).toEqual(["fulfilled", "SupraSubmissionOutcomeUnknownError", "fulfilled", "fulfilled"]);
         await transfer(supra, sender);
         mock.tick();
         await transfer(supra, sender);
@@ -513,7 +513,7 @@ describe("reads of the chain, chain time and expiration times", () => {
         const gas = { maxGas: 5_000n };
         // 5 is answered with 500 and not pooled: an unknown outcome the node never accepted.
         mock.refuseNext.set(5, { status: 500, message: "Internal error" });
-        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraAPIError);
+        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
         clock.advance(mock, 30_000);
         await transfer(supra, sender, gas);
 
@@ -537,7 +537,7 @@ describe("reads of the chain, chain time and expiration times", () => {
         const sender = new SupraAccount();
         const gas = { maxGas: 5_000n };
         mock.refuseNext.set(5, { status: 500, message: "Internal error" });
-        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraAPIError);
+        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
         clock.advance(mock, 30_000);
         await transfer(supra, sender, gas);
 
@@ -666,7 +666,9 @@ describe("reads of the chain, chain time and expiration times", () => {
         // transaction and the answer is a 500.
         const expiry = BigInt(Math.floor(Date.now() / 1000) + 629);
         mock.refuseNext.set(6, { status: 500, message: "Internal error", pool: true });
-        await expect(transfer(supra, sender, { ...gas, txExpiryTime: expiry })).rejects.toBeInstanceOf(SupraAPIError);
+        await expect(transfer(supra, sender, { ...gas, txExpiryTime: expiry })).rejects.toBeInstanceOf(
+            SupraSubmissionOutcomeUnknownError,
+        );
         expect(mock.pooled()).toEqual([6]);
 
         // 580 s later the latest block is 19 s short of the expiration time: the number is still held.

@@ -250,12 +250,12 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | HTTP 400 for a submission beyond the sequence numbers the node queues for the account | `sequenceNumber` |
 | `SupraTimeoutError` | a request exceeds the timeout (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `cause` |
+| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503: the node may have accepted the transaction | `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
 | `SupraChainIdMismatchError` | before signing, the configured chain ID or the transaction's chain ID is not the node's | `configuredChainId`, `nodeChainId`, `transactionChainId` |
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` | `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
 | `SupraTransactionFailedError` | a transaction the SDK waited for ends with `Fail` or `Invalid` | `hash`, `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
 | `SupraTransactionTimeoutError` | a transaction the SDK waited for has no final status within the wait timeout | `hash`, `timeoutMs`, `lastStatus`, `transaction`, `cause` |
-| `SupraSubmissionOutcomeUnknownError` (extends `SupraTransactionTimeoutError`) | a submission request times out or fails before the node answers; the node may have accepted the transaction | `transactionHash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause` |
 
 `SupraAPIError.message` is the node's `message` when the error body has one, otherwise the HTTP status text.
 `major_status` is the name of the Move VM status the message reports, for example `SEQUENCE_NUMBER_TOO_OLD`,
@@ -296,7 +296,9 @@ v11.7.0 onwards. These conditions are reported with a different status by v12 no
 | A `type` of `"settlement"` | accepted | 400 |
 
 `isAccountExists` returns `false` for an account that does not exist on both versions. Other statuses, such as 404
-for an unknown transaction, block, module or resource, and 410 for pruned data, are the same on both.
+for an unknown transaction, block, module or resource, and 410 for pruned data, are the same on both. A submission
+answered with a 5xx status other than 503, which includes the 500 of a v11 node whose transaction pool is full, throws
+`SupraSubmissionOutcomeUnknownError` with the `SupraAPIError` as `cause` (see [Transaction outcomes](#transaction-outcomes)).
 
 ### Timeout and retries
 
@@ -334,14 +336,15 @@ transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handl
   submission. When that read fails, it returns `{ hash, status: "NotReadBack", readError }`: the node accepted the
   transaction, and `hash` can be passed to `waitForTransaction`.
 - The SDK derives the transaction's hash from the signed transaction before it submits it. When the submission
-  request times out or fails before the node answers, the node may have accepted the transaction: the call throws
-  `SupraSubmissionOutcomeUnknownError` with `transactionHash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`
-  and the `SupraTimeoutError` or `SupraNetworkError` as `cause`. Look the hash up or wait for it before sending the
-  transaction again. With `enableWaitForTransaction: true`, the call first waits for that hash as above: a
-  transaction that commits is returned (or throws `SupraTransactionFailedError`), and
-  `SupraSubmissionOutcomeUnknownError` is thrown when the wait ends without a final status, with the wait's error as
-  `waitError`. It extends `SupraTransactionTimeoutError`, whose `hash` it also sets. A node that answers the submission
-  with an error status did not accept the transaction; that is thrown as `SupraAPIError`.
+  request times out, fails before the node answers, or is answered with a 5xx status other than 503, the node may
+  have accepted the transaction: the call throws `SupraSubmissionOutcomeUnknownError` with `hash`, `sender`,
+  `sequenceNumber`, `expirationTimestampSecs` and the error of the request (`SupraTimeoutError`, `SupraNetworkError` or
+  `SupraAPIError`) as `cause`. Look the hash up or wait for it before sending the transaction again; the transaction
+  can commit until the chain's time reaches `expirationTimestampSecs`. With `enableWaitForTransaction: true`, the call
+  first waits for that hash as above: a transaction that reaches a final status is returned (or throws
+  `SupraTransactionFailedError`), and `SupraSubmissionOutcomeUnknownError` is thrown when the wait ends without a final
+  status, with the wait's `SupraTransactionTimeoutError` as `waitError`. A node that answers the submission with a 4xx
+  status or 503 did not accept the transaction; that is thrown as `SupraAPIError`.
 
 ```ts
 import {
@@ -373,7 +376,9 @@ try {
   } else if (error instanceof SupraTransactionFailedError) {
     console.log(`${error.hash} failed with status ${error.status}: ${error.vm_status}`);
   } else if (error instanceof SupraSubmissionOutcomeUnknownError) {
-    console.log(`The node may have accepted ${error.transactionHash}; it can commit until ${error.expirationTimestampSecs}`);
+    // The node may have accepted the transaction: read it by its hash before sending it again.
+    const read = await supra.transaction.getTransactionByHash({ transactionHash: error.hash }).catch(() => undefined);
+    console.log(`${error.hash}: ${read?.status ?? "not found yet"}; it can commit until ${error.expirationTimestampSecs}`);
   } else if (error instanceof SupraTransactionTimeoutError) {
     console.log(`${error.hash} has no final status after ${error.timeoutMs} ms (last status ${error.lastStatus})`);
   } else {

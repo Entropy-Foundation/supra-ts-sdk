@@ -511,7 +511,7 @@ Outcome of a submission (every submit helper, transfer, `publishPackage` and con
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws `SupraSimulationFailedError` and nothing is submitted. Behind pending transactions of the same client, the simulation uses the account's sequence number on the chain, as the max gas estimate does; a failed read of the account during that check is thrown.
 - With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed and failed) and `Invalid` (discarded) throw `SupraTransactionFailedError` unless `checkSuccess: false` is passed. No final status within `waitTimeoutMs` throws `SupraTransactionTimeoutError`.
 - Without `enableWaitForTransaction`, the call returns the transaction as the node reports it right after the submission (usually `Pending`), or `{ hash, status: "NotReadBack", readError }` when that read fails; the node has accepted the transaction in both cases.
-- The SDK derives the transaction's hash from the signed transaction before submitting it (as `deriveTransactionHash` does). When the submission request times out or fails before the node answers, the call throws `SupraSubmissionOutcomeUnknownError` (`transactionHash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, and the `SupraTimeoutError` or `SupraNetworkError` as `cause`): the node may have accepted the transaction, so look the hash up or wait for it before sending it again. With `enableWaitForTransaction: true`, the call first waits for that hash: a committed transaction is returned (or throws `SupraTransactionFailedError`), and the error is thrown, with the wait's error as `waitError`, when the wait ends without a final status. It extends `SupraTransactionTimeoutError`. An error status from the node is a refusal and throws `SupraAPIError`.
+- The SDK derives the transaction's hash from the signed transaction before submitting it (as `deriveTransactionHash` does). When the submission request times out, fails before the node answers, or is answered with a 5xx status other than 503 (this includes the 500 of a v11 node whose transaction pool is full), the call throws `SupraSubmissionOutcomeUnknownError` (extends `SupraError`; `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, and the `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError` of the request as `cause`): the node may have accepted the transaction, so look the hash up or wait for it before sending it again. Handle it explicitly; it is not a `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`. With `enableWaitForTransaction: true`, the call first waits for that hash: a transaction with a final status is returned (or throws `SupraTransactionFailedError`), and the error is thrown, with the wait's `SupraTransactionTimeoutError` as `waitError`, when the wait ends without a final status. A 4xx status or 503 from the node is a refusal and throws `SupraAPIError`.
 
 ```typescript
 import { SupraAccount, SupraSubmissionOutcomeUnknownError } from "supra-ts-sdk";
@@ -527,7 +527,7 @@ try {
         throw error;
     }
     // Wait for the transaction the node may have accepted before sending it again.
-    await supra.transaction.waitForTransaction({ transactionHash: error.transactionHash });
+    await supra.transaction.waitForTransaction({ transactionHash: error.hash });
 }
 ```
 
@@ -769,7 +769,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`. Errors t
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` |
 | `SupraTransactionFailedError` | a transaction the SDK waited for ends with `Fail` or `Invalid` |
 | `SupraTransactionTimeoutError` | a transaction the SDK waited for has no final status within the wait timeout |
-| `SupraSubmissionOutcomeUnknownError` (extends `SupraTransactionTimeoutError`) | a submission request times out or fails before the node answers; the node may have accepted the transaction (`transactionHash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause`) |
+| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503; the node may have accepted the transaction (`hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause`) |
 | `SupraInsufficientFungibleAssetBalanceError` | a SUPRA fungible asset transfer exceeds the sender's fungible asset balance |
 
 `SupraAPIError.message` is the node's message when the error body has one. `major_status` is the name of the Move VM status the message reports (for example `SEQUENCE_NUMBER_TOO_OLD`, `ABORTED`) and `sub_status` is the abort code of an `ABORTED` status; both are `undefined` when the message names no status.
@@ -910,6 +910,6 @@ export function useTransferSupra() {
 3. **RPC rate limits**: Create one `SupraClient` instance and reuse it. Do not create a new client per request. `retry` retries GET requests only; submit, simulate and view POST requests are never retried.
 4. **`as const` for ABIs**: The ABI proxy type system requires `as const` assertion on the ABI array for TypeScript to infer the literal types.
 5. **Pagination limits**: The `count` option accepts 1-100 per page.
-6. **Transaction wait**: By default `enableWaitForTransaction` is `false`; the call returns the transaction as the node reports it right after the submission (usually `Pending`). Pass `true` to get the `Success` transaction, or a thrown `SupraTransactionFailedError` or `SupraTransactionTimeoutError`. A submission request without an answer throws `SupraSubmissionOutcomeUnknownError` with the transaction's hash; wait for that hash before sending the transaction again.
+6. **Transaction wait**: By default `enableWaitForTransaction` is `false`; the call returns the transaction as the node reports it right after the submission (usually `Pending`). Pass `true` to get the `Success` transaction, or a thrown `SupraTransactionFailedError` or `SupraTransactionTimeoutError`. A submission request that times out, fails before the node answers or gets a 5xx other than 503 throws `SupraSubmissionOutcomeUnknownError` with the transaction's `hash`; wait for that hash before sending the transaction again.
 7. **Gas**: see the Gas section. The default gas unit price is 100,000 quants and `DEFAULT_MAX_GAS_UNITS` is 20,000, which needs a balance of 20 SUPRA at validation; the estimate used by the transfers, `publishPackage` and contract entry functions needs only what the transaction uses times 1.5.
 8. **Node versions**: a v12 node answers some conditions with a different HTTP status than a v11 node (for example an absent account is 404 on v12 and 400 on v11). `isAccountExists` returns `false` on both; branch on the error class, not on a specific `status`, where possible.

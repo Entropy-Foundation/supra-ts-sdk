@@ -408,7 +408,7 @@ describe("fixtures recorded from a Supra node", () => {
                 for (const submission of submissions) {
                     const error = (await submission.catch((e: unknown) => e)) as SupraSubmissionOutcomeUnknownError;
                     expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
-                    expect(error.transactionHash).toBe(`0x${fixture.expected.transactionHash}`);
+                    expect(error.hash).toBe(`0x${fixture.expected.transactionHash}`);
                 }
                 expect(fetchMock).toHaveBeenCalledTimes(submissions.length);
             } finally {

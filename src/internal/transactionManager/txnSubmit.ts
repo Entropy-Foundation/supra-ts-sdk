@@ -3,7 +3,6 @@ import { post } from "../../client/post";
 import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
 import type { CommittedTransactionResponse, WaitForTransactionOptions } from "../../types/transaction";
-import { SupraNetworkError, SupraTimeoutError } from "../../errors/supraError";
 import { SupraSubmissionOutcomeUnknownError, SupraTransactionTimeoutError } from "../../errors/transactionError";
 import { ed25519TransactionAuthenticator, transactionHashOf, withTransactionHash } from "./txnHash";
 import {
@@ -114,26 +113,28 @@ async function simulateBeforeSubmission(
 }
 
 /**
- * The outcome of a submission whose request timed out or failed before the node answered (`cause`). The transaction
- * has been recorded with `transactionHash`, the hash derived from the signed transaction.
+ * The outcome of a submission whose request failed in a way that leaves it open whether the node accepted the
+ * transaction (`cause`: a timeout, a connection failure, or a 5xx other than 503; see
+ * `settleFailedSubmissionInternal`). The transaction has been recorded with `hash`, the hash derived from the signed
+ * transaction.
  *
  * Without `waitOptions`, throws `SupraSubmissionOutcomeUnknownError`. With `waitOptions` (`enableWaitForTransaction`),
- * waits for `transactionHash` as after an answered submission: a final status is returned or thrown as
+ * waits for `hash` as after an accepted submission: a final status is returned or thrown as
  * `waitForTransactionInternal` does, and a wait that ends without one (`SupraTransactionTimeoutError`) throws
  * `SupraSubmissionOutcomeUnknownError` with that error as `waitError`.
  */
 async function unknownSubmissionOutcomeInternal(
     args: {
         rawTxn: RawTxnJSON;
-        transactionHash: string;
-        cause: SupraTimeoutError | SupraNetworkError;
+        hash: string;
+        cause: unknown;
         waitOptions: WaitForTransactionOptions | undefined;
     },
     config: NetworkConfig,
 ): Promise<CommittedTransactionResponse> {
     const unknown = (waitError?: SupraTransactionTimeoutError) =>
         new SupraSubmissionOutcomeUnknownError({
-            transactionHash: args.transactionHash,
+            hash: args.hash,
             sender: args.rawTxn.sender,
             sequenceNumber: BigInt(args.rawTxn.sequence_number),
             expirationTimestampSecs: BigInt(args.rawTxn.expiration_timestamp_secs),
@@ -144,10 +145,7 @@ async function unknownSubmissionOutcomeInternal(
         throw unknown();
     }
     try {
-        return await waitForTransactionInternal(
-            { transactionHash: args.transactionHash, options: args.waitOptions },
-            config,
-        );
+        return await waitForTransactionInternal({ transactionHash: args.hash, options: args.waitOptions }, config);
     } catch (waitError) {
         if (waitError instanceof SupraTransactionTimeoutError) {
             throw unknown(waitError);
@@ -209,12 +207,12 @@ export async function submitTxnInternal(
         );
     } catch (error) {
         const settled = settleFailedSubmissionInternal({ rawTxn, reservation, hash: derivedHash }, error, config);
-        if (!(settled instanceof SupraTimeoutError || settled instanceof SupraNetworkError)) {
-            throw settled;
+        if (!settled.mayHaveAccepted) {
+            throw settled.error;
         }
-        // No answer: the node may have accepted the transaction, which is recorded with the derived hash.
+        // The node may have accepted the transaction, which is recorded with the derived hash.
         return await unknownSubmissionOutcomeInternal(
-            { rawTxn, transactionHash: derivedHash, cause: settled, waitOptions: wait ? waitOptions : undefined },
+            { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
             config,
         );
     }
