@@ -2,7 +2,7 @@ import type { SupraAccount } from "supra-l1-sdk-core";
 import type { AccountAddressInput } from "../types/account";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
-import type { CoinInfo } from "../types/coin";
+import type { FungibleAssetMetadata } from "../types/fungibleAsset";
 import type { MoveFunctionId } from "../types/move";
 import { getFungibleAssetMetadataInternal, migrateCoinToFungibleStoreInternal, transferFungibleAssetInternal } from "../internal/fungibleAsset";
 import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
@@ -58,7 +58,7 @@ export class FungibleAsset {
      * ```
      * @group FungibleAsset
      */
-    async getFungibleAssetMetadata(args: { assetAddress: AccountAddressInput }): Promise<CoinInfo> {
+    async getFungibleAssetMetadata(args: { assetAddress: AccountAddressInput }): Promise<FungibleAssetMetadata> {
         validateAddress(args.assetAddress, "assetAddress");
         return getFungibleAssetMetadataInternal(args, this.networkInformation);
     }

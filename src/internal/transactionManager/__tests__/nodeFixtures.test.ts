@@ -345,7 +345,7 @@ describe("fixtures recorded from a Supra node", () => {
         test("the transaction hash is the recorded hash", async () => {
             const signed = await signedTransaction(fixture, rawTxn, accounts, target);
             expect(supra.transaction.deriveTransactionHash({ signedTransaction: signed })).toBe(
-                fixture.expected.transactionHash,
+                `0x${fixture.expected.transactionHash}`,
             );
         });
 

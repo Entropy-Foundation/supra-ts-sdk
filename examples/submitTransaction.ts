@@ -77,7 +77,7 @@ import { createClient, fundAccountsIfRequested, usesCustomNode } from "./client.
     // You use can above serialized payload to send transaction.
     let txn1 = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
         senderPubkey: account.pubKey(),
-        signature: signature as HexString,
+        signature,
         serializedRawTransaction: supraCoinTransferSerializedRawTransaction,
         enableTransactionWaitAndSimulationArgs: {
             enableTransactionSimulation: true,
@@ -105,13 +105,13 @@ import { createClient, fundAccountsIfRequested, usesCustomNode } from "./client.
     let sponsorTxnSenderAuthenticator = await supra.transaction.signTransaction({
         senderAccount: account,
         rawTxn: sponsorTransactionPayload
-    }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+    });
 
     // Generating sponsor authenticator
     let feePayerAuthenticator = await supra.transaction.signTransaction({
         senderAccount: feePayerAccount,
         rawTxn: sponsorTransactionPayload
-    }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+    });
 
 
     let txn2 = await supra.transaction.submit.submitSponsorTransaction(
@@ -169,13 +169,13 @@ import { createClient, fundAccountsIfRequested, usesCustomNode } from "./client.
     let multiAgentSenderAuthenticator = await supra.transaction.signTransaction({
         senderAccount: account,
         rawTxn: multiAgentTransactionPayload
-    }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+    });
 
     // Generating Secondary Signer authenticator
     let secondarySignerAuthenticator = await supra.transaction.signTransaction({
         senderAccount: secondarySignerAccount,
         rawTxn: multiAgentTransactionPayload
-    }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+    });
 
     // Sending Multi-Agent transaction
     let txn3 = await supra.transaction.submit.submitMultiAgentTransaction({

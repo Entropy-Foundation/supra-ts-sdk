@@ -15,12 +15,12 @@ import sha3 from 'js-sha3';
 /**
  * Queries on-chain transactions by their transaction hash, returning both pending and committed transactions.
  */
-export async function getTransactionByHashInternal<T extends TransactionResponse>(
+export async function getTransactionByHashInternal(
     args: { transactionHash: string, type?: TransactionQueryType, exclude_uncommitted?: boolean },
     config: NetworkConfig
-): Promise<T> {
+): Promise<TransactionResponse> {
 
-    return await get<T>({
+    return await get<TransactionResponse>({
         path: `/transactions/${standardizeAddress(args.transactionHash)}`,
         query: {
             type: args.type,
@@ -163,6 +163,27 @@ export function getTransactionSignatureMessageInternal(
  * @throws {SupraChainIdMismatchError} Before signing, if the configured chain ID or the transaction's chain ID is not
  * the node's.
  */
+export function signTransactionInternal(
+    args: {
+        senderAccount: SupraAccount,
+        rawTxn: TxnBuilderTypes.RawTransaction,
+    },
+    config: NetworkConfig
+): Promise<HexString>;
+export function signTransactionInternal(
+    args: {
+        senderAccount: SupraAccount,
+        rawTxn: TxnBuilderTypes.MultiAgentRawTransaction | TxnBuilderTypes.FeePayerRawTransaction,
+    },
+    config: NetworkConfig
+): Promise<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+export function signTransactionInternal(
+    args: {
+        senderAccount: SupraAccount,
+        rawTxn: AnyRawTransaction,
+    },
+    config: NetworkConfig
+): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519>;
 export async function signTransactionInternal(
     args: {
         senderAccount: SupraAccount,

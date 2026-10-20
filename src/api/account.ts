@@ -38,7 +38,9 @@ export class Account {
      * Check whether given account exists onchain or not
      * @param args.accountAddress - The address of the account to query.
      * @returns `true` if account exists otherwise `false`. The node reports an absent account with HTTP 404 on v12
-     * and HTTP 400 on v11; both give `false`.
+     * and HTTP 400 with a "Resource not found" message on v11; both give `false`.
+     * @throws Any other failure, such as an unreachable node, a timeout, a rate limit (HTTP 429) or a node fault
+     * (HTTP 5xx), is thrown and does not mean the account is absent.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";

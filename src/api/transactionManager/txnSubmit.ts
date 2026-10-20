@@ -172,7 +172,7 @@ export class Submit {
      * 
      *   let txn = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
      *       senderPubkey: account.pubKey(),
-     *       signature: signature as HexString,
+     *       signature,
      *       serializedRawTransaction: supraCoinTransferSerializedRawTransaction,
      *       enableTransactionWaitAndSimulationArgs: {
      *           enableTransactionSimulation: true,
@@ -230,12 +230,12 @@ export class Submit {
      *   let sponsorTxnSenderAuthenticator = supra.transaction.signTransaction({
      *       senderAccount: account,
      *       rawTxn: sponsorTransactionPayload
-     *   }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+     *   });
      * 
      *   let feePayerAuthenticator = supra.transaction.signTransaction({
      *       senderAccount: feePayerAccount,
      *       rawTxn: sponsorTransactionPayload
-     *   }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+     *   });
      * 
      *   let txn = await supra.transaction.submit.submitSponsorTransaction({
      *       feePayerAddress: feePayerAccount.address().toString(),
@@ -311,13 +311,13 @@ export class Submit {
      *     let multiAgentSenderAuthenticator = supra.transaction.signTransaction({
      *         senderAccount: account,
      *         rawTxn: multiAgentTransactionPayload
-     *     }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+     *     });
      * 
      *     // Generating Secondary Signer authenticator
      *     let secondarySignerAuthenticator = supra.transaction.signTransaction({
      *         senderAccount: secondarySignerAccount,
      *         rawTxn: multiAgentTransactionPayload
-     *     }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+     *     });
      * 
      *     // Sending Multi-Agent transaction
      *     let txn = await supra.transaction.submit.submitMultiAgentTransaction({

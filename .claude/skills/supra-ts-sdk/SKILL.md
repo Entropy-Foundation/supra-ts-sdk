@@ -425,7 +425,7 @@ const signature = await supra.transaction.signTransaction({
 });
 const txn = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
     senderPubkey: account.pubKey(),
-    signature: signature as HexString,
+    signature: signature,
     serializedRawTransaction: rawTxn.toBytes(),
 });
 ```
@@ -463,15 +463,15 @@ const feePayerPayload = new TxnBuilderTypes.FeePayerRawTransaction(
     new TxnBuilderTypes.AccountAddress(feePayerAccount.address().toUint8Array()),
 );
 
-const senderAuth = (await supra.transaction.signTransaction({
+const senderAuth = await supra.transaction.signTransaction({
     senderAccount: account,
     rawTxn: feePayerPayload,
-})) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+});
 
-const feePayerAuth = (await supra.transaction.signTransaction({
+const feePayerAuth = await supra.transaction.signTransaction({
     senderAccount: feePayerAccount,
     rawTxn: feePayerPayload,
-})) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+});
 
 const txn = await supra.transaction.submit.submitSponsorTransaction({
     feePayerAddress: feePayerAccount.address().toString(),

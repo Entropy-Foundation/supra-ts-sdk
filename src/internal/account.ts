@@ -1,5 +1,6 @@
 import { getPage } from "../client/cursor";
 import { get } from "../client/get";
+import { SupraAPIError } from "../errors/apiError";
 import { standardizeAddress } from "../helper/account";
 import { isMoveStruct } from "../helper/general";
 import type { AccountAddressInput, AccountData, PaginatedResponse, SupraBalance } from "../types/account";
@@ -22,9 +23,15 @@ export function getAccountLegacyCoins(resources: MoveResource[]) {
 
 export async function getAccountInfoInternal(args: { accountAddress: AccountAddressInput }, config: NetworkConfig): Promise<AccountData> {
 
-    return (await get<AccountData>({
+    // The node reports the sequence number as a JSON number.
+    const { data } = await get<{ sequence_number: number | string; authentication_key: string }>({
         path: `/accounts/${standardizeAddress(args.accountAddress)}`,
-    }, config)).data;
+    }, config);
+
+    return {
+        sequence_number: BigInt(data.sequence_number),
+        authentication_key: data.authentication_key,
+    };
 
 }
 
@@ -271,6 +278,11 @@ export async function getAccountCoinBalanceInternal(
 }
 
 
+/**
+ * Whether the account exists. Only the node's answer for an absent account is `false`: HTTP 404 on v12 nodes, and
+ * on v11 nodes HTTP 400 with a "Resource not found" message (a v11 node also answers 400 for its own faults). Any
+ * other failure is thrown.
+ */
 export async function isAccountExistsInternal(args: { accountAddress: AccountAddressInput }, config: NetworkConfig): Promise<boolean> {
 
     try {
@@ -279,10 +291,24 @@ export async function isAccountExistsInternal(args: { accountAddress: AccountAdd
 
         return true;
 
-    } catch {
+    } catch (error) {
 
-        // account not found
-        return false;
+        if (error instanceof SupraAPIError && isAbsentAccountAnswer(error)) {
+            return false;
+        }
+
+        throw error;
     }
 
+}
+
+function isAbsentAccountAnswer(error: SupraAPIError): boolean {
+    if (error.status === 404) {
+        return true;
+    }
+    if (error.status !== 400) {
+        return false;
+    }
+    const message = (error.data as { message?: unknown } | null | undefined)?.message;
+    return typeof message === "string" && /resource not found/i.test(message);
 }

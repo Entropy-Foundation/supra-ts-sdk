@@ -216,7 +216,7 @@ export async function signedTransactionInternal(
     },
     config: NetworkConfig
 ): Promise<TxnBuilderTypes.SignedTransaction> {
-    const signature = await signTransactionInternal({ senderAccount: args.senderAccount, rawTxn: args.rawTxn }, config) as HexString;
+    const signature = await signTransactionInternal({ senderAccount: args.senderAccount, rawTxn: args.rawTxn }, config);
     return new TxnBuilderTypes.SignedTransaction(
         args.rawTxn,
         new TxnBuilderTypes.AccountAuthenticatorEd25519(
@@ -360,7 +360,7 @@ export async function sendTxnPayloadInternal(
     let signature = await signTransactionInternal({
         senderAccount: args.senderAccount,
         rawTxn: args.rawTxn
-    }, config) as HexString;
+    }, config);
 
 
     return {
@@ -694,11 +694,11 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     /**
      * Sign the transaction
      * @param senderAccount - Sender account
-     * @returns ed25519 signature in `HexString` or signer authenticator
+     * @returns A promise of the ed25519 signature in `HexString`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
      */
-    signTransaction(senderAccount: SupraAccount): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519> {
+    signTransaction(senderAccount: SupraAccount): Promise<HexString> {
         return signTransactionInternal({
             senderAccount: senderAccount,
             rawTxn: this

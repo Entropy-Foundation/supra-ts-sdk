@@ -234,6 +234,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every cursor option (`start` or `cursor`) accepts `undefined`, so a returned cursor is passed back without a
   check or a cast. An empty cursor is not sent.
 
+- **Breaking:** `isAccountExists` returns `false` only when the node reports the account as absent (HTTP 404 on
+  v12 nodes, HTTP 400 with a "Resource not found" message on v11 nodes). Every other failure, such as an unreachable
+  node, a timeout, HTTP 429 or HTTP 5xx, is thrown.
+- **Breaking:** `deriveTransactionHash` returns the hash with a `0x` prefix, the form `getTransactionByHash` and
+  `waitForTransaction` accept. It returned 64 hex characters without the prefix.
+- **Breaking:** `getTransactionByHash` takes no type argument. It returns `TransactionResponse`, which is narrowed
+  by `txn_type`; the type argument did not change the value returned.
+- **Breaking:** `signTransaction` has one signature per kind of transaction: it resolves to the `HexString` signature
+  for a `RawTransaction` and to the `AccountAuthenticatorEd25519` for a `MultiAgentRawTransaction` or
+  `FeePayerRawTransaction`, and to `HexString | AccountAuthenticatorEd25519` for an `AnyRawTransaction`. Casts of the
+  result are no longer needed. `ExtendedRawTransaction.signTransaction` resolves to `HexString`.
+- `getFungibleAssetMetadata` is declared to return `FungibleAssetMetadata` (`name`, `symbol`, `decimals`,
+  `icon_uri`, `project_uri`), which is what it returns. It was declared `CoinInfo`.
+
 ### Fixed
 
 - `supra.constructor` is `SupraClient`; it was the constructor of the last mixed-in class.
@@ -246,6 +260,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No method modifies the options object it is given: the transfers no longer write a `maxGas` into
   `optionalTransactionPayloadArgs`, and `methods.view` no longer writes the fetched ABI into the caller's arguments.
 - The JSDoc of `events.getEventsByType` describes events and calls `getEventsByType`.
+- `getAccountInfo` returns `sequence_number` as a `bigint`, the declared type. It returned the number the node
+  sends, so `info.sequence_number + 1n` threw a `TypeError`.
 
 ### Removed
 
