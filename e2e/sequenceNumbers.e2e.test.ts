@@ -174,26 +174,50 @@ describeE2E("sequence numbers", () => {
         expect(isStaleSequenceNumberError(error)).toBe(false);
     });
 
-    test("a transfer the helpers build expires about 60 seconds after the chain's time", async () => {
+    test("a transfer the helpers build expires 60 seconds after the client's clock", async () => {
         const sender = await createFundedAccount(ctx);
         const supra = newClient();
-        const blockSeconds = async () => {
-            const block = await rawGet<{ header: { timestamp: { microseconds_since_unix_epoch: number } } }>(
-                ctx,
-                "/rpc/v3/block",
-            );
-            return block.body.header.timestamp.microseconds_since_unix_epoch / 1_000_000;
-        };
 
-        const before = await blockSeconds();
+        const before = Math.floor(Date.now() / 1_000);
         const response = await transfer(supra, sender, { wait: true });
-        const after = await blockSeconds();
+        const after = Math.floor(Date.now() / 1_000);
 
         const raw = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${response.hash}`);
         const expiration =
             Number(raw.body.header?.expiration_timestamp.microseconds_since_unix_epoch ?? 0) / 1_000_000;
-        expect(expiration).toBeGreaterThanOrEqual(before + 55);
-        expect(expiration).toBeLessThanOrEqual(after + 65);
+        expect(expiration).toBeGreaterThanOrEqual(before + 60);
+        expect(expiration).toBeLessThanOrEqual(after + 60);
+    });
+
+    test("transfers with txExpirySecs 600 are accepted", async () => {
+        const sender = await createFundedAccount(ctx);
+        const gas = await explicitGas(ctx);
+        const supra = new SupraClient({
+            rpcUrl: ctx.rpcUrl,
+            chainId: ctx.chainId,
+            txExpirySecs: 600,
+            maxGas: gas.maxGas,
+        });
+        const first = await chainSequenceNumber(sender);
+
+        const responses: SubmitTransactionResponse[] = [];
+        for (let index = 0; index < 12; index += 1) {
+            responses.push(
+                await supra.coin.transferSupraCoin({
+                    senderAccount: sender,
+                    receiverAccountAddress: createUnfundedAccount().address().toString(),
+                    amount: AMOUNT,
+                    optionalTransactionArgs: {
+                        optionalTransactionPayloadArgs: { gasUnitPrice: gas.gasUnitPrice },
+                        enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+                    },
+                }),
+            );
+            // Submissions at different fractions of a second.
+            await new Promise((resolve) => setTimeout(resolve, 173));
+        }
+
+        expectConsecutive(await commitAll(responses), first);
     });
 
     test("an explicit sequence number is used as given", async () => {
