@@ -24,10 +24,15 @@ export function validateMoveIdentifier(value: unknown, paramName = "name"): void
  * @throws Error if the address is invalid
  */
 export function validateAddress(address: unknown, paramName = "address"): void {
-    const str = typeof address === "string" ? address : (address != null && typeof (address as { toString(): string }).toString === "function") ? String(address) : undefined;
+    const str =
+        typeof address === "string"
+            ? address
+            : address != null && typeof (address as { toString(): string }).toString === "function"
+              ? String(address)
+              : undefined;
     if (!str || !HEX_ADDRESS_REGEX.test(str)) {
         throw new Error(
-            `Invalid ${paramName}: expected a 0x-prefixed hex string (1-64 hex chars), got ${JSON.stringify(String(address))}`
+            `Invalid ${paramName}: expected a 0x-prefixed hex string (1-64 hex chars), got ${JSON.stringify(String(address))}`,
         );
     }
 }
@@ -43,9 +48,7 @@ export function validateFunctionId(functionId: unknown, paramName = "function"):
     }
     const parts = functionId.split("::");
     if (parts.length !== 3) {
-        throw new Error(
-            `Invalid ${paramName}: expected format "0xADDR::module::function", got "${functionId}"`
-        );
+        throw new Error(`Invalid ${paramName}: expected format "0xADDR::module::function", got "${functionId}"`);
     }
     validateAddress(parts[0], `${paramName} module address`);
     if (!parts[1] || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(parts[1])) {
@@ -68,9 +71,7 @@ export function validateStructId(structId: unknown, paramName = "resourceType"):
     const baseType = structId.includes("<") ? structId.slice(0, structId.indexOf("<")) : structId;
     const parts = baseType.split("::");
     if (parts.length !== 3) {
-        throw new Error(
-            `Invalid ${paramName}: expected format "0xADDR::module::StructName", got "${structId}"`
-        );
+        throw new Error(`Invalid ${paramName}: expected format "0xADDR::module::StructName", got "${structId}"`);
     }
     validateAddress(parts[0], `${paramName} module address`);
     validateMoveIdentifier(parts[1], `${paramName} module name`);
@@ -83,9 +84,7 @@ export function validateStructId(structId: unknown, paramName = "resourceType"):
  */
 export function validateHexString(value: unknown, paramName = "value"): void {
     if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) {
-        throw new Error(
-            `Invalid ${paramName}: expected a 0x-prefixed hex string, got ${JSON.stringify(value)}`
-        );
+        throw new Error(`Invalid ${paramName}: expected a 0x-prefixed hex string, got ${JSON.stringify(value)}`);
     }
 }
 
@@ -95,9 +94,7 @@ export function validateHexString(value: unknown, paramName = "value"): void {
  */
 export function validateTransactionHash(hash: unknown, paramName = "transactionHash"): void {
     if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-        throw new Error(
-            `Invalid ${paramName}: expected 0x followed by 64 hex digits, got ${JSON.stringify(hash)}`
-        );
+        throw new Error(`Invalid ${paramName}: expected 0x followed by 64 hex digits, got ${JSON.stringify(hash)}`);
     }
 }
 
@@ -115,7 +112,7 @@ export function validateAmount(amount: unknown, paramName = "amount"): void {
     }
     if (typeof amount !== "number" || !Number.isSafeInteger(amount) || amount < 0) {
         throw new Error(
-            `Invalid ${paramName}: expected a non-negative integer (use bigint for values above 2^53-1), got ${JSON.stringify(amount)}`
+            `Invalid ${paramName}: expected a non-negative integer (use bigint for values above 2^53-1), got ${JSON.stringify(amount)}`,
         );
     }
 }
@@ -126,9 +123,7 @@ export function validateAmount(amount: unknown, paramName = "amount"): void {
  */
 export function validateBlockHeight(height: unknown, paramName = "height"): void {
     if (typeof height !== "number" || !Number.isInteger(height) || height < 0) {
-        throw new Error(
-            `Invalid ${paramName}: expected a non-negative integer, got ${JSON.stringify(height)}`
-        );
+        throw new Error(`Invalid ${paramName}: expected a non-negative integer, got ${JSON.stringify(height)}`);
     }
 }
 
@@ -139,8 +134,6 @@ export function validateBlockHeight(height: unknown, paramName = "height"): void
 export function validatePaginationCount(count: unknown, paramName = "count"): void {
     if (count === undefined || count === null) return;
     if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 100) {
-        throw new Error(
-            `Invalid ${paramName}: expected an integer between 1 and 100, got ${JSON.stringify(count)}`
-        );
+        throw new Error(`Invalid ${paramName}: expected an integer between 1 and 100, got ${JSON.stringify(count)}`);
     }
 }

@@ -9,29 +9,25 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
  * @group Faucet
  */
 export class Faucet {
-
-
     /**
-    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-    */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
 
-
     /**
-    * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
-    * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
-    * @example
-    * ```typescript
-    * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
-    * const supra = new SupraClient({ network: Network.TESTNET });
-    * ```  
-    * @group Faucet
-    */
+     * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
+     * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     * ```
+     * @group Faucet
+     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Fund an account with the node's faucet. The request is sent on any network; a node that does not serve
@@ -44,23 +40,21 @@ export class Faucet {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const faucetResponse = await supra.faucet.fundAccountWithFaucet({ accountAddress: accountAddress });
      *    console.log(faucetResponse);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Faucet
      */
-    async fundAccountWithFaucet(args: {
-        accountAddress: AccountAddressInput;
-    }): Promise<FaucetTransactionResponse> {
-        return fundAccountWithFaucetInternal(args, this.networkInformation)
+    async fundAccountWithFaucet(args: { accountAddress: AccountAddressInput }): Promise<FaucetTransactionResponse> {
+        return fundAccountWithFaucetInternal(args, this.networkInformation);
     }
 
     /**
@@ -70,22 +64,20 @@ export class Faucet {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const { hash } = await supra.faucet.fundAccountWithFaucet({ accountAddress: "0x1" });
      *    const transaction = await supra.faucet.getFaucetTransaction({ transactionHash: hash });
      *    console.log(transaction.status);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Faucet
      */
-    async getFaucetTransaction(args: {
-        transactionHash: string;
-    }): Promise<SupraTransactionResponse> {
-        return getFaucetTransactionInternal(args, this.networkInformation)
+    async getFaucetTransaction(args: { transactionHash: string }): Promise<SupraTransactionResponse> {
+        return getFaucetTransactionInternal(args, this.networkInformation);
     }
 }

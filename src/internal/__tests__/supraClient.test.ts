@@ -26,10 +26,7 @@ describe("internal/supraClient", () => {
             const chainId = await getChainIdInternal(testConfig);
 
             expect(chainId).toBe(6);
-            expect(mockGet).toHaveBeenCalledWith(
-                { path: "/transactions/chain_id" },
-                testConfig,
-            );
+            expect(mockGet).toHaveBeenCalledWith({ path: "/transactions/chain_id" }, testConfig);
         });
     });
 
@@ -42,10 +39,7 @@ describe("internal/supraClient", () => {
             const price = await getGasPriceInternal(testConfig);
 
             expect(price).toBe(100n);
-            expect(mockGet).toHaveBeenCalledWith(
-                { path: "/transactions/estimate_gas_price" },
-                testConfig,
-            );
+            expect(mockGet).toHaveBeenCalledWith({ path: "/transactions/estimate_gas_price" }, testConfig);
         });
     });
 
@@ -58,10 +52,7 @@ describe("internal/supraClient", () => {
             const price = await getMinGasUnitPriceInternal(testConfig);
 
             expect(price).toBe(50n);
-            expect(mockGet).toHaveBeenCalledWith(
-                { path: "/transactions/estimate_gas_price" },
-                testConfig,
-            );
+            expect(mockGet).toHaveBeenCalledWith({ path: "/transactions/estimate_gas_price" }, testConfig);
         });
     });
 });

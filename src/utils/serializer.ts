@@ -1,15 +1,15 @@
 import { HexString, BCS } from "supra-l1-sdk-core";
-import { addressArgument, assertSafeIntegerArgument, boolArgument, isObjectType, vectorU8ToBytes } from "../helper/general";
+import {
+    addressArgument,
+    assertSafeIntegerArgument,
+    boolArgument,
+    isObjectType,
+    vectorU8ToBytes,
+} from "../helper/general";
 import type { SimpleEntryFunctionArgumentTypes } from "../types/move";
 
 export class DynamicTransactionSerializer {
-    private serializeValue(
-        value: unknown,
-        type: string,
-        serializer: BCS.Serializer
-    ): void {
-
-
+    private serializeValue(value: unknown, type: string, serializer: BCS.Serializer): void {
         if (isObjectType(type)) {
             return this.serializeAddress(value, type, serializer);
         }
@@ -70,20 +70,14 @@ export class DynamicTransactionSerializer {
         }
     }
 
-    private serializeVector(
-        value: unknown,
-        innerType: string,
-        serializer: BCS.Serializer
-    ): void {
+    private serializeVector(value: unknown, innerType: string, serializer: BCS.Serializer): void {
         if (innerType === "u8") {
             this.serializeBytes(value, serializer);
             return;
         }
 
         if (!Array.isArray(value)) {
-            throw new Error(
-                `Expected array for vector<${innerType}>, got ${typeof value}`
-            );
+            throw new Error(`Expected array for vector<${innerType}>, got ${typeof value}`);
         }
 
         serializer.serializeU32AsUleb128(value.length);
@@ -114,7 +108,7 @@ export class DynamicTransactionSerializer {
     private parseIntegerString(value: string, bits: number): bigint {
         if (!/^(\d+|0x[0-9a-fA-F]+)$/.test(value)) {
             throw new Error(
-                `u${bits} value must be a decimal or 0x-prefixed hexadecimal integer string, got ${JSON.stringify(value)}`
+                `u${bits} value must be a decimal or 0x-prefixed hexadecimal integer string, got ${JSON.stringify(value)}`,
             );
         }
         return BigInt(value);
@@ -190,15 +184,9 @@ export class DynamicTransactionSerializer {
         serializer.serializeU256(this.parseBigUint(value, 256));
     }
 
-    public prepareTransactionArgs(
-        args: Array<SimpleEntryFunctionArgumentTypes>,
-        paramTypes: string[]
-    ): Uint8Array[] {
-
+    public prepareTransactionArgs(args: Array<SimpleEntryFunctionArgumentTypes>, paramTypes: string[]): Uint8Array[] {
         if (args.length !== paramTypes.length) {
-            throw new Error(
-                `Argument count mismatch: expected ${paramTypes.length}, got ${args.length}`
-            );
+            throw new Error(`Argument count mismatch: expected ${paramTypes.length}, got ${args.length}`);
         }
 
         return args.map((arg, index) => {
@@ -211,11 +199,8 @@ export class DynamicTransactionSerializer {
 
                 return bytes;
             } catch (error) {
-                const errorMessage =
-                    error instanceof Error ? error.message : String(error);
-                throw new Error(
-                    `Failed to serialize argument ${index} (${paramType}): ${errorMessage}`
-                );
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                throw new Error(`Failed to serialize argument ${index} (${paramType}): ${errorMessage}`);
             }
         });
     }

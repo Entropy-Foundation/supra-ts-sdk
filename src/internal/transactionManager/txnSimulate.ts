@@ -15,7 +15,7 @@ import { SupraSimulationFailedError } from "../../errors/transactionError";
  */
 export async function simulateTxnInternal(
     args: { sendTxPayload: SendTxnPayload },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<TransactionResponse> {
     const authenticator = JSON.parse(JSON.stringify(args.sendTxPayload.Move.authenticator)) as MoveInnerAuthenticator;
     unsetAuthenticatorSignatures(authenticator);
@@ -24,10 +24,13 @@ export async function simulateTxnInternal(
         Move: { ...args.sendTxPayload.Move, authenticator },
     };
 
-    const simulatedTxnResponse = await post<SendTxnPayload, TransactionResponse>({
-        path: "/transactions/simulate",
-        data: simulationPayload,
-    }, config);
+    const simulatedTxnResponse = await post<SendTxnPayload, TransactionResponse>(
+        {
+            path: "/transactions/simulate",
+            data: simulationPayload,
+        },
+        config,
+    );
 
     // The node answers a simulation with HTTP 200 whatever the simulated status.
     if (simulatedTxnResponse.status !== TransactionStatus.Success) {
@@ -37,7 +40,6 @@ export async function simulateTxnInternal(
     return simulatedTxnResponse;
 }
 
-
 /** Replaces every signature of the authenticator with zeros, in place. */
 export function unsetAuthenticatorSignatures(txAuthenticator: MoveInnerAuthenticator) {
     let nullSignature = "0x" + "0".repeat(128);
@@ -46,35 +48,29 @@ export function unsetAuthenticatorSignatures(txAuthenticator: MoveInnerAuthentic
     } else if ("FeePayer" in txAuthenticator) {
         (txAuthenticator.FeePayer.sender as Ed25519Signature).Ed25519.signature = nullSignature;
         (txAuthenticator.FeePayer.fee_payer_signer as Ed25519Signature).Ed25519.signature = nullSignature;
-        txAuthenticator.FeePayer.secondary_signers.forEach(
-            (ed25519Authenticator) => {
-                (ed25519Authenticator as Ed25519Signature).Ed25519.signature = nullSignature;
-            },
-        );
+        txAuthenticator.FeePayer.secondary_signers.forEach((ed25519Authenticator) => {
+            (ed25519Authenticator as Ed25519Signature).Ed25519.signature = nullSignature;
+        });
     } else {
-        ((txAuthenticator as MultiAgentSignature).MultiAgent.sender as Ed25519Signature).Ed25519.signature = nullSignature;
-        (txAuthenticator as MultiAgentSignature).MultiAgent.secondary_signers.forEach(
-            (ed25519Authenticator) => {
-                (ed25519Authenticator as Ed25519Signature).Ed25519.signature = nullSignature;
-            },
-        );
+        ((txAuthenticator as MultiAgentSignature).MultiAgent.sender as Ed25519Signature).Ed25519.signature =
+            nullSignature;
+        (txAuthenticator as MultiAgentSignature).MultiAgent.secondary_signers.forEach((ed25519Authenticator) => {
+            (ed25519Authenticator as Ed25519Signature).Ed25519.signature = nullSignature;
+        });
     }
 }
 
-
 export async function simulateSerializedTxnInternal(
     args: {
-        txAuthenticator: MoveInnerAuthenticator,
-        serializedRawTransaction: Uint8Array,
+        txAuthenticator: MoveInnerAuthenticator;
+        serializedRawTransaction: Uint8Array;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<TransactionResponse> {
     let sendTxPayload = {
         Move: {
             raw_txn: getRawTxnJSONInternal(
-                TxnBuilderTypes.RawTransaction.deserialize(
-                    new BCS.Deserializer(args.serializedRawTransaction),
-                ),
+                TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction)),
             ),
             authenticator: args.txAuthenticator,
         },

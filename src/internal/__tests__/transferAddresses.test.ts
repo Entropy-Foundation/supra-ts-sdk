@@ -15,7 +15,9 @@ jest.mock("../transactionManager/txnSubmit", () => ({
 }));
 
 import { buildAndSubmitEntryFunctionInternal } from "../transactionManager/txnSubmit";
-const mockSubmit = buildAndSubmitEntryFunctionInternal as jest.MockedFunction<typeof buildAndSubmitEntryFunctionInternal>;
+const mockSubmit = buildAndSubmitEntryFunctionInternal as jest.MockedFunction<
+    typeof buildAndSubmitEntryFunctionInternal
+>;
 
 const config: NetworkConfig = {
     name: "custom",

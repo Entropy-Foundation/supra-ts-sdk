@@ -54,7 +54,7 @@ const supra = new SupraClient({ rpcUrl: "http://localhost:1", chainId: 255 });
 // Signs without reading the node's chain ID, so the signing tests send no request.
 const offlineSigner = new SupraClient({ rpcUrl: "http://localhost:1", chainId: 255, verifyChainId: false });
 const { AccountAddress } = TxnBuilderTypes;
-const SUPRA_FA ="0x000000000000000000000000000000000000000000000000000000000000000a";
+const SUPRA_FA = "0x000000000000000000000000000000000000000000000000000000000000000a";
 
 describe.each(["v12", "v11"] as const)("declared types against responses recorded from a %s node", (version) => {
     const node = recorded[version];
@@ -160,7 +160,9 @@ describe("declared types that do not depend on a recorded response", () => {
 
         const signAnyKind = (rawTxn: AnyRawTransaction) =>
             offlineSigner.transaction.signTransaction({ senderAccount: account, rawTxn });
-        expectTypeOf(signAnyKind).returns.toEqualTypeOf<Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519>>();
+        expectTypeOf(signAnyKind).returns.toEqualTypeOf<
+            Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519>
+        >();
     });
 
     test("deriveTransactionHash returns a 0x-prefixed hash that the hash validators accept", async () => {
@@ -171,7 +173,9 @@ describe("declared types that do not depend on a recorded response", () => {
             new TxnBuilderTypes.AccountAuthenticatorEd25519(
                 new TxnBuilderTypes.Ed25519PublicKey(account.pubKey().toUint8Array()),
                 new TxnBuilderTypes.Ed25519Signature(
-                    (await offlineSigner.transaction.signTransaction({ senderAccount: account, rawTxn })).toUint8Array(),
+                    (
+                        await offlineSigner.transaction.signTransaction({ senderAccount: account, rawTxn })
+                    ).toUint8Array(),
                 ),
             ),
         );

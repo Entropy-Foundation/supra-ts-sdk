@@ -13,7 +13,6 @@ export type MoveStructId = `${string}::${string}::${string}`;
  */
 export type MoveFunctionId = MoveStructId;
 
-
 /**
  * The bytecode for a Move script.
  */
@@ -57,7 +56,6 @@ export type MoveModule = {
      */
     structs: Array<MoveStruct>;
 };
-
 
 /**
  * A move struct
@@ -105,7 +103,6 @@ export type MoveStructField = {
  * Module names are case-sensitive.
  */
 export type MoveModuleId = `${string}::${string}`;
-
 
 /**
  * Specifies the visibility levels for move functions, controlling access permissions.
@@ -166,14 +163,13 @@ export interface MoveEvent {
     // keep flexible — different events have different schemas
 }
 
-
 /**
  * An event emitted by a transaction.
  */
 export interface Event {
-    event: MoveEvent,
-    block_height: number,
-    transaction_hash: string
+    event: MoveEvent;
+    block_height: number;
+    transaction_hash: string;
 }
 
 /**
@@ -200,53 +196,58 @@ export interface Event {
  */
 export type TypeArgument = TxnBuilderTypes.TypeTag | string;
 
-
 /**
  * The union of all single account signatures, including Ed25519, and MultiEd25519 signatures.
  */
-export type AccountSignature =
-    | Ed25519Signature
-    | MultiEd25519Signature;
-
+export type AccountSignature = Ed25519Signature | MultiEd25519Signature;
 
 /**
  * The union of all transaction authenticators.
  */
-export type Authenticator = MoveTransactionAuthenticator | OracleAuthenticator | DkgAuthenticator | AutomationAuthenticator;
+export type Authenticator =
+    | MoveTransactionAuthenticator
+    | OracleAuthenticator
+    | DkgAuthenticator
+    | AutomationAuthenticator;
 
 /**
  * The union of all move authenticators
  */
-export type MoveInnerAuthenticator = Ed25519Signature | MultiEd25519Signature | MultiAgentSignature | FeePayerSignature | SingleSenderSignature;
+export type MoveInnerAuthenticator =
+    | Ed25519Signature
+    | MultiEd25519Signature
+    | MultiAgentSignature
+    | FeePayerSignature
+    | SingleSenderSignature;
 
 /**
  * The authenticator for a move transaction
  */
 export type MoveTransactionAuthenticator = {
-    Move: Ed25519Signature | MultiEd25519Signature | MultiAgentSignature | FeePayerSignature | SingleSenderSignature
-}
+    Move: Ed25519Signature | MultiEd25519Signature | MultiAgentSignature | FeePayerSignature | SingleSenderSignature;
+};
 
 /**
- * The authenticator for an oracle transaction 
+ * The authenticator for an oracle transaction
  */
 export type OracleAuthenticator = {
     Oracle: {
-        signer: string,
+        signer: string;
         /// Signature of the transaction by signer
-        signature: string,
-    }
-}
+        signature: string;
+    };
+};
 
 /**
- * The authenticator for an Dkg transaction 
+ * The authenticator for an Dkg transaction
  */
 export type DkgAuthenticator = {
     Dkg: {
-        signer: string,
+        signer: string;
         /// Signature of the transaction by signer
-        signature: string,
-    }
-}
+        signature: string;
+    };
+};
 
 /**
  * The structure for an Ed25519 signature in a transaction.
@@ -261,17 +262,17 @@ export type Ed25519Signature = {
          *  Signature associated with the public key
          * */
         signature: string;
-    }
-}
-
+    };
+};
 
 /**
  * The structure for a multi-signature transaction using Ed25519.
  */
 export type MultiEd25519Signature = {
-    MultiEd25519: {/**
-     * The public keys for the Ed25519 signature
-     */
+    MultiEd25519: {
+        /**
+         * The public keys for the Ed25519 signature
+         */
         public_keys: Array<string>;
         /**
          * Signature associated with the public keys in the same order
@@ -282,7 +283,7 @@ export type MultiEd25519Signature = {
          */
         threshold: number;
         bitmap: string;
-    }
+    };
 };
 
 /**
@@ -299,7 +300,7 @@ export type MultiAgentSignature = {
          * The associated signatures, in the same order as the secondary addresses
          */
         secondary_signers: Array<AccountSignature>;
-    }
+    };
 };
 
 /**
@@ -318,7 +319,7 @@ export type FeePayerSignature = {
         secondary_signers: Array<AccountSignature>;
         fee_payer_address: string;
         fee_payer_signer: AccountSignature;
-    }
+    };
 };
 
 /**
@@ -328,13 +329,12 @@ export type SingleSenderSignature = {
     SingleSender: {
         public_key: { value: string; type: string };
         signature: { value: string; type: string };
-    }
+    };
 };
 
 export type AutomationAuthenticator = {
     Automation: string;
-}
-
+};
 
 /**
  * Possible Move values acceptable by move functions (entry, view)
@@ -392,7 +392,6 @@ export type SimpleEntryFunctionArgumentTypes =
     | AccountAddressInput
     | Array<SimpleEntryFunctionArgumentTypes>;
 
-
 export type SimpleEntryFunctionArgumentTypesRaw =
     | boolean
     | number // for u8, u16, u32
@@ -401,7 +400,3 @@ export type SimpleEntryFunctionArgumentTypesRaw =
     | Uint8Array
     | ArrayBuffer
     | Array<SimpleEntryFunctionArgumentTypes>;
-
-
-
-

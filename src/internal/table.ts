@@ -4,16 +4,18 @@ import type { AccountAddressInput } from "../types/account";
 import type { TableItemRequest } from "../types/table";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 
-
 /**
  * Query a table item on Supra.
  */
 export async function getTableItemInternal<T>(
-    args: { handle: AccountAddressInput; data: TableItemRequest; },
-    config: NetworkConfig
+    args: { handle: AccountAddressInput; data: TableItemRequest },
+    config: NetworkConfig,
 ): Promise<T> {
-    return await post<TableItemRequest, T>({
-        path: `/tables/${standardizeAddress(args.handle)}/item`,
-        data: args.data
-    }, config).then(res => res);
+    return await post<TableItemRequest, T>(
+        {
+            path: `/tables/${standardizeAddress(args.handle)}/item`,
+            data: args.data,
+        },
+        config,
+    ).then((res) => res);
 }

@@ -11,24 +11,29 @@ import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../type
 import type { MoveFunctionId } from "../types/move";
 import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSubmit";
 
-export async function getFungibleAssetMetadataInternal(args: { assetAddress: AccountAddressInput }, config: NetworkConfig): Promise<FungibleAssetMetadata> {
-    return await getAccountResourceInternal<FungibleAssetMetadata>({
-        accountAddress: args.assetAddress,
-        resourceType: `${SUPRA_FRAMEWORK_ADDRESS}::fungible_asset::Metadata`,
-    }, config).then(res => res.data);
+export async function getFungibleAssetMetadataInternal(
+    args: { assetAddress: AccountAddressInput },
+    config: NetworkConfig,
+): Promise<FungibleAssetMetadata> {
+    return await getAccountResourceInternal<FungibleAssetMetadata>(
+        {
+            accountAddress: args.assetAddress,
+            resourceType: `${SUPRA_FRAMEWORK_ADDRESS}::fungible_asset::Metadata`,
+        },
+        config,
+    ).then((res) => res.data);
 }
 
 export async function transferFungibleAssetInternal(
     args: {
-        senderAccount: SupraAccount,
-        receiverAccountAddress: AccountAddressInput,
-        amount: number | bigint,
-        assetAddress: AccountAddressInput,
-        optionalTransactionArgs?: OptionalTransactionArgs,
+        senderAccount: SupraAccount;
+        receiverAccountAddress: AccountAddressInput;
+        amount: number | bigint;
+        assetAddress: AccountAddressInput;
+        optionalTransactionArgs?: OptionalTransactionArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
-
     if (standardizeAddress(args.assetAddress) === SUPRA_FUNGIBLE_ASSET_ADDRESS) {
         await assertSupraFungibleAssetBalanceInternal(args.senderAccount, BigInt(args.amount), config);
     }
@@ -37,14 +42,21 @@ export async function transferFungibleAssetInternal(
     let supraTransferPayload = {
         function: `${SUPRA_FRAMEWORK_ADDRESS}::primary_fungible_store::transfer` as MoveFunctionId,
         functionTypeArgs: [parseTypeArgument("0x1::fungible_asset::Metadata")],
-        functionArgs: [addressToBytes(args.assetAddress), addressToBytes(args.receiverAccountAddress), BCS.bcsSerializeUint64(args.amount)]
-    }
+        functionArgs: [
+            addressToBytes(args.assetAddress),
+            addressToBytes(args.receiverAccountAddress),
+            BCS.bcsSerializeUint64(args.amount),
+        ],
+    };
 
-    return await buildAndSubmitEntryFunctionInternal({
-        senderAccount: args.senderAccount,
-        payload: supraTransferPayload,
-        optionalTransactionArgs: args.optionalTransactionArgs,
-    }, config);
+    return await buildAndSubmitEntryFunctionInternal(
+        {
+            senderAccount: args.senderAccount,
+            payload: supraTransferPayload,
+            optionalTransactionArgs: args.optionalTransactionArgs,
+        },
+        config,
+    );
 }
 
 /**
@@ -53,28 +65,34 @@ export async function transferFungibleAssetInternal(
  */
 export async function migrateCoinToFungibleStoreInternal(
     args: {
-        senderAccount: SupraAccount,
-        coinType?: MoveFunctionId,
-        optionalTransactionArgs?: OptionalTransactionArgs,
+        senderAccount: SupraAccount;
+        coinType?: MoveFunctionId;
+        optionalTransactionArgs?: OptionalTransactionArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
-
     let migrationPayload = {
         function: `${SUPRA_FRAMEWORK_ADDRESS}::coin::migrate_to_fungible_store` as MoveFunctionId,
         functionTypeArgs: [parseTypeArgument(args.coinType ?? SUPRA_COIN_TYPE)],
-        functionArgs: []
-    }
+        functionArgs: [],
+    };
 
-    return await buildAndSubmitEntryFunctionInternal({
-        senderAccount: args.senderAccount,
-        payload: migrationPayload,
-        optionalTransactionArgs: args.optionalTransactionArgs,
-    }, config);
+    return await buildAndSubmitEntryFunctionInternal(
+        {
+            senderAccount: args.senderAccount,
+            payload: migrationPayload,
+            optionalTransactionArgs: args.optionalTransactionArgs,
+        },
+        config,
+    );
 }
 
 /** Throws unless the sender's primary store of the SUPRA fungible asset holds at least `amount`. */
-async function assertSupraFungibleAssetBalanceInternal(senderAccount: SupraAccount, amount: bigint, config: NetworkConfig): Promise<void> {
+async function assertSupraFungibleAssetBalanceInternal(
+    senderAccount: SupraAccount,
+    amount: bigint,
+    config: NetworkConfig,
+): Promise<void> {
     const balance = await getAccountSupraBalanceInternal({ accountAddress: senderAccount.address() }, config);
     if (balance.fungibleAsset < amount) {
         throw new SupraInsufficientFungibleAssetBalanceError({

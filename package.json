@@ -46,6 +46,7 @@
     "test:e2e": "jest --config jest.e2e.config.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\" \"e2e/**/*.ts\" \"scripts/**/*.ts\" --max-warnings 0",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,json,md}\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tools.json",
     "typecheck:examples": "tsc -p examples/tsconfig.json",
     "check:jsdoc": "tsx scripts/check-jsdoc-examples.ts",

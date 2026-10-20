@@ -4,13 +4,11 @@ import { simulateSerializedTxnInternal, simulateTxnInternal } from "../../intern
 import type { MoveInnerAuthenticator } from "../../types/move";
 import type { TransactionResponse } from "../../types/transaction";
 
-
 /**
  * The Simulate class provides methods for simulating transactions on the Supra network.
  * @group Transaction
  */
 export class Simulate {
-
     /**
      * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
      */
@@ -22,16 +20,14 @@ export class Simulate {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * ```  
+     * ```
      * @group Transaction
      */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
-
 
     /**
      * Simulate a transaction using the provided transaction payload.
@@ -69,8 +65,6 @@ export class Simulate {
         return simulateTxnInternal(args, this.networkInformation);
     }
 
-
-
     /**
      * Simulate a transaction using the provided Serialized raw transaction data
      * @param args.txAuthenticator - Transaction authenticator
@@ -103,18 +97,10 @@ export class Simulate {
      * ```
      * @group Transaction
      */
-    async serialized(
-        args: {
-            txAuthenticator: MoveInnerAuthenticator,
-            serializedRawTransaction: Uint8Array
-        }
-    ): Promise<TransactionResponse> {
-
+    async serialized(args: {
+        txAuthenticator: MoveInnerAuthenticator;
+        serializedRawTransaction: Uint8Array;
+    }): Promise<TransactionResponse> {
         return simulateSerializedTxnInternal(args, this.networkInformation);
     }
-
-
-
-
-
 }

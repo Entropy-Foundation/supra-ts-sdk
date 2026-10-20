@@ -23,9 +23,7 @@ describe("stringifyWithBigInt", () => {
 
     it("should emit bigints nested in arrays and objects", () => {
         const value = { args: [{ U64: UNSAFE_U64 }, { U64: 1000n }], meta: { seq: 42n } };
-        expect(stringifyWithBigInt(value)).toBe(
-            '{"args":[{"U64":9007199254740993},{"U64":1000}],"meta":{"seq":42}}',
-        );
+        expect(stringifyWithBigInt(value)).toBe('{"args":[{"U64":9007199254740993},{"U64":1000}],"meta":{"seq":42}}');
     });
 
     it("should emit a negative bigint", () => {
@@ -49,9 +47,9 @@ describe("stringifyWithBigInt", () => {
     it("should throw rather than emit a number the caller never supplied", () => {
         // A string that mimics the internal marker would otherwise be unwrapped into
         // a bare `5`. The serializer fails closed instead.
-        expect(() =>
-            stringifyWithBigInt({ seq: 1n, note: "__supra_bigint__5__supra_bigint__" }),
-        ).toThrow(/Refusing to serialize/);
+        expect(() => stringifyWithBigInt({ seq: 1n, note: "__supra_bigint__5__supra_bigint__" })).toThrow(
+            /Refusing to serialize/,
+        );
     });
 
     it("should throw when the value is not JSON-serializable", () => {

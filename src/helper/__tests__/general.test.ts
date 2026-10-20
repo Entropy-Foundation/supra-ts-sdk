@@ -88,7 +88,9 @@ describe("convertArgsValueToJSONParsable", () => {
 
     // Option<vector<u8>> with string value
     it("should wrap Option<vector<u8>> string value", () => {
-        expect(convertArgsValueToJSONParsable("0x1::option::Option<vector<u8>>", "0xdeadbeef")).toEqual({ vec: ["0xdeadbeef"] });
+        expect(convertArgsValueToJSONParsable("0x1::option::Option<vector<u8>>", "0xdeadbeef")).toEqual({
+            vec: ["0xdeadbeef"],
+        });
     });
 
     // Option<vector<u8>> with Uint8Array
@@ -208,7 +210,10 @@ describe("address and Object<T> view arguments", () => {
 
     it.each(["address", OBJECT])("sends a HexString %s argument as its string", (type) => {
         expect(convertArgsValueToJSONParsable(type, new HexString("0xa"))).toBe("0xa");
-        expect(convertArgsValueToJSONParsable(`vector<${type}>`, [new HexString("0x1"), "0x2"])).toEqual(["0x1", "0x2"]);
+        expect(convertArgsValueToJSONParsable(`vector<${type}>`, [new HexString("0x1"), "0x2"])).toEqual([
+            "0x1",
+            "0x2",
+        ]);
         expect(convertArgsValueToJSONParsable(`0x1::option::Option<${type}>`, new HexString("0x3"))).toEqual({
             vec: ["0x3"],
         });
@@ -224,7 +229,9 @@ describe("address and Object<T> view arguments", () => {
 describe("convertValueToReturnTypedValue", () => {
     // Object<T>
     it("should extract .inner from Object<T>", () => {
-        expect(convertValueToReturnTypedValue("0x1::object::Object<0x1::coin::CoinStore>", { inner: "0xabc" })).toBe("0xabc");
+        expect(convertValueToReturnTypedValue("0x1::object::Object<0x1::coin::CoinStore>", { inner: "0xabc" })).toBe(
+            "0xabc",
+        );
     });
 
     // Option
@@ -301,10 +308,7 @@ describe("convertValueToAbiReturnTypedValue", () => {
     });
 
     it("should convert multiple return types", () => {
-        const result = convertValueToAbiReturnTypedValue(
-            ["u64", "bool", "address"],
-            ["100", true, "0x1"],
-        );
+        const result = convertValueToAbiReturnTypedValue(["u64", "bool", "address"], ["100", true, "0x1"]);
         expect(result).toEqual([100n, true, "0x1"]);
     });
 });
@@ -315,7 +319,9 @@ describe("isOption", () => {
     });
 
     it("should return true for Option with full hex address", () => {
-        expect(isOption("0x0000000000000000000000000000000000000000000000000000000000000001::option::Option<u64>")).toBe(true);
+        expect(
+            isOption("0x0000000000000000000000000000000000000000000000000000000000000001::option::Option<u64>"),
+        ).toBe(true);
     });
 
     it("should return false for non-Option type", () => {
@@ -376,9 +382,11 @@ describe("isMoveStruct", () => {
 describe("convertPayloadTypeArgsToJSONParsable", () => {
     it("should return empty array when no type arguments", () => {
         const fn = createMockFunction();
-        expect(convertPayloadTypeArgsToJSONParsable(fn, {
-            function: "0x1::coin::balance" as `${string}::${string}::${string}`,
-        })).toEqual([]);
+        expect(
+            convertPayloadTypeArgsToJSONParsable(fn, {
+                function: "0x1::coin::balance" as `${string}::${string}::${string}`,
+            }),
+        ).toEqual([]);
     });
 
     it("should throw on length mismatch", () => {
@@ -404,9 +412,11 @@ describe("convertPayloadTypeArgsToJSONParsable", () => {
 describe("convertPayloadArgsToJSONParsable", () => {
     it("should return empty array when no arguments", () => {
         const fn = createMockFunction();
-        expect(convertPayloadArgsToJSONParsable(fn, {
-            function: "0x1::coin::balance" as `${string}::${string}::${string}`,
-        })).toEqual([]);
+        expect(
+            convertPayloadArgsToJSONParsable(fn, {
+                function: "0x1::coin::balance" as `${string}::${string}::${string}`,
+            }),
+        ).toEqual([]);
     });
 
     it("should throw on argument count mismatch", () => {
@@ -599,7 +609,8 @@ describe("integer view arguments", () => {
     ];
 
     it.each(BOUNDS)("accepts the bounds of %s and refuses the values beyond them", (type, min, max) => {
-        const expected = (value: bigint) => (["u8", "u16", "u32", "i8", "i16", "i32"].includes(type) ? Number(value) : value.toString());
+        const expected = (value: bigint) =>
+            ["u8", "u16", "u32", "i8", "i16", "i32"].includes(type) ? Number(value) : value.toString();
         for (const value of [min, max]) {
             expect(convertArgsValueToJSONParsable(type, value)).toBe(expected(value));
             expect(convertArgsValueToJSONParsable(type, value.toString())).toBe(expected(value));

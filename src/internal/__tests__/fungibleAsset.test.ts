@@ -150,7 +150,12 @@ interface PayloadBody {
     Move: {
         raw_txn: {
             payload: {
-                EntryFunction: { module: { address: string; name: string }; function: string; ty_args: unknown[]; args: unknown[] };
+                EntryFunction: {
+                    module: { address: string; name: string };
+                    function: string;
+                    ty_args: unknown[];
+                    args: unknown[];
+                };
             };
         };
     };

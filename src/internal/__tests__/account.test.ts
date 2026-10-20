@@ -1,4 +1,13 @@
-import { getAccountLegacyCoins, getAccountInfoInternal, getAccountModulesInternal, getAccountModuleInternal, getAccountResourcesInternal, getAccountResourceInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../account";
+import {
+    getAccountLegacyCoins,
+    getAccountInfoInternal,
+    getAccountModulesInternal,
+    getAccountModuleInternal,
+    getAccountResourcesInternal,
+    getAccountResourceInternal,
+    getAccountTransactionsInternal,
+    isAccountExistsInternal,
+} from "../account";
 import { SupraAPIError } from "../../errors/apiError";
 import type { MoveResource } from "../../types/move";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
@@ -66,15 +75,9 @@ describe("internal/account", () => {
         it("should call get with correct path", async () => {
             mockGet.mockResolvedValue({ data: { sequence_number: 5, authentication_key: "0xabc" } });
 
-            const result = await getAccountInfoInternal(
-                { accountAddress: "0x1" },
-                testConfig,
-            );
+            const result = await getAccountInfoInternal({ accountAddress: "0x1" }, testConfig);
 
-            expect(mockGet).toHaveBeenCalledWith(
-                { path: `/accounts/${fullAddress}` },
-                testConfig,
-            );
+            expect(mockGet).toHaveBeenCalledWith({ path: `/accounts/${fullAddress}` }, testConfig);
             expect(result).toEqual({ sequence_number: 5n, authentication_key: "0xabc" });
         });
 
@@ -88,7 +91,9 @@ describe("internal/account", () => {
         });
 
         it("should accept a sequence number sent as a decimal string", async () => {
-            mockGet.mockResolvedValue({ data: { sequence_number: "18446744073709551615", authentication_key: "0xabc" } });
+            mockGet.mockResolvedValue({
+                data: { sequence_number: "18446744073709551615", authentication_key: "0xabc" },
+            });
 
             const result = await getAccountInfoInternal({ accountAddress: "0x1" }, testConfig);
 
@@ -122,15 +127,9 @@ describe("internal/account", () => {
             const mockModule = { bytecode: "0x...", abi: undefined };
             mockGet.mockResolvedValue({ data: mockModule });
 
-            await getAccountModuleInternal(
-                { accountAddress: "0x1", moduleName: "coin" },
-                testConfig,
-            );
+            await getAccountModuleInternal({ accountAddress: "0x1", moduleName: "coin" }, testConfig);
 
-            expect(mockGet).toHaveBeenCalledWith(
-                { path: `/accounts/${fullAddress}/modules/coin` },
-                testConfig,
-            );
+            expect(mockGet).toHaveBeenCalledWith({ path: `/accounts/${fullAddress}/modules/coin` }, testConfig);
         });
     });
 
@@ -156,19 +155,19 @@ describe("internal/account", () => {
 
     describe("getAccountResourceInternal", () => {
         it("should call get with correct path including resource type", async () => {
-            const resourceType = "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>" as `${string}::${string}::${string}`;
+            const resourceType =
+                "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>" as `${string}::${string}::${string}`;
             mockGet.mockResolvedValue({ data: { type: resourceType, data: {} } });
 
-            await getAccountResourceInternal(
-                { accountAddress: "0x1", resourceType },
-                testConfig,
-            );
+            await getAccountResourceInternal({ accountAddress: "0x1", resourceType }, testConfig);
 
             expect(mockGet).toHaveBeenCalledWith(
                 { path: `/accounts/${fullAddress}/resources/${encodeURIComponent(resourceType)}` },
                 testConfig,
             );
-            expect(encodeURIComponent(resourceType)).toBe("0x1%3A%3Acoin%3A%3ACoinStore%3C0x1%3A%3Asupra_coin%3A%3ASupraCoin%3E");
+            expect(encodeURIComponent(resourceType)).toBe(
+                "0x1%3A%3Acoin%3A%3ACoinStore%3C0x1%3A%3Asupra_coin%3A%3ASupraCoin%3E",
+            );
         });
 
         it("should encode a resource type so that it stays one path segment", async () => {
@@ -179,7 +178,10 @@ describe("internal/account", () => {
                 testConfig,
             );
 
-            expect(mockGet).toHaveBeenCalledWith({ path: `/accounts/${fullAddress}/resources/0x1%3A%3Aa%3A%3AB%2F..%2Fc` }, testConfig);
+            expect(mockGet).toHaveBeenCalledWith(
+                { path: `/accounts/${fullAddress}/resources/0x1%3A%3Aa%3A%3AB%2F..%2Fc` },
+                testConfig,
+            );
         });
     });
 

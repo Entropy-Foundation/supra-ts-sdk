@@ -14,14 +14,10 @@ export async function getFunctionABI(
     moduleName: string,
     functionName: string,
 ): Promise<MoveFunction> {
-    const funcABI = abi.exposed_functions.find(
-        (f) => f.name === functionName,
-    );
+    const funcABI = abi.exposed_functions.find((f) => f.name === functionName);
 
     if (!funcABI) {
-        throw new Error(
-            `Function '${functionName}' not found in module '${moduleAddress}::${moduleName}'`,
-        );
+        throw new Error(`Function '${functionName}' not found in module '${moduleAddress}::${moduleName}'`);
     }
 
     return funcABI;

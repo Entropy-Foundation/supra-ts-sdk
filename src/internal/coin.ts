@@ -12,39 +12,46 @@ import type { CoinInfo } from "../types/coin";
 
 export async function transferCoinInternal(
     args: {
-        senderAccount: SupraAccount,
-        receiverAccountAddress: AccountAddressInput,
-        amount: number | bigint,
-        coinType: MoveFunctionId,
-        optionalTransactionArgs?: OptionalTransactionArgs,
+        senderAccount: SupraAccount;
+        receiverAccountAddress: AccountAddressInput;
+        amount: number | bigint;
+        coinType: MoveFunctionId;
+        optionalTransactionArgs?: OptionalTransactionArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
-
     // Coin Transfer Payload
     let supraTransferPayload = {
         function: `${SUPRA_FRAMEWORK_ADDRESS}::supra_account::transfer_coins` as MoveFunctionId,
         functionTypeArgs: [parseTypeArgument(args.coinType)],
-        functionArgs: [addressToBytes(args.receiverAccountAddress), BCS.bcsSerializeUint64(args.amount)]
-    }
+        functionArgs: [addressToBytes(args.receiverAccountAddress), BCS.bcsSerializeUint64(args.amount)],
+    };
 
-    return await buildAndSubmitEntryFunctionInternal({
-        senderAccount: args.senderAccount,
-        payload: supraTransferPayload,
-        optionalTransactionArgs: args.optionalTransactionArgs,
-    }, config);
+    return await buildAndSubmitEntryFunctionInternal(
+        {
+            senderAccount: args.senderAccount,
+            payload: supraTransferPayload,
+            optionalTransactionArgs: args.optionalTransactionArgs,
+        },
+        config,
+    );
 }
 
-
-export async function getCoinInfoInternal(args: { coinType: MoveFunctionId }, config: NetworkConfig): Promise<CoinInfo> {
-    return await getAccountResourceInternal({
-        accountAddress: new HexString(args.coinType.split("::")[0]!),
-        resourceType: `${SUPRA_FRAMEWORK_ADDRESS}::coin::CoinInfo<${args.coinType}>`,
-    }, config).then(res => {
+export async function getCoinInfoInternal(
+    args: { coinType: MoveFunctionId },
+    config: NetworkConfig,
+): Promise<CoinInfo> {
+    return await getAccountResourceInternal(
+        {
+            accountAddress: new HexString(args.coinType.split("::")[0]!),
+            resourceType: `${SUPRA_FRAMEWORK_ADDRESS}::coin::CoinInfo<${args.coinType}>`,
+        },
+        config,
+    ).then((res) => {
         return {
             name: res.data.name,
             symbol: res.data.symbol,
             decimals: res.data.decimals,
-        }
+        };
     });
 }

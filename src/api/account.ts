@@ -4,22 +4,37 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { AccountAddressInput, AccountData, PaginatedResponse, SupraBalance } from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
 import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
-import { getAccountAutoTransactionsInternal, getAccountCoinBalanceInternal, getAccountCoinsCountInternal, getAccountCoinTransactionsInternal, getAccountInfoInternal, getAccountModuleInternal, getAccountModulesInternal, getAccountResourceInternal, getAccountResourcesInternal, getAccountSupraBalanceInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../internal/account";
+import {
+    getAccountAutoTransactionsInternal,
+    getAccountCoinBalanceInternal,
+    getAccountCoinsCountInternal,
+    getAccountCoinTransactionsInternal,
+    getAccountInfoInternal,
+    getAccountModuleInternal,
+    getAccountModulesInternal,
+    getAccountResourceInternal,
+    getAccountResourcesInternal,
+    getAccountSupraBalanceInternal,
+    getAccountTransactionsInternal,
+    isAccountExistsInternal,
+} from "../internal/account";
 import { SUPRA_COIN_TYPE } from "../utils/constants";
-import { validateAddress, validateMoveIdentifier, validatePaginationCount, validateStructId } from "../helper/validation";
-
+import {
+    validateAddress,
+    validateMoveIdentifier,
+    validatePaginationCount,
+    validateStructId,
+} from "../helper/validation";
 
 /**
  * The Account class provides methods for querying the state of an account.
  * @group Account
  */
 export class Account {
-
     /**
      * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
      */
     protected readonly networkInformation: NetworkConfig;
-
 
     /**
      * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
@@ -27,9 +42,9 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * ```  
+     * ```
      * @group Account
      */
     constructor(networkInformation: NetworkConfig) {
@@ -46,15 +61,15 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
-     *    const accountAddress = "0x1"; 
+     *    const accountAddress = "0x1";
      *    const isAccountExists = await supra.account.isAccountExists({ accountAddress });
      *    console.log(isAccountExists);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Account
@@ -73,16 +88,16 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
-     *    const accountAddress = "0x1"; 
+     *    const accountAddress = "0x1";
      *    const accountData = await supra.account.getAccountInfo({ accountAddress: accountAddress });
      *   console.log(accountData);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
@@ -101,16 +116,16 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const {response: accountModules, cursor} = await supra.account.getAccountModules({ accountAddress: accountAddress });
      *    console.log(accountModules);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
@@ -131,18 +146,18 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const accountModule = await supra.account.getAccountModule({ accountAddress: accountAddress, moduleName: "module_name" });
      *    console.log(accountModule);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
-     * @group Account  
+     * @group Account
      */
     async getAccountModule(args: {
         accountAddress: AccountAddressInput;
@@ -152,8 +167,6 @@ export class Account {
         validateMoveIdentifier(args.moduleName, "moduleName");
         return getAccountModuleInternal(args, this.networkInformation);
     }
-
-
 
     /**
      * Queries the resources of an account.
@@ -165,16 +178,16 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const {response: accountResources, cursor} = await supra.account.getAccountResources({ accountAddress: accountAddress });
      *    console.log(accountResources);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
@@ -196,16 +209,16 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const accountResource = await supra.account.getAccountResource({ accountAddress: accountAddress, resourceType: "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>" });
      *    console.log(accountResource);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
@@ -217,7 +230,6 @@ export class Account {
         validateStructId(args.resourceType, "resourceType");
         return getAccountResourceInternal<T>(args, this.networkInformation);
     }
-
 
     /**
      * Queries the transactions of an account.
@@ -237,16 +249,16 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const {response: accountTransactions, cursor} = await supra.account.getAccountTransactions({ accountAddress: accountAddress });
      *    console.log(accountTransactions);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
@@ -262,7 +274,6 @@ export class Account {
         validatePaginationCount(args.options?.count);
         return getAccountTransactionsInternal<T>(args, this.networkInformation);
     }
-
 
     /**
      * Queries the coin transactions of an account.
@@ -281,16 +292,16 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const {response: accountCoinTransactions , cursor} = await supra.account.getAccountCoinTransactions({ accountAddress: accountAddress });
      *    console.log(accountCoinTransactions);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
@@ -300,7 +311,7 @@ export class Account {
             count?: number;
             start?: string | undefined;
             ascending?: boolean;
-            type?: TransactionQueryType
+            type?: TransactionQueryType;
         };
     }): Promise<PaginatedResponse<T[]>> {
         validateAddress(args.accountAddress, "accountAddress");
@@ -315,10 +326,10 @@ export class Account {
      * @param args.options.count - The number of transactions to return.
      * @param args.options.block_height - Starting block height (inclusive). Optional.
      *  The block height at which to start lookup for transactions. If provided, returns :count of transactions starting from it in the specified order. For order see :ascending flag.
-     * @note If a :cursor is specified then this field will be ignored. 
+     * @note If a :cursor is specified then this field will be ignored.
      * @param args.options.cursor - The `cursor` of the previous page, exclusive. Omit it, or pass `undefined`, for the first page.
      * If provided, returns :count of transactions starting from this cursor in the specified order. For order see :ascending flag.
-     * If not specified, the lookup will be done based on the :block_height parameter value. 
+     * If not specified, the lookup will be done based on the :block_height parameter value.
      * @note If both :cursor and :block_height are specified then :cursor has precedence.
      * @param args.options.ascending - Whether to return the transactions in ascending order.
      * @note Maximum number of items to return default is 20 and maximum is 100.
@@ -327,15 +338,15 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const {response: accountAutoTransactions, cursor} = await supra.account.getAccountAutoTransactions({ accountAddress: accountAddress });
      *    console.log(accountAutoTransactions);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Account
@@ -354,8 +365,6 @@ export class Account {
         return getAccountAutoTransactionsInternal(args, this.networkInformation);
     }
 
-
-
     /**
      * Queries the number of coin types an account holds: the legacy coins (`CoinStore` resources of the account) plus
      * SUPRA when the account holds it as a fungible asset and has no `CoinStore<SupraCoin>` (an account that migrated
@@ -367,22 +376,20 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const accountCoinsCount = await supra.account.getAccountCoinsCount({ accountAddress: accountAddress });
      *    console.log(accountCoinsCount);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
-    async getAccountCoinsCount(args: {
-        accountAddress: AccountAddressInput;
-    }): Promise<number> {
+    async getAccountCoinsCount(args: { accountAddress: AccountAddressInput }): Promise<number> {
         validateAddress(args.accountAddress, "accountAddress");
         return getAccountCoinsCountInternal(args, this.networkInformation);
     }
@@ -398,25 +405,22 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const accountSupraCoinBalance = await supra.account.getAccountSupraCoinBalance({ accountAddress: accountAddress });
      *    console.log(accountSupraCoinBalance);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
-    async getAccountSupraCoinBalance(args: {
-        accountAddress: AccountAddressInput;
-    }): Promise<bigint> {
+    async getAccountSupraCoinBalance(args: { accountAddress: AccountAddressInput }): Promise<bigint> {
         return this.getAccountCoinBalance({ accountAddress: args.accountAddress, asset: SUPRA_COIN_TYPE });
     }
-
 
     /**
      * Queries the SUPRA balance of an account in quants, in total and by the form in which it is held: as a legacy coin
@@ -441,13 +445,10 @@ export class Account {
      * ```
      * @group Account
      */
-    async getAccountSupraBalance(args: {
-        accountAddress: AccountAddressInput;
-    }): Promise<SupraBalance> {
+    async getAccountSupraBalance(args: { accountAddress: AccountAddressInput }): Promise<SupraBalance> {
         validateAddress(args.accountAddress, "accountAddress");
         return getAccountSupraBalanceInternal(args, this.networkInformation);
     }
-
 
     /**
      * Queries the balance of a coin or fungible asset owned by an account. What the balance covers depends on `asset`:
@@ -463,16 +464,16 @@ export class Account {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const accountSupraCoinBalance = await supra.account.getAccountCoinBalance({ accountAddress: accountAddress, asset: "0x1::supra_coin::SupraCoin" });
      *    console.log(accountSupraCoinBalance);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Account
      */
@@ -483,7 +484,4 @@ export class Account {
         validateAddress(args.accountAddress, "accountAddress");
         return getAccountCoinBalanceInternal(args, this.networkInformation);
     }
-
-
-
 }

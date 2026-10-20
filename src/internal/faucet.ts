@@ -6,7 +6,6 @@ import type { FaucetTransactionResponse } from "../types/faucet";
 import type { SupraTransactionResponse } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 
-
 /**
  * Funds an account with the faucet.
  * The request is sent on any network; a network that does not serve the faucet answers with an error status.
@@ -17,14 +16,16 @@ export async function fundAccountWithFaucetInternal(
     args: {
         accountAddress: AccountAddressInput;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<FaucetTransactionResponse> {
-
-    const response = await get<unknown>({
-        path: `/wallet/faucet/${standardizeAddress(args.accountAddress)}`,
-        // The faucet funds the account on every request that it serves, so a repeated request can fund it twice.
-        retryable: false,
-    }, config);
+    const response = await get<unknown>(
+        {
+            path: `/wallet/faucet/${standardizeAddress(args.accountAddress)}`,
+            // The faucet funds the account on every request that it serves, so a repeated request can fund it twice.
+            retryable: false,
+        },
+        config,
+    );
 
     const body = response.data;
 
@@ -42,7 +43,6 @@ export async function fundAccountWithFaucetInternal(
     throw new SupraFaucetResponseError(body);
 }
 
-
 /**
  * Reads the faucet transaction with the given hash.
  */
@@ -50,12 +50,14 @@ export async function getFaucetTransactionInternal(
     args: {
         transactionHash: string;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SupraTransactionResponse> {
-
-    const response = await get<SupraTransactionResponse>({
-        path: `/wallet/faucet/transactions/${standardizeAddress(args.transactionHash)}`,
-    }, config);
+    const response = await get<SupraTransactionResponse>(
+        {
+            path: `/wallet/faucet/transactions/${standardizeAddress(args.transactionHash)}`,
+        },
+        config,
+    );
 
     return response.data;
 }

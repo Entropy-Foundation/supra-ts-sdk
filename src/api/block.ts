@@ -1,4 +1,9 @@
-import { getBlockByHashInternal, getBlockByHeightInternal, getLatestBlockInternal, getTransactionsByBlockHashInternal } from "../internal/block";
+import {
+    getBlockByHashInternal,
+    getBlockByHeightInternal,
+    getLatestBlockInternal,
+    getTransactionsByBlockHashInternal,
+} from "../internal/block";
 import type { FinalizedBlockHeader } from "../types/block";
 import type { TransactionQueryType } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
@@ -9,29 +14,25 @@ import { validateBlockHeight, validateHexString } from "../helper/validation";
  * @group Block
  */
 export class Block {
-
-
     /**
-    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-    */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
 
-
     /**
-    * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
-    * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
-    * @example
-    * ```typescript
-    * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
-    * const supra = new SupraClient({ network: Network.TESTNET });
-    * ```  
-    * @group Block
-    */
+     * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
+     * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     * ```
+     * @group Block
+     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Get the meta information of the most recently finalized and executed block.
@@ -46,15 +47,14 @@ export class Block {
      *    const block = await supra.block.getLatestBlock();
      *    console.log(block);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Block
      */
     async getLatestBlock(): Promise<FinalizedBlockHeader> {
-        return getLatestBlockInternal(this.networkInformation)
+        return getLatestBlockInternal(this.networkInformation);
     }
-
 
     /**
      * Get information about the block that has been finalized at the given height.
@@ -69,22 +69,25 @@ export class Block {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const height = 1;
      *    const block = await supra.block.getBlockByHeight({ height: height });
      *    console.log(block);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Block
      */
-    async getBlockByHeight(args: { height: number, options?: { withFinalizedTransactions?: boolean, type?: TransactionQueryType } }): Promise<FinalizedBlockHeader> {
+    async getBlockByHeight(args: {
+        height: number;
+        options?: { withFinalizedTransactions?: boolean; type?: TransactionQueryType };
+    }): Promise<FinalizedBlockHeader> {
         validateBlockHeight(args.height, "height");
-        return getBlockByHeightInternal(args, this.networkInformation)
+        return getBlockByHeightInternal(args, this.networkInformation);
     }
 
     /**
@@ -96,24 +99,23 @@ export class Block {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const blockHash = "0x1";
      *    const block = await supra.block.getBlockByHash({ blockHash: blockHash });
      *    console.log(block);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Block
      */
     async getBlockByHash(args: { blockHash: string }): Promise<FinalizedBlockHeader> {
         validateHexString(args.blockHash, "blockHash");
-        return getBlockByHashInternal(args, this.networkInformation)
+        return getBlockByHashInternal(args, this.networkInformation);
     }
-
 
     /**
      * Get a list containing the hashes of the transactions that were finalized in the block with the given hash in the order that they were executed.
@@ -126,21 +128,24 @@ export class Block {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const blockHash = "0x1";
      *    const transactions = await supra.block.getTransactionsByBlockHash({ blockHash: blockHash });
      *    console.log(transactions);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Block
      */
-    async getTransactionsByBlockHash(args: { blockHash: string, options?: { type?: TransactionQueryType } }): Promise<string[]> {
+    async getTransactionsByBlockHash(args: {
+        blockHash: string;
+        options?: { type?: TransactionQueryType };
+    }): Promise<string[]> {
         validateHexString(args.blockHash, "blockHash");
-        return getTransactionsByBlockHashInternal(args, this.networkInformation)
+        return getTransactionsByBlockHashInternal(args, this.networkInformation);
     }
 }

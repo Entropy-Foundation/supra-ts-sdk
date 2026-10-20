@@ -8,13 +8,12 @@ import { convertPayloadArgsToJSONParsable, convertPayloadTypeArgsToJSONParsable,
 /**
  * Generate a payload for a view function
  */
-export async function generateViewFunctionPayload(
-    args: InputViewFunctionData,
-    config: NetworkConfig
-) {
+export async function generateViewFunctionPayload(args: InputViewFunctionData, config: NetworkConfig) {
     let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
 
-    const abi = args.abi ?? (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
+    const abi =
+        args.abi ??
+        (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
 
     let funcABI = await getFunctionABI(abi, moduleAddress!, moduleName!, functionName!);
 
@@ -28,6 +27,6 @@ export async function generateViewFunctionPayload(
         function: args.function,
         typeArguments: parsableTypeArguments ?? [],
         functionArguments: parsableArguments,
-        returnType: funcABI.return
-    }
+        returnType: funcABI.return,
+    };
 }

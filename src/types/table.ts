@@ -21,7 +21,6 @@ export type TableKeyValueTypeHelper<T extends string = string> =
 // The final type
 export type TableKeyValueType = TableKeyValueTypeHelper<TableKeyValueTypeHelper>;
 
-
 /**
  * The request payload for the GetTableItem API.
  */

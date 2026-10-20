@@ -13,7 +13,11 @@ import { parseTypeArgument, typeTagToString } from "./typeTag";
  * @returns An object containing the module address, module name, and function name.
  * @throws Error if the function identifier does not contain exactly three parts.
  */
-export function getFunctionParts(functionArg: MoveFunctionId): { moduleAddress: string, moduleName: string, functionName: string } {
+export function getFunctionParts(functionArg: MoveFunctionId): {
+    moduleAddress: string;
+    moduleName: string;
+    functionName: string;
+} {
     const funcNameParts = functionArg.split("::");
     if (funcNameParts.length !== 3) {
         throw new Error(`Invalid function ${functionArg}`);
@@ -33,7 +37,9 @@ export function convertPayloadTypeArgsToJSONParsable(functionAbi: MoveFunction, 
 
     // Check type arguments length
     if (functionAbi.generic_type_params.length !== args.typeArguments.length) {
-        throw new Error(`Function ${functionAbi.name} has ${functionAbi.generic_type_params.length} type arguments, but ${args.typeArguments.length} were provided`);
+        throw new Error(
+            `Function ${functionAbi.name} has ${functionAbi.generic_type_params.length} type arguments, but ${args.typeArguments.length} were provided`,
+        );
     }
 
     let typeArguments = args.typeArguments.map((_, idx) => {
@@ -43,13 +49,18 @@ export function convertPayloadTypeArgsToJSONParsable(functionAbi: MoveFunction, 
     return typeArguments;
 }
 
-export function convertPayloadTypeArgsToMoveType(functionAbi: MoveFunction, args: InputViewFunctionData): TxnBuilderTypes.TypeTag[] {
+export function convertPayloadTypeArgsToMoveType(
+    functionAbi: MoveFunction,
+    args: InputViewFunctionData,
+): TxnBuilderTypes.TypeTag[] {
     // Find the ABI for this function
     if (!args.typeArguments || args.typeArguments.length == 0) return [];
 
     // Check type arguments length
     if (functionAbi.generic_type_params.length !== args.typeArguments.length) {
-        throw new Error(`Function ${functionAbi.name} has ${functionAbi.generic_type_params.length} type arguments, but ${args.typeArguments.length} were provided`);
+        throw new Error(
+            `Function ${functionAbi.name} has ${functionAbi.generic_type_params.length} type arguments, but ${args.typeArguments.length} were provided`,
+        );
     }
 
     let typeArguments = args.typeArguments.map((_, idx) => {
@@ -59,26 +70,24 @@ export function convertPayloadTypeArgsToMoveType(functionAbi: MoveFunction, args
     return typeArguments;
 }
 
-
 /**
  * Converts arguments to JSON parsable
  */
 export function convertPayloadArgsToJSONParsable(functionAbi: MoveFunction, args: InputViewFunctionData) {
-
     // Convert return values
     if (!args.functionArguments || args.functionArguments.length === 0) return [];
 
     if (functionAbi.params.length !== args.functionArguments.length) {
-        throw new Error(`Function ${functionAbi.name} has ${functionAbi.params.length} arguments, but ${args.functionArguments.length} were provided`);
+        throw new Error(
+            `Function ${functionAbi.name} has ${functionAbi.params.length} arguments, but ${args.functionArguments.length} were provided`,
+        );
     }
 
     // Multiple return
     return functionAbi.params.map((typeStr, idx) => {
         return convertArgsValueToJSONParsable(typeStr, args.functionArguments![idx]);
-
     });
 }
-
 
 /**
  * Converts a type argument to the type string of a view request. A string is checked with `parseTypeArgument` and
@@ -86,7 +95,6 @@ export function convertPayloadArgsToJSONParsable(functionAbi: MoveFunction, args
  * @throws Error if a string is not a valid type argument
  */
 export function convertTypeArgsValueToJSONParsable(value: TypeArgument | undefined): string {
-
     if (typeof value === "string") {
         parseTypeArgument(value);
         return value;
@@ -104,7 +112,6 @@ export function convertTypeArgsValueToJSONParsable(value: TypeArgument | undefin
  * @throws Error if a string is not a valid type argument
  */
 export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefined): TxnBuilderTypes.TypeTag {
-
     if (typeof value === "string") {
         return parseTypeArgument(value);
     }
@@ -116,12 +123,10 @@ export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefi
     throw new Error(`Invalid type argument: ${value}`);
 }
 
-
 /**
  * Converts a Move value to a JSON parsable value
  */
 export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryFunctionArgumentTypes): unknown {
-
     const optionInner = extractOptionInner(type);
 
     // ----------------------------
@@ -159,9 +164,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
         if (!Array.isArray(value)) {
             throw new Error(`Expected array for type '${type}'`);
         }
-        return value.map(v =>
-            convertArgsValueToJSONParsable(vectorInner, v)
-        );
+        return value.map((v) => convertArgsValueToJSONParsable(vectorInner, v));
     }
 
     // ----------------------------
@@ -182,28 +185,21 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     return value;
 }
 
-
-
 /**
  * Convert a Move value to a TS value
  */
 export function convertValueToAbiReturnTypedValue(returnType: string[], response: unknown[]) {
-
     // Convert return values
     if (!returnType || returnType.length === 0) return [];
 
-
     // Multiple return
-    return returnType.map((typeStr, idx) =>
-        convertValueToReturnTypedValue(typeStr, response[idx])
-    );
+    return returnType.map((typeStr, idx) => convertValueToReturnTypedValue(typeStr, response[idx]));
 }
 
 /**
  * Convert a Move value to a TS value
  */
 export function convertValueToReturnTypedValue(type: string, value: unknown): unknown {
-
     const intTypes = ["u8", "u16", "u32", "i8", "i16", "i32"];
     const bigIntTypes = ["u64", "u128", "u256", "i64", "i128", "i256"];
 
@@ -249,9 +245,7 @@ export function convertValueToReturnTypedValue(type: string, value: unknown): un
         if (!Array.isArray(value)) {
             throw new Error(`Expected array for ${type}`);
         }
-        return value.map(v =>
-            convertValueToReturnTypedValue(vectorInner, v)
-        );
+        return value.map((v) => convertValueToReturnTypedValue(vectorInner, v));
     }
 
     // --------------------
@@ -363,59 +357,56 @@ export function addressArgument(value: unknown, type: string): string {
     return address;
 }
 
-
 export function uint8ArrayToHexString(bytes: Uint8Array) {
     return Array.from(bytes)
-        .map(byte => byte.toString(16).padStart(2, '0'))
-        .join('');
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
 }
 
-
-
 export function addAddressPadding(address: string): string {
-    if (!address) return address
+    if (!address) return address;
     /**
      * Pads a Move-style LP token address and its inner token addresses for consistent formatting.
      * Example: "0x1::lp_coin::LP<0x2::token::TokenA, 0x3::token::TokenB>"
      */
-    const isLpTokenAddressMatch = address.match(/<([^>]+)>/)
+    const isLpTokenAddressMatch = address.match(/<([^>]+)>/);
     if (isLpTokenAddressMatch && isLpTokenAddressMatch.length === 2) {
-      const firstPart = address.slice(0, address.indexOf('<'))
-      if (firstPart.includes('::')) {
-        const inner = isLpTokenAddressMatch[1] ?? ''
-        if (inner) {
-          const innerFixed = inner
-            .split(',')
-            .map((part) => addAddressPadding(part.trim()))
-            .join(', ')
-          return `${addAddressPadding(firstPart)}<${innerFixed}>`
+        const firstPart = address.slice(0, address.indexOf("<"));
+        if (firstPart.includes("::")) {
+            const inner = isLpTokenAddressMatch[1] ?? "";
+            if (inner) {
+                const innerFixed = inner
+                    .split(",")
+                    .map((part) => addAddressPadding(part.trim()))
+                    .join(", ");
+                return `${addAddressPadding(firstPart)}<${innerFixed}>`;
+            }
         }
-      }
     }
-  
+
     // Normalize uppercase/lowercase and trim spaces
-    address = address.trim().replace(/^Ox/, '0x').replace(/^0X/, '0x')
-  
+    address = address.trim().replace(/^Ox/, "0x").replace(/^0X/, "0x");
+
     // Handle module-style address: split by "::"
-    if (address.includes('::')) {
-      const [addrPart, ...rest] = address.split('::')
-      const paddedAddr = addAddressPadding(addrPart as string)
-      return `${paddedAddr}::${rest.join('::')}`
+    if (address.includes("::")) {
+        const [addrPart, ...rest] = address.split("::");
+        const paddedAddr = addAddressPadding(addrPart as string);
+        return `${paddedAddr}::${rest.join("::")}`;
     }
-  
+
     // Ensure 0x prefix
-    if (!address.startsWith('0x')) {
-      address = '0x' + address
+    if (!address.startsWith("0x")) {
+        address = "0x" + address;
     }
-  
+
     // Strip prefix for padding
-    const hexPart = address.slice(2)
-  
+    const hexPart = address.slice(2);
+
     // Left pad with zeros up to 64 hex chars (32 bytes)
-    const paddedHex = hexPart.padStart(64, '0')
-  
-    return '0x' + paddedHex
-  }
+    const paddedHex = hexPart.padStart(64, "0");
+
+    return "0x" + paddedHex;
+}
 
 /**
  * Converts a `vector<u8>` argument to bytes. Accepts a `number[]` of integers from 0 to 255, a

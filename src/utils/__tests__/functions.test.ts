@@ -28,7 +28,10 @@ describe("fromUint8ArrayToJSArray", () => {
     it("should convert array of Uint8Arrays to array of number arrays", () => {
         const input = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])];
         const result = fromUint8ArrayToJSArray(input);
-        expect(result).toEqual([[1, 2, 3], [4, 5]]);
+        expect(result).toEqual([
+            [1, 2, 3],
+            [4, 5],
+        ]);
     });
 
     it("should return empty array for empty input", () => {
@@ -64,9 +67,7 @@ describe("parseScriptArgs", () => {
         const result = parseScriptArgs([
             new TxnBuilderTypes.TransactionArgumentU8(7),
             new TxnBuilderTypes.TransactionArgumentU32(70000),
-            new TxnBuilderTypes.TransactionArgumentAddress(
-                TxnBuilderTypes.AccountAddress.fromHex("0x1"),
-            ),
+            new TxnBuilderTypes.TransactionArgumentAddress(TxnBuilderTypes.AccountAddress.fromHex("0x1")),
             new TxnBuilderTypes.TransactionArgumentU8Vector(new Uint8Array([1, 2, 3])),
             new TxnBuilderTypes.TransactionArgumentBool(true),
         ]);

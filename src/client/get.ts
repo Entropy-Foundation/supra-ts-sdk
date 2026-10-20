@@ -17,12 +17,15 @@ export interface RequestParams {
 }
 
 /**
-* The get method is an asynchronous function that takes a RequestParams object as an argument and returns a Promise that resolves to a response of type Res. The method uses the native fetch API to make a GET request to the specified path on the Supra API. It checks the response status code and throws a SupraAPIError if the status code indicates an error (400 or above). If the status code indicates a successful response (200-299), it returns the response data.
-* @param args - An object containing the path and optional data for the request.
-* @returns A Promise that resolves to the response data of type Res.
-*/
-export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVersion: string = DEFAULT_RPC_VERSION): Promise<{ data: Res, cursor?: string | undefined }> {
-
+ * The get method is an asynchronous function that takes a RequestParams object as an argument and returns a Promise that resolves to a response of type Res. The method uses the native fetch API to make a GET request to the specified path on the Supra API. It checks the response status code and throws a SupraAPIError if the status code indicates an error (400 or above). If the status code indicates a successful response (200-299), it returns the response data.
+ * @param args - An object containing the path and optional data for the request.
+ * @returns A Promise that resolves to the response data of type Res.
+ */
+export async function get<Res>(
+    args: RequestParams,
+    config: NetworkConfig,
+    rpcVersion: string = DEFAULT_RPC_VERSION,
+): Promise<{ data: Res; cursor?: string | undefined }> {
     const url = buildRpcUrl(config.rpcUrl, rpcVersion, args.path);
     if (args.query) {
         for (const [key, value] of Object.entries(args.query)) {
@@ -32,12 +35,17 @@ export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVe
         }
     }
 
-    const response = await sendRequest(url.toString(), {
-        method: "GET",
-        headers: {
-            "Content-Type": "application/json",
+    const response = await sendRequest(
+        url.toString(),
+        {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            },
         },
-    }, config, args.retryable ?? true);
+        config,
+        args.retryable ?? true,
+    );
 
     const cursor = response.headers.get("x-supra-cursor") ?? undefined;
     const data = await parseJsonResponse(response, url.toString(), config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
@@ -49,10 +57,13 @@ export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVe
         };
     }
 
-    throw createSupraAPIError({
-        status: response.status,
-        statusText: response.statusText,
-        url: url.toString(),
-        data,
-    }, response.headers.get("retry-after"));
+    throw createSupraAPIError(
+        {
+            status: response.status,
+            statusText: response.statusText,
+            url: url.toString(),
+            data,
+        },
+        response.headers.get("retry-after"),
+    );
 }

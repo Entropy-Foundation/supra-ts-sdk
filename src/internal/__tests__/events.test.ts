@@ -48,12 +48,18 @@ describe("internal/events", () => {
         });
 
         it("passes the returned cursor back as start without a conversion", async () => {
-            mockGet.mockResolvedValueOnce({ data: { data: [{ event: {}, block_height: 1, transaction_hash: "0x" }] }, cursor: "c1" });
+            mockGet.mockResolvedValueOnce({
+                data: { data: [{ event: {}, block_height: 1, transaction_hash: "0x" }] },
+                cursor: "c1",
+            });
             mockGet.mockResolvedValueOnce({ data: { data: [] }, cursor: undefined });
 
             const eventType = "0x1::coin::CoinDeposit" as const;
             const first = await getEventsByTypeInternal({ eventType, options: { limit: 1 } }, testConfig);
-            const second = await getEventsByTypeInternal({ eventType, options: { limit: 1, start: first.cursor } }, testConfig);
+            const second = await getEventsByTypeInternal(
+                { eventType, options: { limit: 1, start: first.cursor } },
+                testConfig,
+            );
 
             expect(mockGet.mock.calls[1]?.[0].query?.["start"]).toBe("c1");
             expect(second).toEqual({ response: [], cursor: undefined });

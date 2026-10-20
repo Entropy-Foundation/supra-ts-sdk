@@ -30,10 +30,7 @@ describe("internal/table", () => {
                 key: "0x1",
             };
 
-            const result = await getTableItemInternal(
-                { handle: "0x1", data: tableData },
-                testConfig,
-            );
+            const result = await getTableItemInternal({ handle: "0x1", data: tableData }, testConfig);
 
             // The handle is standardized to a full 32-byte address and the path is
             // rooted with a leading slash, consistent with every other client path.

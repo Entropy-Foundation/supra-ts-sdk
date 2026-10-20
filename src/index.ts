@@ -16,7 +16,7 @@ export * from "./api/transactionManager/txnSubmit";
 //utils
 export * from "./utils/apiEndpoints";
 
-//types 
+//types
 export * from "./types/account";
 export * from "./types/block";
 export * from "./types/coin";
@@ -41,8 +41,8 @@ export * from "./errors/fungibleAssetError";
 export * from "./errors/moveVmErrors";
 export { parseVmStatus, type ParsedVmStatus } from "./errors/vmStatus";
 
-//function 
-export { standardizeAddress } from './helper/account';
+//function
+export { standardizeAddress } from "./helper/account";
 export { addAddressPadding, getFunctionParts } from "./helper/general";
 export { parseTypeArgument } from "./helper/typeTag";
 export { stringifyWithBigInt } from "./utils/json";
@@ -52,4 +52,3 @@ export * from "./utils/constants";
 
 // Re-exported from supra-l1-sdk-core so consumers import everything from a single package
 export { BCS, HexString, SupraAccount, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
-

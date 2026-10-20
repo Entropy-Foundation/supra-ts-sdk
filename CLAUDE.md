@@ -17,6 +17,7 @@ pnpm test             # Run Jest tests
 pnpm test:watch       # Jest watch mode
 pnpm lint             # ESLint (zero warnings enforced: --max-warnings 0)
 pnpm format           # Prettier formatting
+pnpm format:check     # Prettier check of src/, run in CI
 pnpm typecheck        # tsc --noEmit
 pnpm doc              # Generate TypeDoc to docs/
 ```

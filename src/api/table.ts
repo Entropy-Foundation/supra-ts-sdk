@@ -10,10 +10,9 @@ import { validateAddress } from "../helper/validation";
  */
 export class Table {
     /**
-    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-    */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
-
 
     /**
      * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
@@ -21,15 +20,14 @@ export class Table {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * ```  
+     * ```
      * @group Table
      */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Query a table item on Supra.
@@ -43,9 +41,9 @@ export class Table {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const handle = "0x1";
      *    const key = "0x1";
@@ -54,12 +52,12 @@ export class Table {
      *    const tableItem = await supra.table.getTableItem({ handle: handle, data: { key_type: keyType, value_type: valueType, key: key }});
      *    console.log(tableItem);
      * }
-     * 
+     *
      * runExample().catch(console.error);
-     * ``` 
+     * ```
      * @group Table
      */
-    async getTableItem<T>(args: { handle: AccountAddressInput; data: TableItemRequest; }): Promise<T> {
+    async getTableItem<T>(args: { handle: AccountAddressInput; data: TableItemRequest }): Promise<T> {
         validateAddress(args.handle, "handle");
         return getTableItemInternal<T>(args, this.networkInformation);
     }

@@ -53,9 +53,7 @@ describe("client/get", () => {
     });
 
     it("should extract cursor from x-supra-cursor header", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockFetchResponse(200, {}, { "x-supra-cursor": "cursor_value" }),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(200, {}, { "x-supra-cursor": "cursor_value" }));
 
         const result = await get({ path: "/accounts/0x1" }, testConfig);
         expect(result.cursor).toBe("cursor_value");
@@ -107,9 +105,7 @@ describe("client/get", () => {
     });
 
     it("should throw SupraAPIError on 400 response", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockFetchResponse(400, { message: "Bad request" }),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(400, { message: "Bad request" }));
 
         await expect(get({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
 
@@ -122,25 +118,19 @@ describe("client/get", () => {
     });
 
     it("should throw SupraAPIError on 404 response", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockFetchResponse(404, { message: "Not found" }),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(404, { message: "Not found" }));
 
         await expect(get({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
     });
 
     it("should throw SupraAPIError on 500 response", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockFetchResponse(500, { message: "Internal error" }),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(500, { message: "Internal error" }));
 
         await expect(get({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
     });
 
     it("should include url in error", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockFetchResponse(400, {}),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(400, {}));
 
         try {
             await get({ path: "/accounts/0x1" }, testConfig);
@@ -158,17 +148,13 @@ describe("client/get", () => {
     });
 
     it("should throw SupraAPIError (not SyntaxError) on a non-JSON 2xx body", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockRawResponse(200, "<html>502 Bad Gateway</html>"),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockRawResponse(200, "<html>502 Bad Gateway</html>"));
 
         await expect(get({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
     });
 
     it("should wrap a non-JSON error body in SupraAPIError with the status", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockRawResponse(504, "gateway timeout"),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockRawResponse(504, "gateway timeout"));
 
         try {
             await get({ path: "/test" }, testConfig);
