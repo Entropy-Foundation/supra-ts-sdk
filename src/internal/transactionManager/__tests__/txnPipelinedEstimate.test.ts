@@ -384,4 +384,42 @@ describe("the max gas estimate", () => {
         await transfer(supra, sender);
         expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
     });
+
+    it("simulates with what the new balance pays for when the earlier transaction commits before the first simulation", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        simulations = [];
+        submissions = [];
+        // The second transfer (number 4) reads the balance while transaction 3 is pending; transaction 3 then commits,
+        // so the chain is at 4 and the balance pays for 990,000 units.
+        balances = ["100000000000", "99000000000"];
+        simulate = (sequenceNumber) => {
+            if (sequenceNumber !== 4) {
+                return tooOld();
+            }
+            return (simulations.at(-1)?.maxGas ?? 0) > 990_000
+                ? json(moveTxn(TransactionStatus.Invalid, "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE", 0))
+                : gasUsed(2_000);
+        };
+
+        await transfer(supra, sender);
+
+        expect(simulations.map((s) => [s.sequenceNumber, s.maxGas])).toEqual([
+            [4, 1_000_000],
+            [4, 990_000],
+        ]);
+        expect(submissions).toEqual([expect.objectContaining({ sequenceNumber: 4, maxGas: 3_000 })]);
+    });
+
+    it("throws a first simulation's insufficient balance that a new balance read does not explain", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        simulate = () => json(moveTxn(TransactionStatus.Invalid, "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE", 0));
+
+        await expect(transfer(supra, sender)).rejects.toBeInstanceOf(SupraSimulationFailedError);
+
+        expect(simulations).toHaveLength(1);
+        expect(submissions).toHaveLength(0);
+    });
 });

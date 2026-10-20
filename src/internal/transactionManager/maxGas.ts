@@ -85,8 +85,10 @@ export async function affordableGasUnitsInternal(
  * simulation reports `SEQUENCE_NUMBER_TOO_NEW`: the same transaction is then simulated with the chain's number, and
  * that result is used. If that simulation reports a stale sequence number again, the number is read and the
  * simulation made once more; if it is stale a second time, or the account cannot be read, the max gas is
- * `DEFAULT_MAX_GAS_UNITS`, at most `affordable`. When an earlier transaction committed after the balance was read and
- * the balance no longer pays for the simulated max gas, the simulation is made with what the new balance pays for.
+ * `DEFAULT_MAX_GAS_UNITS`, at most `affordable`. When any simulation of the estimate reports
+ * `INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE` because an earlier transaction committed after the balance was read, the
+ * balance is read again (at most twice in one estimate) and the simulation is made with what the new balance pays
+ * for; when the new balance still pays for the simulated max gas, the failure is thrown.
  * A transaction that depends on the state of an earlier one that has not
  * committed fails the simulation at the chain's number and throws. Signing a simulated transaction throws what signing
  * throws, for example `SupraChainIdMismatchError` or the error of a failed read of the chain ID, before the simulation
@@ -131,34 +133,22 @@ export async function resolveMaxGasInternal(
         return fallback;
     }
 
-    // Signing checks the chain ID; its errors are thrown, as the signature of the submitted transaction would throw them.
-    const rawTxn = args.buildRawTxn(affordable);
-    const sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
-    let simulated: TransactionResponse;
+    const simulations = new EstimateSimulations(
+        { senderAccount: args.senderAccount, senderAddress: args.senderAddress, buildRawTxn: args.buildRawTxn },
+        affordable,
+        config,
+    );
+    let simulated: TransactionResponse | undefined;
     try {
-        simulated = await simulateTxnInternal({ sendTxPayload }, config);
+        simulated = await simulations.simulate();
     } catch (error) {
-        if (error instanceof SupraSimulationFailedError) {
-            if (!isSequenceNumberTooNew(error)) {
-                throw error;
-            }
-            const result = await simulateAtChainSequenceNumber(
-                {
-                    senderAccount: args.senderAccount,
-                    senderAddress: args.senderAddress,
-                    rawTxn,
-                    buildRawTxn: args.buildRawTxn,
-                },
-                config,
-            );
-            if (result === undefined) {
-                return fallback;
-            }
-            simulated = result.simulated;
-            affordable = result.affordable;
-        } else {
-            return fallback;
+        if (!(error instanceof SupraSimulationFailedError) || !isSequenceNumberTooNew(error)) {
+            throw error;
         }
+        simulated = await simulateAtChainSequenceNumber(simulations, config);
+    }
+    if (simulated === undefined) {
+        return fallback;
     }
 
     const gasUsed = gasUsedOf(simulated);
@@ -167,88 +157,149 @@ export async function resolveMaxGasInternal(
     }
     const multiplier = config.maxGasEstimateMultiplier ?? DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER;
     const estimate = BigInt(Math.ceil(gasUsed * multiplier));
-    return minBigInt(estimate > MIN_ESTIMATED_MAX_GAS_UNITS ? estimate : MIN_ESTIMATED_MAX_GAS_UNITS, affordable);
+    return minBigInt(
+        estimate > MIN_ESTIMATED_MAX_GAS_UNITS ? estimate : MIN_ESTIMATED_MAX_GAS_UNITS,
+        simulations.affordable,
+    );
 }
 
 function isSequenceNumberTooNew(error: SupraSimulationFailedError): boolean {
     return error.major_status === "SEQUENCE_NUMBER_TOO_NEW";
 }
 
+/** The number of times one estimate reads the balance again after a simulation reports it short. */
+const MAX_BALANCE_REREADS = 2;
+
 /**
- * Simulates the transaction again with the account's sequence number on the chain, for a transaction whose number is
- * ahead of the committed state because an earlier transaction of the account has not committed. The simulation runs
- * with the same payload, gas unit price, expiry and chain ID. When the chain moved between the read and the
- * simulation, the number is read again, once more. An earlier transaction that committed since the balance was read
- * lowers the balance below `max gas × gas unit price`; the simulation then runs with the largest max gas that the new
- * balance pays for. Returns `undefined` when the result says nothing about the transaction (the chain's number is
- * above the transaction's, the sequence number is stale both times, the account or the balance cannot be read, the
- * request fails). A simulation that fails for another
- * reason throws its `SupraSimulationFailedError`.
+ * The simulations of one max gas estimate. `rawTxn` is the transaction built with `affordable`, the lowest number of
+ * gas units that a read of the sender's balance paid for.
  */
-async function simulateAtChainSequenceNumber(
-    args: {
-        senderAccount: SupraAccount;
-        senderAddress: AccountAddressInput;
-        rawTxn: TxnBuilderTypes.RawTransaction;
-        buildRawTxn: (maxGas: bigint) => TxnBuilderTypes.RawTransaction;
-    },
-    config: NetworkConfig,
-): Promise<{ simulated: TransactionResponse; affordable: bigint } | undefined> {
-    const { senderAccount } = args;
-    let rawTxn = args.rawTxn;
-    let staleSimulations = 0;
-    let balanceReads = 0;
-    while (staleSimulations < 2) {
-        let chainSequenceNumber: bigint;
-        try {
-            const account = await getAccountInfoInternal({ accountAddress: senderAccount.address() }, config);
-            chainSequenceNumber = BigInt(account.sequence_number);
-        } catch {
-            return undefined;
-        }
-        if (chainSequenceNumber > BigInt(rawTxn.sequence_number)) {
-            // The chain has passed the transaction's number: a simulation says nothing about the transaction.
-            return undefined;
-        }
-        // At an equal number the transaction is the account's next one, and the simulation runs with its own number.
-        const atChainNumber = new TxnBuilderTypes.RawTransaction(
-            rawTxn.sender,
-            chainSequenceNumber,
-            rawTxn.payload,
-            rawTxn.max_gas_amount,
-            rawTxn.gas_unit_price,
-            rawTxn.expiration_timestamp_secs,
-            rawTxn.chain_id,
-        );
-        // Signing errors are thrown, as for the first simulation.
-        const sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: atChainNumber }, config);
-        try {
-            const simulated = await simulateTxnInternal({ sendTxPayload }, config);
-            return { simulated, affordable: BigInt(rawTxn.max_gas_amount) };
-        } catch (error) {
-            if (!(error instanceof SupraSimulationFailedError)) {
-                return undefined;
-            }
-            if (error.major_status === "SEQUENCE_NUMBER_TOO_NEW" || error.major_status === "SEQUENCE_NUMBER_TOO_OLD") {
-                staleSimulations += 1;
-            } else if (error.major_status === "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE" && balanceReads < 2) {
-                balanceReads += 1;
+class EstimateSimulations {
+    affordable: bigint;
+    rawTxn: TxnBuilderTypes.RawTransaction;
+    private balanceReads = 0;
+
+    constructor(
+        private readonly args: {
+            senderAccount: SupraAccount;
+            senderAddress: AccountAddressInput;
+            buildRawTxn: (maxGas: bigint) => TxnBuilderTypes.RawTransaction;
+        },
+        affordable: bigint,
+        private readonly config: NetworkConfig,
+    ) {
+        this.affordable = affordable;
+        this.rawTxn = args.buildRawTxn(affordable);
+    }
+
+    /**
+     * Simulates `rawTxn` with `sequenceNumber`, or with its own number when that is omitted, and returns the simulated
+     * transaction.
+     *
+     * Signing checks the chain ID; its errors are thrown, as the signature of the submitted transaction would throw
+     * them. A simulation that reports `INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE` means that an earlier transaction
+     * committed after the balance was read: the balance is read again (at most `MAX_BALANCE_REREADS` times in one
+     * estimate), and when it pays for fewer units than the simulated max gas, the transaction is rebuilt with that
+     * number and simulated again. When the new balance still pays for the simulated max gas, the failure is thrown.
+     * Any other failed simulation throws its `SupraSimulationFailedError`. Returns `undefined` when a request fails or
+     * the new balance is zero.
+     */
+    async simulate(sequenceNumber?: bigint): Promise<TransactionResponse | undefined> {
+        for (;;) {
+            const rawTxn = sequenceNumber === undefined ? this.rawTxn : withSequenceNumber(this.rawTxn, sequenceNumber);
+            const sendTxPayload = await sendTxnPayloadInternal(
+                { senderAccount: this.args.senderAccount, rawTxn },
+                this.config,
+            );
+            try {
+                return await simulateTxnInternal({ sendTxPayload }, this.config);
+            } catch (error) {
+                if (!(error instanceof SupraSimulationFailedError)) {
+                    return undefined;
+                }
+                if (
+                    error.major_status !== "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE" ||
+                    this.balanceReads >= MAX_BALANCE_REREADS
+                ) {
+                    throw error;
+                }
+                this.balanceReads += 1;
                 let affordable: bigint;
                 try {
                     affordable = await affordableGasUnitsInternal(
-                        { senderAddress: args.senderAddress, gasUnitPrice: BigInt(rawTxn.gas_unit_price) },
-                        config,
+                        { senderAddress: this.args.senderAddress, gasUnitPrice: BigInt(rawTxn.gas_unit_price) },
+                        this.config,
                     );
                 } catch {
-                    return undefined;
-                }
-                if (affordable === 0n) {
                     return undefined;
                 }
                 if (affordable >= BigInt(rawTxn.max_gas_amount)) {
                     throw error;
                 }
-                rawTxn = args.buildRawTxn(affordable);
+                if (affordable === 0n) {
+                    return undefined;
+                }
+                this.affordable = affordable;
+                this.rawTxn = this.args.buildRawTxn(affordable);
+            }
+        }
+    }
+}
+
+/** `rawTxn` with another sequence number and the same sender, payload, max gas, gas unit price, expiry and chain ID. */
+function withSequenceNumber(
+    rawTxn: TxnBuilderTypes.RawTransaction,
+    sequenceNumber: bigint,
+): TxnBuilderTypes.RawTransaction {
+    return new TxnBuilderTypes.RawTransaction(
+        rawTxn.sender,
+        sequenceNumber,
+        rawTxn.payload,
+        rawTxn.max_gas_amount,
+        rawTxn.gas_unit_price,
+        rawTxn.expiration_timestamp_secs,
+        rawTxn.chain_id,
+    );
+}
+
+/**
+ * Simulates the transaction again with the account's sequence number on the chain, for a transaction whose number is
+ * ahead of the committed state because an earlier transaction of the account has not committed. The simulation runs
+ * with the same payload, gas unit price, expiry and chain ID. When the chain moved between the read and the
+ * simulation, the number is read again, once more. A shortfall of the balance is handled by
+ * `EstimateSimulations.simulate`. Returns `undefined` when the result says nothing about the transaction (the chain's
+ * number is above the transaction's, the sequence number is stale both times, the account or the balance cannot be
+ * read, the request fails). A simulation that fails for another reason throws its `SupraSimulationFailedError`.
+ */
+async function simulateAtChainSequenceNumber(
+    simulations: EstimateSimulations,
+    config: NetworkConfig,
+): Promise<TransactionResponse | undefined> {
+    let staleSimulations = 0;
+    while (staleSimulations < 2) {
+        let chainSequenceNumber: bigint;
+        try {
+            const account = await getAccountInfoInternal(
+                { accountAddress: simulations.rawTxn.sender.toHexString() },
+                config,
+            );
+            chainSequenceNumber = BigInt(account.sequence_number);
+        } catch {
+            return undefined;
+        }
+        if (chainSequenceNumber > BigInt(simulations.rawTxn.sequence_number)) {
+            // The chain has passed the transaction's number: a simulation says nothing about the transaction.
+            return undefined;
+        }
+        // At an equal number the transaction is the account's next one, and the simulation runs with its own number.
+        try {
+            return await simulations.simulate(chainSequenceNumber);
+        } catch (error) {
+            if (
+                error instanceof SupraSimulationFailedError &&
+                (error.major_status === "SEQUENCE_NUMBER_TOO_NEW" || error.major_status === "SEQUENCE_NUMBER_TOO_OLD")
+            ) {
+                staleSimulations += 1;
             } else {
                 throw error;
             }
