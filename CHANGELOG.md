@@ -43,8 +43,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`WaitForTransactionOptions.timeoutMs`** sets the wait timeout of one `waitForTransaction` call in milliseconds.
   `timeoutSecs` is deprecated and still honoured; `timeoutMs` takes precedence.
 - **`SubmitTransactionResponse`** and **`NotReadBackTransactionResponse`** types.
+- **Chain ID check before signing.** Before its first signature a client reads the chain ID of its node, from the
+  `x-supra-chain-id` header of an earlier response or with `GET /rpc/v3/transactions/chain_id`, and keeps it for its
+  lifetime; concurrent first signatures share one request. Every signing path (`signTransaction`, the signing methods
+  of `transaction.build` and of a built transaction, the `transaction.submit` methods that take a `senderAccount`, the
+  coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`) throws
+  **`SupraChainIdMismatchError`** (extends `SupraError`; carries `configuredChainId`, `nodeChainId` and
+  `transactionChainId`) before signing when the configured chain ID or the transaction's chain ID is not the node's.
+- **`SupraConfig.verifyChainId`**: `false` turns the check off for offline signing. The client signs with its
+  configured chain ID and sends no request to do so.
 
 ### Changed
+
+- **Breaking:** `signTransaction`, `transaction.build.signedTransaction`, `transaction.build.sendTxnPayload` and the
+  `signTransaction`, `signedTransaction` and `sendTxnPayload` methods of a built transaction return promises, since a
+  client's first signature reads the node's chain ID. Code that already awaits them is unaffected.
+- **Breaking:** a client whose configured chain ID differs from its node's throws `SupraChainIdMismatchError` from
+  every signing path, including the submit helpers and transfers, unless `verifyChainId: false` is set.
+- **Breaking:** `getChainId()` returns a promise that resolves to the node's chain ID; it returned the configured chain
+  ID synchronously. With `verifyChainId: false` it resolves to the configured chain ID without a request.
+- **Breaking:** `validateChainId()` throws `SupraChainIdMismatchError`, whose message is
+  `The configured chain ID <configured> does not match the node's chain ID <node>`; it threw a plain `Error`. It reads
+  the node's chain ID once per client and shares it with signing and `getChainId()`.
+- **Breaking:** `new SupraClient` throws a `RangeError` when the `chainId` of a custom configuration is not an integer
+  from 0 to 255, and a `TypeError` when `verifyChainId` is not a boolean.
 
 - **Breaking:** `new SupraClient` throws a `TypeError` when `rpcUrl` is not an absolute `http:` or `https:` URL.
 - **Breaking:** `SupraClient.config` is a copy of the configuration object passed to the constructor, no longer that

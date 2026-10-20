@@ -204,22 +204,25 @@ export class Transaction {
      * @param args.senderAccount the account to sign on the transaction
      * @param args.rawTxn a RawTransaction, MultiAgentRawTransaction or FeePayerRawTransaction
      * @returns ed25519 signature in `HexString` or signer authenticator
+     * @throws `SupraChainIdMismatchError` before signing when the client's chain ID or the chain ID of `rawTxn` is not
+     * the node's. The node's chain ID is read before the first signature of the client; with `verifyChainId: false`
+     * nothing is read or checked and no request is sent.
      * @example
      * ```typescript
      * import {Supra, Network} from "supra-l1-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
-     * 
+     *
      *   let supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload);
-     * 
+     *
      *   // Fetch a transaction by its hash
      *   const signature = await supra.signTransaction({ senderAccount: account, rawTxn: supraCoinTransferSponsoredRawTransaction }); // replace with a real transaction hash
-     * 
+     *
      *   console.log(signature);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Transaction
@@ -229,8 +232,8 @@ export class Transaction {
             senderAccount: SupraAccount,
             rawTxn: AnyRawTransaction,
         }
-    ): HexString | TxnBuilderTypes.AccountAuthenticatorEd25519 {
-        return signTransactionInternal(args);
+    ): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519> {
+        return signTransactionInternal(args, this.networkInformation);
     }
 
 

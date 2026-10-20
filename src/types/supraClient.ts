@@ -27,7 +27,17 @@ export interface RetryConfig {
  * `minGasUnitPrice`, `timeoutMs`, `retry` and `waitTimeoutMs`. The client copies the configuration, so later changes
  * to the object passed in do not reach it, and two clients never share settings, including two clients of the same
  * predefined network. `rpcUrl` must be an absolute `http:` or `https:` URL, with or without trailing slashes and with
- * or without a path prefix; the constructor throws a `TypeError` otherwise.
+ * or without a path prefix; the constructor throws a `TypeError` otherwise. `chainId` must be an integer from 0 to
+ * 255; the constructor throws a `RangeError` otherwise.
+ *
+ * Chain ID check: before its first signature the client reads the node's chain ID, from the `x-supra-chain-id` header
+ * of an earlier response or with `GET /rpc/v3/transactions/chain_id`, and keeps it for the client's lifetime.
+ * Every signature (`signTransaction`, the `signedTransaction`, `sendTxnPayload`, `signTransaction`, `simulate` and
+ * `submitTransaction` methods of a built transaction, the submit helpers that take a `senderAccount`, the coin and
+ * fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`) throws
+ * `SupraChainIdMismatchError` before signing when the configured chain ID or the chain ID of the transaction differs
+ * from the node's. `verifyChainId: false` turns the check off: the configured chain ID is used and signing sends no
+ * request, which allows signing offline.
  */
 export type SupraConfig =
     {
@@ -37,6 +47,8 @@ export type SupraConfig =
         timeoutMs?: number;
         retry?: RetryConfig;
         waitTimeoutMs?: number;
+        /** `false` signs with the network's chain ID without reading the node's. Default `true`. */
+        verifyChainId?: boolean;
     }
     | {
         network?: Network.CUSTOM;
@@ -47,6 +59,8 @@ export type SupraConfig =
         timeoutMs?: number;
         retry?: RetryConfig;
         waitTimeoutMs?: number;
+        /** `false` signs with `chainId` without reading the node's chain ID. Default `true`. */
+        verifyChainId?: boolean;
     };
 
 

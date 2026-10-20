@@ -12,8 +12,8 @@ describeE2E("client", () => {
         ctx = await getE2EContext();
     });
 
-    test("getChainId returns the chain ID configured for the node", () => {
-        expect(ctx.supra.getChainId().value).toBe(ctx.chainId);
+    test("getChainId returns the node's chain ID", async () => {
+        expect((await ctx.supra.getChainId()).value).toBe(ctx.chainId);
     });
 
     test("validateChainId resolves when the configured chain ID is the node's", async () => {

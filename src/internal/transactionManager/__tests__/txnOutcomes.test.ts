@@ -125,7 +125,8 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
     throw new Error("expected the promise to reject");
 }
 
-const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
+// The chain ID check has its own tests (chainIdCheck.test.ts); these count every request the stubbed node receives.
+const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false });
 
 function rawTransfer(sender: SupraAccount) {
     return supra.transaction.build.rawTxnObject({
@@ -166,12 +167,12 @@ const SUBMIT_PATHS: Array<
     ],
     [
         "transaction.submit.submitSerializedRawTransactionAndSignature",
-        (options) => {
+        async (options) => {
             const sender = new SupraAccount();
             const rawTxn = rawTransfer(sender);
             return supra.transaction.submit.submitSerializedRawTransactionAndSignature({
                 senderPubkey: sender.pubKey(),
-                signature: supra.transaction.signTransaction({ senderAccount: sender, rawTxn }) as HexString,
+                signature: (await supra.transaction.signTransaction({ senderAccount: sender, rawTxn })) as HexString,
                 serializedRawTransaction: rawTxn.toBytes(),
                 enableTransactionWaitAndSimulationArgs: options,
             });
@@ -179,8 +180,8 @@ const SUBMIT_PATHS: Array<
     ],
     [
         "transaction.submit.submitSponsorTransaction",
-        (options) => {
-            const { rawTxn, senderAuthenticator, feePayer, feePayerAuthenticator } = sponsored();
+        async (options) => {
+            const { rawTxn, senderAuthenticator, feePayer, feePayerAuthenticator } = await sponsored();
             return supra.transaction.submit.submitSponsorTransaction({
                 feePayerAddress: feePayer.address().toString(),
                 secondarySignersAccountAddress: [],
@@ -194,8 +195,8 @@ const SUBMIT_PATHS: Array<
     ],
     [
         "transaction.submit.submitMultiAgentTransaction",
-        (options) => {
-            const { rawTxn, senderAuthenticator, secondary, secondaryAuthenticator } = multiAgent();
+        async (options) => {
+            const { rawTxn, senderAuthenticator, secondary, secondaryAuthenticator } = await multiAgent();
             return supra.transaction.submit.submitMultiAgentTransaction({
                 secondarySignersAccountAddress: [secondary.address().toString()],
                 rawTxn,
@@ -217,20 +218,20 @@ const SUBMIT_PATHS: Array<
     ],
     [
         "built transaction submitTransactionAndSignature",
-        (options) => {
+        async (options) => {
             const sender = new SupraAccount();
             const rawTxn = rawTransfer(sender);
             return rawTxn.submitTransactionAndSignature({
                 senderPubkey: sender.pubKey(),
-                signature: rawTxn.signTransaction(sender) as HexString,
+                signature: (await rawTxn.signTransaction(sender)) as HexString,
                 enableTransactionWaitAndSimulationArgs: options,
             });
         },
     ],
     [
         "built transaction submitSponsorTransaction",
-        (options) => {
-            const { rawTxn, senderAuthenticator, feePayer, feePayerAuthenticator } = sponsored();
+        async (options) => {
+            const { rawTxn, senderAuthenticator, feePayer, feePayerAuthenticator } = await sponsored();
             return rawTxn.submitSponsorTransaction({
                 feePayerAddress: feePayer.address().toString(),
                 secondarySignersAccountAddress: [],
@@ -243,7 +244,7 @@ const SUBMIT_PATHS: Array<
     ],
     [
         "built transaction submitMultiAgentTransaction",
-        (options) => {
+        async (options) => {
             const sender = new SupraAccount();
             const secondary = new SupraAccount();
             const rawTxn = rawTransfer(sender);
@@ -252,8 +253,8 @@ const SUBMIT_PATHS: Array<
             ]);
             return rawTxn.submitMultiAgentTransaction({
                 secondarySignersAccountAddress: [secondary.address().toString()],
-                senderAuthenticator: authenticator(sender, payload),
-                secondarySignersAuthenticator: [authenticator(secondary, payload)],
+                senderAuthenticator: await authenticator(sender, payload),
+                secondarySignersAuthenticator: [await authenticator(secondary, payload)],
                 enableTransactionWaitAndSimulationArgs: options,
             });
         },
@@ -337,17 +338,17 @@ const SUBMIT_PATHS: Array<
     ],
 ];
 
-function authenticator(
+async function authenticator(
     account: SupraAccount,
     payload: TxnBuilderTypes.MultiAgentRawTransaction | TxnBuilderTypes.FeePayerRawTransaction,
 ) {
-    return supra.transaction.signTransaction({
+    return (await supra.transaction.signTransaction({
         senderAccount: account,
         rawTxn: payload,
-    }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
+    })) as TxnBuilderTypes.AccountAuthenticatorEd25519;
 }
 
-function sponsored() {
+async function sponsored() {
     const sender = new SupraAccount();
     const feePayer = new SupraAccount();
     const rawTxn = rawTransfer(sender);
@@ -359,12 +360,12 @@ function sponsored() {
     return {
         rawTxn,
         feePayer,
-        senderAuthenticator: authenticator(sender, payload),
-        feePayerAuthenticator: authenticator(feePayer, payload),
+        senderAuthenticator: await authenticator(sender, payload),
+        feePayerAuthenticator: await authenticator(feePayer, payload),
     };
 }
 
-function multiAgent() {
+async function multiAgent() {
     const sender = new SupraAccount();
     const secondary = new SupraAccount();
     const rawTxn = rawTransfer(sender);
@@ -374,8 +375,8 @@ function multiAgent() {
     return {
         rawTxn,
         secondary,
-        senderAuthenticator: authenticator(sender, payload),
-        secondaryAuthenticator: authenticator(secondary, payload),
+        senderAuthenticator: await authenticator(sender, payload),
+        secondaryAuthenticator: await authenticator(secondary, payload),
     };
 }
 
@@ -530,7 +531,7 @@ describe("transaction outcomes", () => {
 
         it("uses waitTimeoutMs of the client configuration", async () => {
             node.transaction = () => json(moveTxn(TransactionStatus.Pending, null));
-            const client = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, waitTimeoutMs: 40 });
+            const client = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, waitTimeoutMs: 40, verifyChainId: false });
 
             const error = (await rejection(
                 submitTransfer({ enableWaitForTransaction: true }, client),
@@ -623,7 +624,7 @@ describe("transaction outcomes", () => {
             node.simulate = () => json(simulated);
 
             const error = (await rejection(
-                supra.transaction.simulate.simple({ sendTxPayload: payload() }),
+                supra.transaction.simulate.simple({ sendTxPayload: await payload() }),
             )) as SupraSimulationFailedError;
 
             expect(error).toBeInstanceOf(SupraSimulationFailedError);
@@ -636,7 +637,9 @@ describe("transaction outcomes", () => {
         });
 
         it("returns a successful simulation", async () => {
-            await expect(supra.transaction.simulate.simple({ sendTxPayload: payload() })).resolves.toEqual(SUCCESS);
+            await expect(supra.transaction.simulate.simple({ sendTxPayload: await payload() })).resolves.toEqual(
+                SUCCESS,
+            );
         });
 
         it("throws for a failed simulation of a built transaction and of a serialized transaction", async () => {
@@ -647,14 +650,14 @@ describe("transaction outcomes", () => {
             await expect(rawTxn.simulate(sender)).rejects.toBeInstanceOf(SupraSimulationFailedError);
             await expect(
                 supra.transaction.simulate.serialized({
-                    txAuthenticator: rawTxn.sendTxnPayload(sender).Move.authenticator,
+                    txAuthenticator: (await rawTxn.sendTxnPayload(sender)).Move.authenticator,
                     serializedRawTransaction: rawTxn.toBytes(),
                 }),
             ).rejects.toBeInstanceOf(SupraSimulationFailedError);
         });
 
         it("sends zero signatures and leaves the caller's payload unchanged", async () => {
-            const sendTxPayload = payload();
+            const sendTxPayload = await payload();
             const before = stringifyWithBigInt(sendTxPayload);
 
             await supra.transaction.simulate.simple({ sendTxPayload });
@@ -672,7 +675,7 @@ describe("transaction outcomes", () => {
             ["a connection failure", () => new TypeError("fetch failed")],
         ])("leaves the caller's payload byte-identical after %s", async (_name, answer) => {
             node.simulate = answer;
-            const sendTxPayload = payload();
+            const sendTxPayload = await payload();
             const before = stringifyWithBigInt(sendTxPayload);
 
             await expect(supra.transaction.simulate.simple({ sendTxPayload })).rejects.toBeDefined();
@@ -684,11 +687,11 @@ describe("transaction outcomes", () => {
         });
 
         it("leaves a fee payer payload unchanged", async () => {
-            const { senderAuthenticator, feePayer, feePayerAuthenticator } = sponsored();
+            const { senderAuthenticator, feePayer, feePayerAuthenticator } = await sponsored();
             node.simulate = () => new TypeError("fetch failed");
             const sendTxPayload = {
                 Move: {
-                    raw_txn: rawTransfer(new SupraAccount()).sendTxnPayload(new SupraAccount()).Move.raw_txn,
+                    raw_txn: (await rawTransfer(new SupraAccount()).sendTxnPayload(new SupraAccount())).Move.raw_txn,
                     authenticator: {
                         FeePayer: {
                             sender: {

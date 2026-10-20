@@ -7,6 +7,8 @@ import { SupraClient } from "../../src/index";
  *   when it is not set.
  * - `SUPRA_E2E_ALLOW_PUBLIC`: set to `1` to allow a run against Devnet (chain ID 50). Testnet (6) and
  *   Mainnet (8) are always refused.
+ * - `SUPRA_E2E_PUBLIC_READS`: set to `1` to run the tests that send read-only GET requests to the public
+ *   Devnet RPC node. They are skipped otherwise.
  * - `SUPRA_E2E_FAUCET_PATH`: faucet path relative to the base URL, with `{address}` standing for the
  *   account address. Defaults to `/rpc/v3/wallet/faucet/{address}`.
  * - `SUPRA_E2E_TEST_TIMEOUT_MS`: per-test timeout in milliseconds. Defaults to 240000.

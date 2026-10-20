@@ -17,7 +17,12 @@ export interface NetworkConfig {
     /** Retry policy of idempotent GET requests; no retry when absent. */
     retry?: { attempts: number, maxDelayMs: number },
     /** Longest wait for a transaction's final status, in milliseconds, when the call sets none. */
-    waitTimeoutMs?: number
+    waitTimeoutMs?: number,
+    /**
+     * `false` signs with `chainId` without reading the node's chain ID. Absent or `true`: the node's chain ID is read
+     * before the first signature and every signature checks `chainId` and the transaction's chain ID against it.
+     */
+    verifyChainId?: boolean
 }
 
 

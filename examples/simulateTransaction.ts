@@ -31,7 +31,7 @@ import { account } from "./account.setup";
 
     let supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload)
 
-    let sendTxnPayload = supra.transaction.build.sendTxnPayload({
+    let sendTxnPayload = await supra.transaction.build.sendTxnPayload({
         senderAccount: account,
         rawTxn: supraCoinTransferRawTransaction
     })

@@ -60,13 +60,14 @@ export async function submitSerializedRawTransactionInternal(
     },
     config: NetworkConfig
 ): Promise<SubmitTransactionResponse> {
-    let sendTxPayload = sendTxnPayloadInternal(
+    let sendTxPayload = await sendTxnPayloadInternal(
         {
             senderAccount: args.senderAccount,
             rawTxn: TxnBuilderTypes.RawTransaction.deserialize(
                 new BCS.Deserializer(args.serializedRawTransaction),
             )
-        }
+        },
+        config
     );
 
     return await submitTxnInternal(

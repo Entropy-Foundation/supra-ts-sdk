@@ -56,7 +56,7 @@ export async function transferFungibleAssetInternal(
 
     let raw_txn = rawTxnObjectInternal(supraTransferPayload, config);
 
-    let sendTxPayload = sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn });
+    let sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn }, config);
 
     return await submitTxnInternal({
         sendTxJsonPayload: sendTxPayload,

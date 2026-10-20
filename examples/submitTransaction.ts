@@ -65,7 +65,7 @@ import { account, feePayerAccount, secondarySignerAccount } from "./account.setu
         new BCS.Deserializer(supraCoinTransferSerializedRawTransaction),
     );
 
-    let signature = supra.transaction.signTransaction({ senderAccount: account, rawTxn: raw_txn })
+    let signature = await supra.transaction.signTransaction({ senderAccount: account, rawTxn: raw_txn })
 
     // You use can above serialized payload to send transaction.
     let txn1 = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
@@ -95,13 +95,13 @@ import { account, feePayerAccount, secondarySignerAccount } from "./account.setu
     );
 
     // Generating sender authenticator
-    let sponsorTxnSenderAuthenticator = supra.transaction.signTransaction({
+    let sponsorTxnSenderAuthenticator = await supra.transaction.signTransaction({
         senderAccount: account,
         rawTxn: sponsorTransactionPayload
     }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
 
     // Generating sponsor authenticator
-    let feePayerAuthenticator = supra.transaction.signTransaction({
+    let feePayerAuthenticator = await supra.transaction.signTransaction({
         senderAccount: feePayerAccount,
         rawTxn: sponsorTransactionPayload
     }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
@@ -149,13 +149,13 @@ import { account, feePayerAccount, secondarySignerAccount } from "./account.setu
         ]);
 
     // Generating sender authenticator
-    let multiAgentSenderAuthenticator = supra.transaction.signTransaction({
+    let multiAgentSenderAuthenticator = await supra.transaction.signTransaction({
         senderAccount: account,
         rawTxn: multiAgentTransactionPayload
     }) as TxnBuilderTypes.AccountAuthenticatorEd25519;
 
     // Generating Secondary Signer authenticator
-    let secondarySignerAuthenticator = supra.transaction.signTransaction({
+    let secondarySignerAuthenticator = await supra.transaction.signTransaction({
         senderAccount: secondarySignerAccount,
         rawTxn: multiAgentTransactionPayload
     }) as TxnBuilderTypes.AccountAuthenticatorEd25519;

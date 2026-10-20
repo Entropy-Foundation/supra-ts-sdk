@@ -97,6 +97,61 @@ import { SupraClient, Network } from 'supra-ts-sdk';
 })();
 ```
 
+## Chain ID
+
+Every transaction carries the chain ID of the client's configuration: 8 for `Network.MAINNET`, 6 for `Network.TESTNET`,
+50 for `Network.DEVNET`, or the `chainId` of a custom configuration (an integer from 0 to 255).
+
+Before its first signature a client reads the chain ID of the node at its `rpcUrl`: from the `x-supra-chain-id` header of
+an earlier response, or with `GET /rpc/v3/transactions/chain_id` when it has received none. It keeps that value for its
+lifetime, and concurrent first signatures share one request. Every signature then checks that the configured chain ID
+and the chain ID inside the transaction are the node's, and throws `SupraChainIdMismatchError` before signing when one
+is not; nothing is signed or sent. The check covers `signTransaction`, the `signedTransaction`, `sendTxnPayload`,
+`signTransaction`, `simulate` and `submitTransaction` methods of a built transaction, `transaction.build.signedTransaction`
+and `transaction.build.sendTxnPayload`, the `transaction.submit` methods that take a `senderAccount`, the coin and
+fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`. These signing methods return
+promises.
+
+`getChainId()` resolves to the node's chain ID, and `validateChainId()` throws `SupraChainIdMismatchError` when the
+configured chain ID differs from it; both use the same stored value.
+
+```ts
+import { SupraClient, SupraChainIdMismatchError } from 'supra-ts-sdk';
+
+const supra = new SupraClient({ rpcUrl: "https://rpc-testnet.supra.com", chainId: 8 });
+
+try {
+  await supra.validateChainId();
+} catch (error) {
+  if (error instanceof SupraChainIdMismatchError) {
+    console.log(`Configured ${error.configuredChainId}, node ${error.nodeChainId}`);
+  }
+}
+console.log((await supra.getChainId()).value); // 6
+```
+
+### Offline signing
+
+`verifyChainId: false` turns the check off. The client signs with its configured chain ID and sends no request to do so,
+and `getChainId()` returns the configured chain ID:
+
+```ts
+import { SupraClient, SupraAccount, Network, BCS } from 'supra-ts-sdk';
+
+const supra = new SupraClient({ network: Network.MAINNET, verifyChainId: false });
+const sender = new SupraAccount(); // the signing account
+
+const rawTxn = supra.transaction.build.rawTxnObject({
+  senderAddress: sender.address(),
+  senderSequenceNumber: 0n, // the account's sequence number, obtained separately
+  function: "0x1::supra_account::transfer",
+  functionTypeArgs: [],
+  functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
+  optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100n },
+});
+const signedTransaction = await rawTxn.signedTransaction(sender); // chain ID 8, no request
+```
+
 ## Errors
 
 Every error the SDK raises on its own behalf derives from `SupraError`.
@@ -111,6 +166,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraTimeoutError` | a request exceeds the timeout | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers | `url`, `cause` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
+| `SupraChainIdMismatchError` | before signing, the configured chain ID or the transaction's chain ID is not the node's | `configuredChainId`, `nodeChainId`, `transactionChainId` |
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` | `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
 | `SupraTransactionFailedError` | a transaction the SDK waited for ends with `Fail` or `Invalid` | `hash`, `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
 | `SupraTransactionTimeoutError` | a transaction the SDK waited for has no final status within the wait timeout | `hash`, `timeoutMs`, `lastStatus`, `transaction`, `cause` |
