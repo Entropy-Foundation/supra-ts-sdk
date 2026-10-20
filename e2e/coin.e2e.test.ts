@@ -14,7 +14,7 @@ function feeOf(txn: SubmitTransactionResponse): bigint {
         throw new Error("The transaction was not read back");
     }
     const output = txn.output;
-    if (output === null || !("Move" in output)) {
+    if (output === null || typeof output !== "object" || !("Move" in output)) {
         throw new Error("The transaction has no Move output");
     }
     if (!("header" in txn)) {

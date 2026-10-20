@@ -1,3 +1,4 @@
+import { getPage } from "../client/cursor";
 import { get } from "../client/get";
 import { standardizeAddress } from "../helper/account";
 import { isMoveStruct } from "../helper/general";
@@ -31,20 +32,18 @@ export async function getAccountInfoInternal(args: { accountAddress: AccountAddr
 export async function getAccountModulesInternal(
     args: {
         accountAddress: AccountAddressInput;
-        options?: { count?: number; start?: string };
+        options?: { count?: number; start?: string | undefined };
     },
     config: NetworkConfig
 ): Promise<PaginatedResponse<MoveModuleBytecode[]>> {
-
-    let { data, cursor } = await get<MoveModuleBytecode[]>({
+    return getPage<MoveModuleBytecode[], MoveModuleBytecode>({
         path: `/accounts/${standardizeAddress(args.accountAddress)}/modules`,
         query: {
             count: args.options?.count,
             start: args.options?.start
-        }
-    }, config);
-
-    return { response: data, cursor };
+        },
+        cursorParam: "start",
+    }, config, (data) => data);
 }
 
 
@@ -64,19 +63,18 @@ export async function getAccountModuleInternal(
 export async function getAccountResourcesInternal(
     args: {
         accountAddress: AccountAddressInput;
-        options?: { count?: number; start?: string };
+        options?: { count?: number; start?: string | undefined };
     },
     config: NetworkConfig
 ): Promise<PaginatedResponse<MoveResource[]>> {
-    let { data, cursor } = await get<MoveResource[]>({
+    return getPage<MoveResource[], MoveResource>({
         path: `/accounts/${standardizeAddress(args.accountAddress)}/resources`,
         query: {
             count: args.options?.count,
             start: args.options?.start
-        }
-    }, config);
-
-    return { response: data, cursor };
+        },
+        cursorParam: "start",
+    }, config, (data) => data);
 }
 
 
@@ -95,27 +93,48 @@ export async function getAccountResourceInternal<T extends object = any>(
 
 
 
+/**
+ * The cursor of the next page of `/accounts/{address}/transactions`, which the node pages by sequence number
+ * (inclusive in both orders) and without an `x-supra-cursor` header: the sequence number after the last item in
+ * the requested order, as a decimal string, or `undefined` when the page is empty or ends at sequence number 0
+ * in descending order.
+ */
+export function nextSequenceNumberCursor(items: readonly TransactionResponse[], ascending: boolean): string | undefined {
+    const last = items[items.length - 1];
+    if (last === undefined || !("header" in last)) {
+        return undefined;
+    }
+    const sequenceNumber = BigInt(last.header.sequence_number);
+    if (ascending) {
+        return (sequenceNumber + 1n).toString();
+    }
+    return sequenceNumber === 0n ? undefined : (sequenceNumber - 1n).toString();
+}
+
+
 export async function getAccountTransactionsInternal<T extends TransactionResponse = TransactionResponse>(
     args: {
         accountAddress: AccountAddressInput;
         options?: {
             count?: number;
-            start?: string;
+            start?: string | number | bigint | undefined;
             ascending?: boolean;
         };
     },
     config: NetworkConfig
 ): Promise<PaginatedResponse<T[]>> {
-    let { data, cursor } = await get<T[]>({
+    const start = args.options?.start;
+    const ascending = args.options?.ascending ?? false;
+    const { data } = await get<T[]>({
         path: `/accounts/${standardizeAddress(args.accountAddress)}/transactions`,
         query: {
             count: args.options?.count,
-            start: args.options?.start,
+            start: start === undefined || start === "" ? undefined : String(start),
             ascending: args.options?.ascending
         }
     }, config);
 
-    return { response: data, cursor };
+    return { response: data, cursor: nextSequenceNumberCursor(data, ascending) };
 }
 
 
@@ -124,25 +143,23 @@ export async function getAccountCoinTransactionsInternal<T extends TransactionRe
         accountAddress: AccountAddressInput;
         options?: {
             count?: number;
-            start?: string;
+            start?: string | undefined;
             ascending?: boolean;
             type?: TransactionQueryType
         };
     },
     config: NetworkConfig
 ): Promise<PaginatedResponse<T[]>> {
-    let { data, cursor } = await get<T[]>({
+    return getPage<T[], T>({
         path: `/accounts/${standardizeAddress(args.accountAddress)}/coin_transactions`,
         query: {
             count: args.options?.count,
             start: args.options?.start,
             ascending: args.options?.ascending,
             type: args.options?.type
-
-        }
-    }, config);
-
-    return { response: data, cursor };
+        },
+        cursorParam: "start",
+    }, config, (data) => data);
 }
 
 
@@ -152,23 +169,22 @@ export async function getAccountAutoTransactionsInternal<T extends AutoTransacti
         options?: {
             count?: number;
             block_height?: number;
-            cursor?: string;
+            cursor?: string | undefined;
             ascending?: boolean;
         };
     },
     config: NetworkConfig
 ): Promise<PaginatedResponse<T[]>> {
-    let { data, cursor } = await get<T[]>({
+    return getPage<T[], T>({
         path: `/accounts/${standardizeAddress(args.accountAddress)}/automated_transactions`,
         query: {
             count: args.options?.count,
             block_height: args.options?.block_height,
             cursor: args.options?.cursor,
             ascending: args.options?.ascending
-        }
-    }, config);
-
-    return { response: data, cursor };
+        },
+        cursorParam: "cursor",
+    }, config, (data) => data);
 }
 
 
@@ -178,27 +194,17 @@ export async function getAccountCoinsCountInternal(
     },
     config: NetworkConfig
 ): Promise<number> {
-    let cursor: string | undefined = "";
+    let cursor: string | undefined;
     let legacyTokensCount = 0;
     let hasSupraCoinStore = false;
 
-    while (cursor !== undefined) {
-
-        let { response: resources, cursor: cursorInfo } = await getAccountResourcesInternal({ accountAddress: args.accountAddress, options: cursor ? { start: cursor } : {} }, config);
-
-        // get legacy tokens list from the resources
-        let tokens = getAccountLegacyCoins(resources);
-
-        if (cursorInfo != cursor) {
-            cursor = cursorInfo;
-        } else {
-            cursor = undefined;
-        }
-
+    do {
+        const page = await getAccountResourcesInternal({ accountAddress: args.accountAddress, options: { start: cursor } }, config);
+        const tokens = getAccountLegacyCoins(page.response);
         legacyTokensCount += Object.keys(tokens).length;
         hasSupraCoinStore ||= `0x1::coin::CoinStore<${SUPRA_COIN_TYPE}>` in tokens;
-
-    }
+        cursor = page.cursor;
+    } while (cursor !== undefined);
 
     // The SUPRA primary fungible store counts as SUPRA once an account has no SUPRA coin store (migrated accounts).
     if (!hasSupraCoinStore && (await getAccountHasSupraFungibleStoreInternal(args, config))) {

@@ -1,5 +1,6 @@
 import { get } from "../client/get";
 import type { FinalizedBlockHeader } from "../types/block";
+import type { TransactionQueryType } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 
 export async function getLatestBlockInternal(config: NetworkConfig): Promise<FinalizedBlockHeader> {
@@ -12,7 +13,7 @@ export async function getLatestBlockInternal(config: NetworkConfig): Promise<Fin
 export async function getBlockByHeightInternal(
     args: {
         height: number,
-        options?: { withFinalizedTransactions?: boolean, type?: "user" | "auto" | "meta" }
+        options?: { withFinalizedTransactions?: boolean, type?: TransactionQueryType }
     },
     config: NetworkConfig
 ): Promise<FinalizedBlockHeader> {
@@ -36,7 +37,7 @@ export async function getBlockByHashInternal(args: { blockHash: string }, config
 export async function getTransactionsByBlockHashInternal(
     args: {
         blockHash: string,
-        options?: { type?: "user" | "auto" | "meta" }
+        options?: { type?: TransactionQueryType }
     },
     config: NetworkConfig
 ): Promise<string[]> {

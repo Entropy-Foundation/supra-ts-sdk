@@ -61,9 +61,13 @@ export class Transaction {
     * @template {TransactionResponse} T - The type of the transaction to be returned.
     * @param args - The arguments for querying the transaction.
     * @param args.transactionHash - The transaction hash should be a hex-encoded bytes string with a 0x prefix.
-    * @param args.type - The type of transaction to query.
+    * @param args.type - The type of transaction to query. `"settlement"` requires a node from v12 onwards; older
+    * nodes reject it with HTTP 400.
     * @param args.exclude_uncommitted - Whether to exclude uncommitted transactions.
-    * @returns A Promise that resolves to a TransactionResponse object.
+    * @returns A Promise that resolves to a TransactionResponse object. Only user and automated transactions have
+    * `header`, `payload` and `authenticator`; narrow on `txn_type` before reading them.
+    * @throws {SupraAPIError} HTTP 404 for an unknown hash. A hash that is not hexadecimal is HTTP 400 on v12 and
+    * HTTP 404 on v11. See "HTTP status codes by node version" in the README.
     * @example
     * ```typescript
     * import {SupraClient, Network} from "supra-l1-sdk";

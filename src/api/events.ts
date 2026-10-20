@@ -34,13 +34,16 @@ export class Events {
 
 
     /**
-     * Get the events of the given event type
+     * Get the events of the given type.
      * @param args.eventType - Type of event
      * @param args.options.startHeight - Starting block height (inclusive)
      * @param args.options.endHeight - Ending block height (exclusive)
      * @param args.options.limit - Maximum number of events to return. Defaults to 20, max 100.
-     * @param args.options.start - Cursor specifying where to start for pagination. Use the cursor returned by the previous request when making the next request.
-     * @returns A Promise that resolves to an array of events.
+     * @param args.options.start - The `cursor` of the previous page, a hex string. Omit it, or pass `undefined`, for the first page.
+     * @returns A Promise that resolves to an array of events, with the cursor of the next page. `cursor` is
+     * `undefined` when there are no more events; a page can hold fewer than `limit` events and still carry a
+     * cursor. See {@link PaginatedResponse}.
+     * @throws {SupraAPIError} HTTP 410 when the requested heights have been pruned from the node.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -57,7 +60,7 @@ export class Events {
      * ```
      * @group Events
      */
-    async getEventsByType(args: { eventType: MoveFunctionId, options: { startHeight?: number, endHeight?: number, limit?: number, start?: number } }): Promise<PaginatedResponse<Event[]>> {
+    async getEventsByType(args: { eventType: MoveFunctionId, options: { startHeight?: number, endHeight?: number, limit?: number, start?: string | undefined } }): Promise<PaginatedResponse<Event[]>> {
         validateStructId(args.eventType, "eventType");
         validatePaginationCount(args.options?.limit, "limit");
         return getEventsByTypeInternal(args, this.networkInformation);
