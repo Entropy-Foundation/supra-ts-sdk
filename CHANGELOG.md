@@ -489,6 +489,16 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `DELAY_BETWEEN_POOLING_REQUEST` and `DEFAULT_RECORDS_ITEMS_COUNT`. No function of the SDK read them; the chain ID
   comes from `SupraConfig` and the wait is set by `waitTimeoutMs`.
 
+### Security
+
+- Patched the dev-only transitive dependencies `handlebars` (4.7.10; GHSA-xw65-4hp5-5hc7, GHSA-8r5x-fm3f-whwj,
+  GHSA-p8wg-vrv2-v86f), `brace-expansion` (1.1.21, 2.1.7 and 5.0.12; GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895,
+  GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p), `browserslist` (4.28.7; GHSA-c83g-rgw3-j3cx,
+  GHSA-73wf-gq98-2v4g), `baseline-browser-mapping` (2.11.0; GHSA-w5vr-8v7q-w6rv), `markdown-it` (14.3.1;
+  GHSA-253c-mchw-3w2r), `@humanfs/node` (0.16.8; GHSA-p498-v437-472g) and `ajv@6` (6.14.0; GHSA-2g4f-4pwh-qvx6)
+  through `pnpm.overrides`. Each version is the minimum the override allows. They are reached only through the
+  development toolchain (Jest, ts-jest, ESLint and TypeDoc), so no published artifact was affected.
+
 ## [1.2.0] - 2026-09-22
 
 ### Added
