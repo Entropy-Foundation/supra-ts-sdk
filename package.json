@@ -91,7 +91,7 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@jest/globals": "^29.7.0",
+    "@jest/globals": "^30.5.2",
     "@types/jest": "^29.5.0",
     "@types/node": "^25.2.3",
     "@typescript-eslint/eslint-plugin": "^8.57.1",
