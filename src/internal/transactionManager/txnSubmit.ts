@@ -1,8 +1,11 @@
 import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import { standardizeAddress } from "../../helper/account";
+import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
-import type { WaitForTransactionOptions } from "../../types/transaction";
+import type { CommittedTransactionResponse, WaitForTransactionOptions } from "../../types/transaction";
+import { SupraAPIError } from "../../errors/apiError";
+import { SupraSubmissionOutcomeUnknownError, SupraTransactionTimeoutError } from "../../errors/transactionError";
+import { ed25519TransactionAuthenticator, transactionHashOf, withTransactionHash } from "./txnHash";
 import {
     bindReservation,
     reservationOf,
@@ -12,7 +15,7 @@ import {
     withSequenceNumberInternal,
     type ReservationBinding,
 } from "../sequenceNumber";
-import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
+import type { RawTxnJSON, SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type {
     EnableTransactionWaitAndSimulationArgs,
     OptionalTransactionArgs,
@@ -116,11 +119,55 @@ async function simulateBeforeSubmission(
 }
 
 /**
+ * The outcome of a submission whose request failed in a way that leaves it open whether the node accepted the
+ * transaction (`cause`: a timeout, a connection failure, or a 5xx other than 503; see
+ * `settleFailedSubmissionInternal`). The transaction has been recorded with `hash`, the hash derived from the signed
+ * transaction.
+ *
+ * Without `waitOptions`, throws `SupraSubmissionOutcomeUnknownError`. With `waitOptions` (`enableWaitForTransaction`),
+ * waits for `hash` as after an accepted submission: a final status is returned or thrown as
+ * `waitForTransactionInternal` does, and a wait that ends without one (`SupraTransactionTimeoutError`) throws
+ * `SupraSubmissionOutcomeUnknownError` with that error as `waitError`.
+ */
+async function unknownSubmissionOutcomeInternal(
+    args: {
+        rawTxn: RawTxnJSON;
+        hash: string;
+        cause: unknown;
+        waitOptions: WaitForTransactionOptions | undefined;
+    },
+    config: NetworkConfig,
+): Promise<CommittedTransactionResponse> {
+    const unknown = (waitError?: SupraTransactionTimeoutError) =>
+        new SupraSubmissionOutcomeUnknownError({
+            hash: args.hash,
+            sender: args.rawTxn.sender,
+            sequenceNumber: BigInt(args.rawTxn.sequence_number),
+            expirationTimestampSecs: BigInt(args.rawTxn.expiration_timestamp_secs),
+            cause: args.cause,
+            waitError,
+        });
+    if (args.waitOptions === undefined) {
+        throw unknown();
+    }
+    try {
+        return await waitForTransactionInternal({ transactionHash: args.hash, options: args.waitOptions }, config);
+    } catch (waitError) {
+        if (waitError instanceof SupraTransactionTimeoutError) {
+            throw unknown(waitError);
+        }
+        throw waitError;
+    }
+}
+
+/**
  * Submits a signed transaction, simulating it first with `enableTransactionSimulation`, and waits as the options say.
  * A refusal for a gas unit price below the node's minimum, by the simulation or the submission, throws
  * `SupraGasUnitPriceBelowMinimumError`; the read of the node's minimum for it is made here. The helpers that call this
  * while they hold the account's lock set `deferGasPriceRefusalMapping` and map the error after they have released the
- * lock (`mapCallGasUnitPriceRefusalInternal`).
+ * lock (`mapCallGasUnitPriceRefusalInternal`). A submission whose outcome is unknown
+ * (`SupraSubmissionOutcomeUnknownError`) and the errors of the wait after an accepted submission are not refusals and
+ * are thrown as they are.
  */
 export async function submitTxnInternal(
     args: {
@@ -170,9 +217,21 @@ async function submitUnmappedTxnInternal(
     }
 
     const rawTxn = payload.Move.raw_txn;
-    let txHash: string;
+    // The hash of the signed transaction the payload was made from (after a re-sign, of the new one), known before the
+    // submission request.
+    const derivedHash = transactionHashOf(payload);
+    if (derivedHash === undefined) {
+        throw new Error("A submitted payload carries the hash of its signed transaction (withTransactionHash)");
+    }
+    const wait = (options.enableWaitForTransaction ?? DEFAULT_WAIT_FOR_TX_COMPLETION) === true;
+    const waitOptions: WaitForTransactionOptions = { checkSuccess: options.checkSuccess ?? true };
+    if (options.waitTimeoutMs !== undefined) {
+        waitOptions.timeoutMs = options.waitTimeoutMs;
+    }
+
+    let answer: unknown;
     try {
-        txHash = await post<SendTxnPayload, string>(
+        answer = await post<SendTxnPayload, unknown>(
             {
                 path: "/transactions/submit",
                 data: payload,
@@ -180,9 +239,25 @@ async function submitUnmappedTxnInternal(
             config,
         );
     } catch (error) {
-        // The refusal for a price below the node's minimum is a known outcome: the number is handed out again.
-        throw settleFailedSubmissionInternal({ rawTxn, reservation }, error, config);
+        if (isUnreadableAcceptance(error)) {
+            // The node accepted the transaction with a 2xx status, and its body is not JSON.
+            answer = undefined;
+        } else {
+            const settled = settleFailedSubmissionInternal({ rawTxn, reservation, hash: derivedHash }, error, config);
+            if (!settled.mayHaveAccepted) {
+                // A refusal, including one for a price below the node's minimum: the number is handed out again.
+                throw settled.error;
+            }
+            // The node may have accepted the transaction, which is recorded with the derived hash.
+            return await unknownSubmissionOutcomeInternal(
+                { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
+                config,
+            );
+        }
     }
+    // The node accepted the transaction. Its answer is the transaction's hash; an answer that is not a hash (an empty
+    // or non-string body) is replaced by the derived hash.
+    const txHash = isTransactionHash(answer) ? answer : derivedHash;
     // The record keeps the number from the counter until the transaction has committed or can no longer commit.
     tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, txHash);
     if (reservation !== undefined) {
@@ -191,11 +266,7 @@ async function submitUnmappedTxnInternal(
 
     // From here on the node has accepted the transaction: the errors of the wait carry `txHash`, and a failed read
     // returns it. A read that returns `Invalid` drops the record (`getTransactionByHashInternal`).
-    if ((options.enableWaitForTransaction ?? DEFAULT_WAIT_FOR_TX_COMPLETION) === true) {
-        const waitOptions: WaitForTransactionOptions = { checkSuccess: options.checkSuccess ?? true };
-        if (options.waitTimeoutMs !== undefined) {
-            waitOptions.timeoutMs = options.waitTimeoutMs;
-        }
+    if (wait) {
         return await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
     }
 
@@ -204,6 +275,19 @@ async function submitUnmappedTxnInternal(
     } catch (readError) {
         return { hash: txHash, status: "NotReadBack", readError };
     }
+}
+
+/**
+ * Whether the error of a submission request is the node's acceptance with a 2xx status whose body is not JSON:
+ * `parseJsonResponse` reports such a body as a `SupraAPIError` with the 2xx status.
+ */
+function isUnreadableAcceptance(error: unknown): boolean {
+    return error instanceof SupraAPIError && error.status >= 200 && error.status < 300;
+}
+
+/** Whether the node's answer to a submission is a transaction hash: `0x` followed by 64 hex digits. */
+function isTransactionHash(answer: unknown): answer is string {
+    return typeof answer === "string" && /^0x[0-9a-fA-F]{64}$/.test(answer);
 }
 
 /**
@@ -321,19 +405,24 @@ export async function submitSerializedRawTransactionAndSignatureInternal(
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
-    let sendTxPayload = {
-        Move: {
-            raw_txn: getRawTxnJSONInternal(
-                TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction)),
-            ),
-            authenticator: {
-                Ed25519: {
-                    public_key: args.senderPubkey.toString(),
-                    signature: args.signature.toString(),
+    const publicKey = hexBytesOf(args.senderPubkey, "senderPubkey");
+    const signature = hexBytesOf(args.signature, "signature");
+    const rawTxn = TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction));
+    const sendTxPayload = withTransactionHash(
+        {
+            Move: {
+                raw_txn: getRawTxnJSONInternal(rawTxn),
+                authenticator: {
+                    Ed25519: {
+                        public_key: args.senderPubkey.toString(),
+                        signature: args.signature.toString(),
+                    },
                 },
             },
         },
-    };
+        rawTxn,
+        ed25519TransactionAuthenticator(publicKey, signature),
+    );
 
     return await submitTxnInternal(
         {
@@ -361,20 +450,29 @@ export async function submitSponsorTransactionInternal(
         secondarySignersAuthenticatorJSON.push(getED25519AuthenticatorJSON(authenticator));
     });
 
-    let sendTxPayload: SendTxnPayload = {
-        Move: {
-            raw_txn: getRawTxnJSONInternal(args.rawTxn),
-            authenticator: {
-                FeePayer: {
-                    sender: getED25519AuthenticatorJSON(args.senderAuthenticator),
-                    secondary_signer_addresses: args.secondarySignersAccountAddress,
-                    secondary_signers: secondarySignersAuthenticatorJSON,
-                    fee_payer_address: args.feePayerAddress.toString(),
-                    fee_payer_signer: getED25519AuthenticatorJSON(args.feePayerAuthenticator),
+    const sendTxPayload = withTransactionHash(
+        {
+            Move: {
+                raw_txn: getRawTxnJSONInternal(args.rawTxn),
+                authenticator: {
+                    FeePayer: {
+                        sender: getED25519AuthenticatorJSON(args.senderAuthenticator),
+                        secondary_signer_addresses: args.secondarySignersAccountAddress,
+                        secondary_signers: secondarySignersAuthenticatorJSON,
+                        fee_payer_address: args.feePayerAddress.toString(),
+                        fee_payer_signer: getED25519AuthenticatorJSON(args.feePayerAuthenticator),
+                    },
                 },
             },
         },
-    };
+        args.rawTxn,
+        new TxnBuilderTypes.TransactionAuthenticatorFeePayer(
+            args.senderAuthenticator,
+            args.secondarySignersAccountAddress.map(accountAddressOf),
+            args.secondarySignersAuthenticator,
+            { address: accountAddressOf(args.feePayerAddress), authenticator: args.feePayerAuthenticator },
+        ),
+    );
 
     return await submitTxnInternal(
         {
@@ -400,18 +498,26 @@ export async function submitMultiAgentTransactionInternal(
         secondarySignersAuthenticatorJSON.push(getED25519AuthenticatorJSON(authenticator));
     });
 
-    let sendTxPayload: SendTxnPayload = {
-        Move: {
-            raw_txn: getRawTxnJSONInternal(args.rawTxn),
-            authenticator: {
-                MultiAgent: {
-                    sender: getED25519AuthenticatorJSON(args.senderAuthenticator),
-                    secondary_signer_addresses: args.secondarySignersAccountAddress,
-                    secondary_signers: secondarySignersAuthenticatorJSON,
+    const sendTxPayload = withTransactionHash(
+        {
+            Move: {
+                raw_txn: getRawTxnJSONInternal(args.rawTxn),
+                authenticator: {
+                    MultiAgent: {
+                        sender: getED25519AuthenticatorJSON(args.senderAuthenticator),
+                        secondary_signer_addresses: args.secondarySignersAccountAddress,
+                        secondary_signers: secondarySignersAuthenticatorJSON,
+                    },
                 },
             },
         },
-    };
+        args.rawTxn,
+        new TxnBuilderTypes.TransactionAuthenticatorMultiAgent(
+            args.senderAuthenticator,
+            args.secondarySignersAccountAddress.map(accountAddressOf),
+            args.secondarySignersAuthenticator,
+        ),
+    );
 
     return await submitTxnInternal(
         {
@@ -420,6 +526,26 @@ export async function submitMultiAgentTransactionInternal(
         },
         config,
     );
+}
+
+/**
+ * The bytes of a public key or signature passed as hex, for the hash of the signed transaction.
+ * @throws {RangeError} If the value, after its `0x` prefix, is not hex digits in pairs
+ */
+function hexBytesOf(value: HexString, name: string): Uint8Array {
+    const digits = String(value).replace(/^0x/, "");
+    if (!/^(?:[0-9a-fA-F]{2})*$/.test(digits)) {
+        throw new RangeError(`${name} must be hex digits in pairs after an optional 0x, got ${String(value)}`);
+    }
+    return new HexString(digits).toUint8Array();
+}
+
+/**
+ * The address of a secondary signer or a fee payer, for the hash of the signed transaction.
+ * @throws {RangeError} If the address, after an optional `0x` or `0X` prefix, is not 1 to 64 hex digits
+ */
+function accountAddressOf(address: AccountAddressInput): TxnBuilderTypes.AccountAddress {
+    return new TxnBuilderTypes.AccountAddress(addressToBytes(address));
 }
 
 export function getED25519AuthenticatorJSON(

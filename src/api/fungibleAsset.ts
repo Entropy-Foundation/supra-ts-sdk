@@ -90,6 +90,8 @@ export class FungibleAsset {
      * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or a simulation because the gas
      * unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError` for that refusal).
      * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
+     * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
+     * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`).
      * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript
@@ -200,6 +202,8 @@ export class FungibleAsset {
      * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or a simulation because the gas
      * unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError` for that refusal).
      * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
+     * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
+     * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`).
      * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript

@@ -12,7 +12,10 @@ import type { OptionalTransactionPayloadArgs } from "./transactionBuild";
  *   (see `OptionalTransactionPayloadArgs`); a failed read of the account during that check is thrown. Default false.
  * - `enableWaitForTransaction`: wait until the transaction has a final status. A final status other than `Success`
  *   throws `SupraTransactionFailedError`, unless `checkSuccess` is false; no final status within `waitTimeoutMs`
- *   throws `SupraTransactionTimeoutError`. Default false.
+ *   throws `SupraTransactionTimeoutError`. When the submission request timed out, failed before the node answered or
+ *   was answered with a 5xx status other than 503, the wait is for the hash derived before the submission, and no
+ *   final status within `waitTimeoutMs` throws `SupraSubmissionOutcomeUnknownError`.
+ *   Default false.
  * - `checkSuccess`: with `enableWaitForTransaction`, throw `SupraTransactionFailedError` for a final status other
  *   than `Success`. When false, the transaction is returned whatever its final status. Default true.
  * - `waitTimeoutMs`: with `enableWaitForTransaction`, the longest time to wait for a final status, in milliseconds.

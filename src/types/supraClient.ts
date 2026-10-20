@@ -38,7 +38,8 @@ export interface RetryConfig {
  * `sequenceNumber` does not take part in this order.
  *
  * The counter records every transaction of the account that the client submitted (accepted, or whose submission
- * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time, and hands out the
+ * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time and hash (for a
+ * request without an answer, the hash derived from the signed transaction before the submission), and hands out the
  * lowest number at or above the account's sequence number on the chain that has no record. A submission whose request
  * failed without an answer holds its number until the transaction's expiration time or `resetSequenceNumber`, including
  * when its expiration time was beyond what a node accepts. A record is dropped when the
@@ -57,7 +58,10 @@ export interface RetryConfig {
  * seconds after it, so a client whose clock is far from the node's has its transactions refused.
  *
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
- * `SupraTimeoutError`. `retry` turns on retries of GET requests; it is off by default.
+ * `SupraTimeoutError`, and a submission request that exceeds it makes the submit helper throw
+ * `SupraSubmissionOutcomeUnknownError`; with `enableWaitForTransaction`, the helper first waits for the transaction's
+ * hash and throws it only when that wait ends without a final status. `retry` turns on retries of GET requests; it is
+ * off by default.
  * `waitTimeoutMs` sets how long a wait for a transaction's final status lasts (`waitForTransaction` and submissions
  * with `enableWaitForTransaction`) when the call sets no timeout (default 60000 ms); a wait that exceeds it throws
  * `SupraTransactionTimeoutError`.

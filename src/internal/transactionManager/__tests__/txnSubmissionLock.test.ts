@@ -1,6 +1,10 @@
 import { HexString, SupraAccount } from "supra-l1-sdk-core";
 import { SupraAPIError, SupraRateLimitError } from "../../../errors/apiError";
-import { SupraSimulationFailedError, SupraTransactionTimeoutError } from "../../../errors/transactionError";
+import {
+    SupraSimulationFailedError,
+    SupraSubmissionOutcomeUnknownError,
+    SupraTransactionTimeoutError,
+} from "../../../errors/transactionError";
 import { ABORT_AMOUNT, MockNode, type MockNodeOptions } from "./helpers/mockNode";
 import { ClientClock, newClient, transfer, within, type TransferOptions } from "./helpers/transfers";
 
@@ -180,6 +184,31 @@ describe("concurrent transfers of one client from one account", () => {
         expect(quick.status).toBe("Pending");
         expect(mock.pooled()).toEqual([5, 6]);
         await expect(waiting).rejects.toBeInstanceOf(SupraTransactionTimeoutError);
+    });
+
+    it("submits a call with an explicit max gas while an earlier call waits for the derived hash after a submission without an answer", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        // The first submission reaches the node, which pools it; the connection fails before its answer arrives.
+        let submissions = 0;
+        global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+            const response = await mock.fetch(input, init);
+            if (new URL(String(input)).pathname.endsWith("/transactions/submit") && ++submissions === 1) {
+                throw new TypeError("fetch failed");
+            }
+            return response;
+        }) as typeof fetch;
+
+        const waiting = transfer(supra, sender, { wait: true, waitTimeoutMs: 1_000 });
+        const quick = await within(transfer(supra, sender, { maxGas: 5_000n }), 900);
+
+        expect(quick.status).toBe("Pending");
+        expect(mock.pooled()).toEqual([5, 6]);
+        const error = (await waiting.catch((e: unknown) => e)) as SupraSubmissionOutcomeUnknownError;
+        expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+        expect(error.hash).toBe(mock.submissionHash(5));
+        expect(error.waitError).toBeInstanceOf(SupraTransactionTimeoutError);
     });
 
     it("submits a call with an explicit max gas after the earlier call's submission", async () => {

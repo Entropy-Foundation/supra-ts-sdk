@@ -1,5 +1,6 @@
 import { standardizeAddress } from "../helper/account";
 import { SupraAccountQueueFullError, SupraAPIError } from "../errors/apiError";
+import { SupraNetworkError, SupraTimeoutError } from "../errors/supraError";
 import { SupraSimulationFailedError, SupraTransactionFailedError } from "../errors/transactionError";
 import type { AccountAddressInput } from "../types/account";
 import { TransactionStatus } from "../types/transaction";
@@ -65,7 +66,10 @@ export interface SequenceNumberReservation {
 export interface SubmissionRecord {
     /** The transaction's expiration time, in seconds since the Unix epoch. */
     readonly expiration: bigint;
-    /** The transaction's hash, when the node returned it. */
+    /**
+     * The transaction's hash: the one the node returned, or for a submission without an answer the one derived from
+     * the signed transaction. `undefined` when it could not be read.
+     */
     readonly hash: string | undefined;
 }
 
@@ -164,9 +168,9 @@ export class SequenceNumberTracker {
 
     /**
      * Records the transaction of `address` with `sequenceNumber` and `expiration` (seconds since the Unix epoch) that
-     * this client submitted and that the node accepted (with its `hash`) or may have accepted (without a hash), whether
-     * or not its number came from the counter. Nothing is recorded when the address, the number or the expiration time
-     * cannot be read; a hash that cannot be read is not kept.
+     * this client submitted and that the node accepted (with the hash the node returned) or may have accepted (with the
+     * hash derived from the signed transaction), whether or not its number came from the counter. Nothing is recorded
+     * when the address, the number or the expiration time cannot be read; a hash that cannot be read is not kept.
      */
     record(
         address: AccountAddressInput,
@@ -470,24 +474,35 @@ export function settleUnsubmittedSequenceNumberInternal(
 }
 
 /**
- * Settles a submission of `rawTxn` whose request threw, and returns the error to throw.
+ * How a submission whose request threw was settled: the error to report, and whether the node may have accepted the
+ * transaction (`mayHaveAccepted`), in which case the transaction was recorded with its derived hash.
+ */
+export interface FailedSubmissionSettlement {
+    readonly error: unknown;
+    readonly mayHaveAccepted: boolean;
+}
+
+/**
+ * Settles a submission of `rawTxn` whose request threw.
  *
- * - A refusal because the account's queue on the node is full: `SupraAccountQueueFullError` is returned; with
+ * - A refusal because the account's queue on the node is full: the error is a `SupraAccountQueueFullError`; with
  *   `reservation`, the next number is taken after a read of the chain.
  * - A stale number: with `reservation`, the next number is taken after a read of the chain.
- * - Another answer with an error status of the client, and a 503: the node did not take the number; with
+ * - Another answer with a 4xx status, and a 503: the node refused the transaction and did not take the number; with
  *   `reservation`, the number is handed out next.
- * - Any other error (a timeout, a connection failure, a 5xx other than 503): the node may have accepted the
- *   transaction, so it is recorded without a hash, whether or not its number came from the counter. The record's
- *   expiration time is the transaction's.
+ * - A timeout (`SupraTimeoutError`), a connection failure before the node answered (`SupraNetworkError`), or an
+ *   answer with a 5xx status other than 503: the node may have accepted the transaction (`mayHaveAccepted`), so it is
+ *   recorded with `hash`, the hash derived from the signed transaction, whether or not its number came from the
+ *   counter. The record's expiration time is the transaction's.
+ * - Any other error: nothing is recorded; with `reservation`, the number is handed out next.
  *
  * A reservation is released in every case.
  */
 export function settleFailedSubmissionInternal(
-    args: { rawTxn: RawTxnJSON; reservation: SequenceNumberReservation | undefined },
+    args: { rawTxn: RawTxnJSON; reservation: SequenceNumberReservation | undefined; hash: string },
     error: unknown,
     config: NetworkConfig,
-): unknown {
+): FailedSubmissionSettlement {
     const tracker = sequenceNumberTrackerOf(config);
     const { rawTxn, reservation } = args;
     const settle = (resynchronise: boolean) => {
@@ -501,23 +516,30 @@ export function settleFailedSubmissionInternal(
     };
     if (isAccountQueueFullRefusal(error)) {
         settle(true);
-        return new SupraAccountQueueFullError({
-            status: error.status,
-            statusText: error.statusText,
-            url: error.url,
-            data: error.data,
-            sequenceNumber: BigInt(rawTxn.sequence_number),
-        });
+        return {
+            error: new SupraAccountQueueFullError({
+                status: error.status,
+                statusText: error.statusText,
+                url: error.url,
+                data: error.data,
+                sequenceNumber: BigInt(rawTxn.sequence_number),
+            }),
+            mayHaveAccepted: false,
+        };
     }
     if (isStaleSequenceNumberError(error)) {
         settle(true);
-    } else if (error instanceof SupraAPIError && (error.status < 500 || error.status === 503)) {
-        settle(false);
-    } else {
-        tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs);
-        settle(false);
+        return { error, mayHaveAccepted: false };
     }
-    return error;
+    const mayHaveAccepted =
+        error instanceof SupraTimeoutError ||
+        error instanceof SupraNetworkError ||
+        (error instanceof SupraAPIError && error.status >= 500 && error.status !== 503);
+    if (mayHaveAccepted) {
+        tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, args.hash);
+    }
+    settle(false);
+    return { error, mayHaveAccepted };
 }
 
 /**

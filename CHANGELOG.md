@@ -28,7 +28,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `retryAfterSeconds` from the body's `retry_after_seconds` or the `Retry-After` header) and
   `SupraServiceUnavailableError` (503) extend `SupraAPIError`, so `instanceof SupraAPIError` still matches.
   `SupraTimeoutError` and `SupraNetworkError` are thrown for a request that times out or fails before the node answers;
-  the original error is their `cause`. `SupraError` is the base class of all of them and of the faucet errors.
+  the original error is their `cause`. For a submission request they are the `cause` of
+  `SupraSubmissionOutcomeUnknownError` (below). `SupraError` is the base class of all of them and of the faucet errors.
 - **`SupraAPIError.sub_status`** is the abort code of an `ABORTED` status. `parseVmStatus` is exported.
 - `MoveVmError` lists the validation, verification, invariant and runtime statuses that clients commonly handle,
   including `ABORTED`, `MISSING_DATA`, `TYPE_RESOLUTION_FAILURE`, `LOOKUP_FAILED` and `MAX_GAS_UNITS_*`.
@@ -38,6 +39,18 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `major_status`, `sub_status` and `transaction`) and `SupraTransactionTimeoutError` (no final status within the wait
   timeout; carries `hash`, `timeoutMs`, `lastStatus`, `transaction` and the last read error as `cause`). All three
   extend `SupraError`.
+- **`SupraSubmissionOutcomeUnknownError`** (extends `SupraError`; carries `hash`, `sender`, `sequenceNumber`,
+  `expirationTimestampSecs`, `waitError`, and the error of the request as `cause`) is thrown by every submit helper
+  when the submission request times out (`SupraTimeoutError`), fails before the node answers (`SupraNetworkError`), or
+  is answered with a 5xx status other than 503 (`SupraAPIError`). In each case the node may have accepted the
+  transaction; look `hash` up or wait for it before sending the transaction again. The submit helpers derive the hash
+  from the signed transaction before they submit it (the Keccak-256 of its BCS bytes, as `deriveTransactionHash`
+  does), which is the hash v11.7.0 and v12 nodes give a transaction of every kind the SDK submits. With
+  `enableWaitForTransaction`, the helper first waits for that hash within the wait timeout: a transaction that reaches
+  a final status is returned, or throws `SupraTransactionFailedError`, as after an accepted submission, and the error
+  is thrown, with the wait's `SupraTransactionTimeoutError` as `waitError`, when the wait ends without a final status.
+  A refusal of the node (a 4xx status or 503) is thrown as a `SupraAPIError`, or as
+  `SupraGasUnitPriceBelowMinimumError` when the gas unit price is below the node's minimum (below).
 - **`FixedPoint32` and `FixedPoint64` arguments.** An entry or view function parameter of type
   `0x1::fixed_point32::FixedPoint32` or `0x1::fixed_point64::FixedPoint64`, also inside `vector` and `Option`, takes the
   struct's raw `u64` or `u128` value as a `bigint` or a decimal string, with the range checks of `u64` and `u128`.
@@ -76,7 +89,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   sent again and its price is not raised.
 - **Per-account sequence-number counter.** Each `SupraClient` keeps, for every account that its helpers send from, the
   account's sequence number on the chain and a record of each transaction it submitted (accepted, or whose submission
-  request failed without an answer, so the node may have accepted it) with that transaction's expiration time. A
+  request failed without an answer, so the node may have accepted it) with that transaction's expiration time and hash
+  (the node's answer, or for a request without an answer the hash derived from the signed transaction). A
   transaction the node accepted either commits or, once the timestamp of the latest block has reached its expiration
   time, can no longer commit. A record is dropped when the chain's number passes it, when the timestamp of a latest
   block the client reads (`GET /rpc/v3/block`; not a block read by height or hash) has reached its expiration time, or
@@ -198,6 +212,11 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Breaking:** a request that times out or fails before the node answers, or whose response body cannot be read,
   rejects with `SupraTimeoutError` or
   `SupraNetworkError` instead of a raw `DOMException` or `TypeError`.
+- **Breaking:** a submission request that times out, fails before the node answers, or is answered with a 5xx status
+  other than 503 makes the submit helper throw `SupraSubmissionOutcomeUnknownError` with the error of the request as
+  `cause`, and with `enableWaitForTransaction` wait for the derived hash first (see Added). It threw that request's
+  `DOMException`, `TypeError` or `SupraAPIError`. This includes the 500 that a v11 node answers when its transaction
+  pool is full.
 - **Breaking:** a submission with `enableWaitForTransaction: true` throws `SupraTransactionFailedError` when the
   transaction ends with `Fail` or `Invalid`, unless `checkSuccess: false` is passed. It resolved with the failed
   transaction. This applies to every submit helper: `transaction.submit.*`, the submit methods of a built transaction,
@@ -222,7 +241,14 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   the read's error, which did not carry the hash.
 - **Breaking:** `isPendingTransaction` returns true for `PendingAfterExecution` as well as `Pending`.
 - **Breaking:** `deriveTransactionHash` returns the hash with a `0x` prefix, the form `getTransactionByHash` and
-  `waitForTransaction` accept. It returned 64 hex characters without the prefix.
+  `waitForTransaction` accept. It returned 64 hex characters without the prefix. The submit helpers derive the hash
+  of each transaction the same way before they submit it.
+- **Breaking:** `transaction.submit.submitMultiAgentTransaction` and `submitSponsorTransaction`, and the matching
+  methods of a built transaction, throw a `RangeError` before submitting when a secondary signer or fee payer address
+  is not 1 to 64 hex digits after an optional `0x`. They sent the transaction, which the node refused.
+- **Breaking:** `transaction.submit.submitSerializedRawTransactionAndSignature` and `submitTransactionAndSignature` of a
+  built transaction throw a `RangeError` naming `senderPubkey` or `signature` before submitting when that value is not
+  hex digits in pairs after its `0x` prefix. They sent the transaction, which the node refused.
 - **Breaking:** `getTransactionByHash` takes no type argument. It returns `TransactionResponse`, which is narrowed
   by `txn_type`; the type argument did not change the value returned.
 - **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
@@ -391,6 +417,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 ### Fixed
 
+- A submission that the node accepts with a 2xx status whose body is not a transaction hash (a body that is not JSON,
+  an empty body, or a value that is not a hash) is handled as an accepted submission with the hash derived from the
+  signed transaction: the wait or the read-back uses that hash. A body that was not JSON threw a `SupraAPIError` with
+  the 2xx status, and the other bodies were returned as the hash.
 - `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
   signatures were replaced with zeros when the simulation request failed.
 - `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset` and

@@ -1,3 +1,5 @@
+import { hashOfSubmittedBody } from "./submittedHash";
+
 /**
  * A node for one account's transactions, answered from memory through `fetch`, for tests of the sequence-number
  * counter. The pool holds accepted transactions by sequence number; `tick` commits the transactions from the chain's
@@ -17,7 +19,8 @@
  *   pool (`already pending`), for a number at or beyond the window ahead of the chain's number (the account's queue is
  *   full), for an expiration time not after the node's clock, and for an expiration time more than 600 s after the
  *   node's clock in whole seconds. Otherwise it is accepted. `refuseNext` answers the next submissions of a number with
- *   the status and message given, and pools the transaction when `pool` is set.
+ *   the status and message given, and pools the transaction when `pool` is set. A pooled transaction has the hash a
+ *   node gives it: the Keccak-256 of the BCS of the signed transaction in the request body (`hashOfSubmittedBody`).
  * - `GET /transactions/estimate_gas_price` returns `gasPrice` (median and minimum, 100,000 each by default). A
  *   submission or simulation whose gas unit price is below `gasPrice.min` is refused with
  *   `GAS_UNIT_PRICE_BELOW_MIN_BOUND`, as the nodes do (400 for a submission, status `Invalid` for a simulation).
@@ -110,7 +113,6 @@ export class MockNode {
     /** The gas unit price of every submission, in order of arrival. */
     readonly gasUnitPrices: bigint[] = [];
 
-    private hashes = 0;
     private seed: number;
     private readonly latencyMs: [number, number];
     private readonly window: number;
@@ -363,7 +365,7 @@ export class MockNode {
                 this.refuseNext.delete(sequenceNumber);
             }
             if (refusal.pool === true) {
-                this.accept(sequenceNumber, expiration);
+                this.accept(sequenceNumber, expiration, body);
             }
             answer = { status: refusal.status, body: { message: refusal.message } };
         } else if (sequenceNumber < this.chain) {
@@ -394,7 +396,7 @@ export class MockNode {
                     "seconds exceeds the maximum of 600 seconds",
             );
         } else {
-            answer = { status: 200, body: this.accept(sequenceNumber, expiration) };
+            answer = { status: 200, body: this.accept(sequenceNumber, expiration, body) };
         }
         this.submissions.push({ sequenceNumber, expiration, body, status: answer.status });
         this.log.push(`SUBMIT ${sequenceNumber} (chain ${this.chain}) -> ${answer.status}`);
@@ -420,9 +422,9 @@ export class MockNode {
         return this.respond(answer);
     }
 
-    private accept(sequenceNumber: number, expiration: number): string {
-        this.hashes += 1;
-        const hash = "0x" + this.hashes.toString(16).padStart(64, "0");
+    /** Pools the transaction of `body` under the hash a node gives it, and returns that hash. */
+    private accept(sequenceNumber: number, expiration: number, body: string): string {
+        const hash = hashOfSubmittedBody(body);
         this.pool.set(sequenceNumber, { hash, sequenceNumber, expiration });
         this.accepted.set(sequenceNumber, hash);
         return hash;

@@ -1,7 +1,7 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import { SupraClient } from "../../api/supraClient";
 import { SupraAccountQueueFullError, SupraAPIError } from "../../errors/apiError";
-import { SupraTransactionFailedError } from "../../errors/transactionError";
+import { SupraSubmissionOutcomeUnknownError, SupraTransactionFailedError } from "../../errors/transactionError";
 import { TransactionStatus } from "../../types/transaction";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
@@ -727,7 +727,9 @@ describe("sequence numbers of the transfer helpers", () => {
         const sender = new SupraAccount();
         submitAnswers = [() => json({ message: "Internal error" }, 500)];
 
-        await expect(transfer(supra, sender, sequenceNumber)).rejects.toBeInstanceOf(SupraAPIError);
+        await expect(transfer(supra, sender, sequenceNumber)).rejects.toBeInstanceOf(
+            SupraSubmissionOutcomeUnknownError,
+        );
         await transfer(supra, sender);
 
         // The node may have accepted 7: the counter does not hand it out until the chain shows it dead.

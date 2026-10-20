@@ -25,6 +25,7 @@ import type {
 } from "../../types/move";
 import { convertPayloadTypeArgsToMoveType, getFunctionParts, uint8ArrayToHexString } from "../../helper/general";
 import { signTransactionInternal } from "../transaction";
+import { ed25519TransactionAuthenticator, withTransactionHash } from "./txnHash";
 import { fromUint8ArrayToJSArray, parseFunctionTypeArgs, parseScriptArgs } from "../../utils/functions";
 import { getAccountModuleInternal } from "../account";
 import { getFunctionABI } from "../../helper/abi";
@@ -400,6 +401,10 @@ export function getRawTxnJSONInternal(rawTxn: TxnBuilderTypes.RawTransaction): R
     };
 }
 
+/**
+ * Signs `rawTxn` with `senderAccount` and returns the JSON form of the signed transaction, the body of a submission.
+ * The hash of the signed transaction is recorded on the returned object (`withTransactionHash`).
+ */
 export async function sendTxnPayloadInternal(
     args: {
         senderAccount: SupraAccount;
@@ -415,17 +420,22 @@ export async function sendTxnPayloadInternal(
         config,
     );
 
-    return {
-        Move: {
-            raw_txn: getRawTxnJSONInternal(args.rawTxn),
-            authenticator: {
-                Ed25519: {
-                    public_key: args.senderAccount.pubKey().toString(),
-                    signature: signature.toString(),
+    const publicKey = args.senderAccount.pubKey();
+    return withTransactionHash(
+        {
+            Move: {
+                raw_txn: getRawTxnJSONInternal(args.rawTxn),
+                authenticator: {
+                    Ed25519: {
+                        public_key: publicKey.toString(),
+                        signature: signature.toString(),
+                    },
                 },
             },
         },
-    };
+        args.rawTxn,
+        ed25519TransactionAuthenticator(publicKey.toUint8Array(), signature.toUint8Array()),
+    );
 }
 
 export function scriptRawTxnObjectInternal(
@@ -668,6 +678,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `SupraGasUnitPriceBelowMinimumError` when the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (see `Submit`)
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
      */
     submitTransaction(args: {
         senderAccount: SupraAccount;
@@ -688,6 +701,11 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.senderPubkey - Sender ed25519 pubkey
      * @param args.signature - Ed25519 signature
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
+     * @throws `SupraGasUnitPriceBelowMinimumError` when the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (see `Submit`)
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
+     * @throws `RangeError` before submitting when `senderPubkey` or `signature` is not hex digits in pairs after its
+     * `0x` prefix
      */
     submitTransactionAndSignature(args: {
         senderPubkey: HexString;
@@ -713,6 +731,11 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.feePayerAuthenticator - Fee payer authenticator
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
+     * @throws `SupraGasUnitPriceBelowMinimumError` when the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (see `Submit`)
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
+     * @throws `RangeError` before submitting when the fee payer address or a secondary signer address is not 1 to 64
+     * hex digits after an optional `0x` or `0X`
      */
     submitSponsorTransaction(args: {
         feePayerAddress: AccountAddressInput;
@@ -742,6 +765,11 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.senderAuthenticator - Sender authenticator
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
+     * @throws `SupraGasUnitPriceBelowMinimumError` when the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (see `Submit`)
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
+     * @throws `RangeError` before submitting when a secondary signer address is not 1 to 64 hex digits after an optional
+     * `0x` or `0X`
      */
     submitMultiAgentTransaction(args: {
         secondarySignersAccountAddress: Array<string>;

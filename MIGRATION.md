@@ -116,7 +116,10 @@ A transaction that fails after the SDK waited for it, and a simulation that does
 ### Timeouts and connection failures
 
 A request that times out rejects with `SupraTimeoutError` (`url`, `timeoutMs`), and a request that fails before the
-node answers with `SupraNetworkError` (`url`); the original `DOMException` or `TypeError` is their `cause`.
+node answers with `SupraNetworkError` (`url`); the original `DOMException` or `TypeError` is their `cause`. A submission
+request is the exception: its timeout or connection failure makes the submit helper throw
+`SupraSubmissionOutcomeUnknownError`, with the `SupraTimeoutError` or `SupraNetworkError` as `cause`
+([A submission whose outcome is unknown](#a-submission-whose-outcome-is-unknown-throws-suprasubmissionoutcomeunknownerror)).
 
 1.2.0:
 
@@ -147,6 +150,54 @@ try {
 ```
 
 `SupraConfig.timeoutMs` sets the request timeout and `SupraConfig.retry` turns on retries of GET requests. The faucet request is sent once.
+
+### A submission whose outcome is unknown throws `SupraSubmissionOutcomeUnknownError`
+
+A submit helper whose submission request times out, fails before the node answers, or is answered with a 5xx status
+other than 503 throws `SupraSubmissionOutcomeUnknownError` (extends `SupraError`), with the error of the request
+(`SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`) as `cause`. 1.2.0 threw the `DOMException`, `TypeError`
+or `SupraAPIError` of the request. In each of these cases the node may have accepted the transaction, and in 1.2.0 the
+caller had no hash to check that with. The error carries the transaction's `hash`, derived from the signed transaction
+before the submission, with `sender`, `sequenceNumber` and `expirationTimestampSecs`. Look the hash up or wait for it
+before sending the transaction again: a new transaction for the same purpose can execute it a second time. With
+`enableWaitForTransaction`, the helper waits for the hash itself and throws this error only when the wait ends without
+a final status, with the wait's `SupraTransactionTimeoutError` as `waitError`. Code that caught `SupraTimeoutError`,
+`SupraNetworkError` or a 5xx `SupraAPIError` around a submission catches `SupraSubmissionOutcomeUnknownError`
+instead. A v11 node answers a submission with 500 when its transaction pool is full; that is reported this way too.
+
+1.2.0:
+
+```typescript 1.2.0
+try {
+    await supra.coin.transferSupraCoin({ senderAccount: account, receiverAccountAddress: receiver, amount: 1_000n });
+} catch (error) {
+    if (error instanceof DOMException || error instanceof TypeError) {
+        // the request timed out or failed; no hash to look up
+    }
+}
+```
+
+2.0.0:
+
+```typescript
+import { SupraAccount, SupraSubmissionOutcomeUnknownError } from "supra-ts-sdk";
+
+try {
+    await supra.coin.transferSupraCoin({
+        senderAccount: account,
+        receiverAccountAddress: new SupraAccount().address(),
+        amount: 1_000n,
+    });
+} catch (error) {
+    if (error instanceof SupraSubmissionOutcomeUnknownError) {
+        // The node may have accepted the transaction: wait for it before sending it again.
+        const committed = await supra.transaction.waitForTransaction({ transactionHash: error.hash });
+        console.log(committed.status);
+    } else {
+        throw error;
+    }
+}
+```
 
 ### Faucet errors extend `SupraError`
 
@@ -324,7 +375,10 @@ optional prefix throws a `RangeError`: an address of more than 64 hex digits thr
 and an empty `url`, and other malformed values (`"0XA"`, `"0xzz"`, `""`) were returned with the prefix doubled or the
 invalid characters kept. Code that caught the `SupraAPIError` of an invalid address must catch `RangeError`.
 `fundAccountWithFaucet`, `getFaucetTransaction`, `resetSequenceNumber` and the builders of `transaction.build` throw
-this `RangeError` for a malformed address before any request.
+this `RangeError` for a malformed address before any request, and so do `submitMultiAgentTransaction` and
+`submitSponsorTransaction` for a malformed secondary signer or fee payer address, which 1.2.0 sent to the node.
+`submitSerializedRawTransactionAndSignature` and `submitTransactionAndSignature` throw a `RangeError` naming
+`senderPubkey` or `signature` when that value is not hex digits in pairs after its `0x` prefix, which 1.2.0 also sent.
 
 ## Gas
 
