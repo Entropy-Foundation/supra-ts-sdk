@@ -24,6 +24,16 @@ export interface RetryConfig {
  * committed fails its estimate, and needs `maxGas`. `maxGasEstimateMultiplier` replaces
  * `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`, the factor applied to the simulated gas used; it must be a finite number of
  * at least 1.
+ *
+ * Sequence numbers: the client keeps a sequence-number counter for each account its helpers send from (the coin and
+ * fungible asset transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of
+ * `Contract.fromABI`), and submits the calls of one account one after another. A call holds the account from taking its
+ * number until the node answers its submission (accepted, refused, or the request fails); the wait for the final
+ * status comes after that. A call without `maxGas` (here or on the call) holds the account while its max gas is
+ * estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted or have failed. To submit
+ * faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A call with an explicit
+ * `sequenceNumber` does not take part in this order.
+ *
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`. `retry` turns on retries of GET requests; it is off by default.
  * `waitTimeoutMs` sets how long a wait for a transaction's final status lasts (`waitForTransaction` and submissions

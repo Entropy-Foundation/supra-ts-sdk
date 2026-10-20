@@ -83,13 +83,13 @@ export async function affordableGasUnitsInternal(
  * A simulation whose status is not `Success` (a `Fail` with an abort, `OUT_OF_GAS`, `PendingAfterExecution`,
  * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. When the transaction's sequence number
  * is ahead of the account's number on the chain, the simulation reports `SEQUENCE_NUMBER_TOO_NEW`. When every number
- * from the chain's up to the transaction's belongs to a transaction that the node accepted from this client, and the
- * one at the chain's number is still pending (`simulateBehindPendingInternal`), the same transaction is simulated with
+ * from the chain's up to the transaction's belongs to a transaction that the node accepted from this client and that
+ * is still pending (`simulateBehindPendingInternal`), the same transaction is simulated with
  * the chain's number and that result is used. Otherwise the transaction's number is stale and the
  * `SEQUENCE_NUMBER_TOO_NEW` failure is thrown; with `reservation` (a number from the client's counter), the counter
  * resumes at the lowest number that has no pending transaction of this client, and the helper sends the transaction
  * once more. If the simulation at the chain's number reports a stale sequence number, the number is read
- * and the simulation made once more; if it is stale a second time, or the account or the pending transaction cannot
+ * and the simulation made once more; if it is stale a second time, or the account or a pending transaction cannot
  * be read, or the chain has passed the transaction's number, the max gas is `DEFAULT_MAX_GAS_UNITS`, at most
  * `affordable`. When any simulation of the estimate reports
  * `INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE` because an earlier transaction committed after the balance was read, the

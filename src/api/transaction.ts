@@ -287,8 +287,9 @@ export class Transaction {
 
     /**
    * Publish a package or module on the Supra network with `0x1::code::publish_package_txn`. The sequence number
-   * comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is set. The client checks
-   * the chain ID of its node before it signs; see {@link SupraConfig}.
+   * comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is set, and the client
+   * submits its calls from one account one after another. The client checks the chain ID of its node before it signs;
+   * see {@link SupraConfig}.
    * @param args.senderAccount - Module Publisher KeyPair
    * @param args.packageMetadata - The BCS-encoded package metadata (the `package-metadata.bcs` file of a build)
    * @param args.modulesCode - The bytecode of each module of the package

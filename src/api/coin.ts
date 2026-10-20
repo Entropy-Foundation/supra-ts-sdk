@@ -69,7 +69,8 @@ export class Coin {
      * held in the sender's `CoinStore` or in its fungible asset store.
      *
      * The sequence number comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is
-     * set. The client checks the chain ID of its node before it signs; see {@link SupraConfig}.
+     * set, and the client submits its calls from one account one after another. The client checks the chain ID of its
+     * node before it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The account sending the SUPRA.
      * @param args.receiverAccountAddress - The address of the account receiving the SUPRA. The account is created
      * when it does not exist.
@@ -120,7 +121,8 @@ export class Coin {
      * Transfer a coin from one account to another with `0x1::supra_account::transfer_coins`.
      *
      * The sequence number comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is
-     * set. The client checks the chain ID of its node before it signs; see {@link SupraConfig}.
+     * set, and the client submits its calls from one account one after another. The client checks the chain ID of its
+     * node before it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The account sending the coin.
      * @param args.receiverAccountAddress - The address of the account receiving the coin.
      * @param args.amount - The amount of the coin to transfer, in the smallest unit of the coin (quants for SUPRA).

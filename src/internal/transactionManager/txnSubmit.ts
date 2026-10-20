@@ -39,7 +39,7 @@ export function validateSubmitOptions(options: EnableTransactionWaitAndSimulatio
  *
  * When the simulation reports `SEQUENCE_NUMBER_TOO_NEW`, the transaction is simulated with the sender's sequence number
  * on the chain if every number from the chain's up to the transaction's belongs to a transaction that the node accepted
- * from this client and the one at the chain's number is still pending (`simulateBehindPendingInternal`); the
+ * from this client and that is still pending (`simulateBehindPendingInternal`); the
  * submission keeps its own number. Otherwise the `SEQUENCE_NUMBER_TOO_NEW` failure is thrown, which reports a stale
  * number; with `reservation`, the client's counter resumes at the lowest number that has no pending transaction of
  * this client. The simulation at the chain's number throws its own failures and request errors.

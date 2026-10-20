@@ -539,17 +539,19 @@ const txnData = await supra.transaction.getTransactionByHash({
 A transaction executes only when its sequence number is the account's next number. The transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
 
 - The first use reads the number from the chain. Each transaction the node accepts advances the counter, so transactions sent without waiting get consecutive numbers, also with `Promise.all`.
-- A transaction the node refuses for another reason (for example an insufficient balance) gives its number back.
+- A transaction that fails before the node accepts it (its estimate or signing throws, or the node refuses it for another reason, for example an insufficient balance) gives its number back, and the next call uses it.
 - When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number beyond what it queues, or a number that already has a pending transaction), the client reads the number from the chain again and sends the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
 - `supra.resetSequenceNumber(address)` forgets the counter of an account. Call it after the account sent transactions by other means.
 - `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given, without using or changing the counter.
 
-The max gas estimate simulates against committed state. A transaction sent while an earlier one of the account has not committed is simulated with the account's number on the chain and submitted with the counter's number, so pipelined helper calls work with the default gas settings. This happens only when every number between the chain's and the transaction's belongs to a transaction that the node accepted from this client and the one at the chain's number is still pending; otherwise the counter is read from the chain and the transaction sent once more. A transaction that depends on an earlier uncommitted one (for example a call to a module that the earlier one publishes) fails the estimate and throws `SupraSimulationFailedError`; pass `maxGas` for it.
+Calls of one client from one account are submitted one after another. A call holds the account from taking its number until the node answers its submission (accepted, refused, or the request fails); the wait for the final status (`enableWaitForTransaction`) comes after that. A call without `maxGas` holds the account while its max gas is estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted or have failed. To submit faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A call with an explicit `sequenceNumber` does not take part in this order.
+
+The max gas estimate simulates against committed state. A transaction sent while an earlier one of the account has not committed is simulated with the account's number on the chain and submitted with the counter's number, so pipelined helper calls work with the default gas settings. This happens only when every number between the chain's and the transaction's belongs to a transaction that the node accepted from this client and that is still pending; otherwise the counter continues from the lowest of those numbers that has no pending transaction of this client, and the transaction is sent once more with it. A transaction that depends on an earlier uncommitted one (for example a call to a module that the earlier one publishes) fails the estimate and throws `SupraSimulationFailedError`; pass `maxGas` for it.
 
 A node holds at most 25 queued transactions per account by default, so wait for commits (`enableWaitForTransaction: true`) when sending more than that from one account.
 
 ```typescript
-// Ten transfers from one account, accepted without waiting for each other
+// Ten transfers from one account, submitted one after another without waiting for commits
 const responses = await Promise.all(
     Array.from({ length: 10 }, () =>
         supra.coin.transferSupraCoin({ senderAccount: account, receiverAccountAddress: "0x2", amount: 100n }),

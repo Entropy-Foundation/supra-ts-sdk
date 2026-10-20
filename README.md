@@ -378,7 +378,8 @@ counter that the `SupraClient` keeps for each account:
 - The first use reads the account's sequence number from the chain. Each transaction the node accepts advances the
   counter, so transactions sent without waiting for the previous one to commit get consecutive numbers, also when they
   are sent concurrently (`Promise.all`).
-- A transaction the node refuses for another reason (for example an insufficient balance) gives its number back.
+- A transaction that fails before the node accepts it (its estimate or signing throws, or the node refuses it for
+  another reason, for example an insufficient balance) gives its number back, and the next call uses it.
 - When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or a refusal of a
   number beyond what it queues for the account, or a number that already has a pending transaction), the client reads the number from the chain again and the helper sends
   the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
@@ -387,15 +388,31 @@ counter that the `SupraClient` keeps for each account:
 - `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given, without using or
   changing the counter. The builders of `supra.transaction.build` always take the number as `senderSequenceNumber`.
 
-The counter lives in one `SupraClient`. Two clients, or two processes, that send from the same account each keep their
-own counter and recover from each other's transactions through the refusal and re-read described above.
+Calls of one client from one account are submitted one after another. A call holds the account from the moment it
+takes its number until the node answers its submission (accepted, refused, or the request fails); building, the max gas
+estimate, signing and the simulation before submission (`enableTransactionSimulation`) happen in that time. The wait
+for the final status (`enableWaitForTransaction`) comes after it and does not hold the account. So:
+
+- A call without `maxGas` holds the account while its max gas is estimated: a balance read and a simulation, and behind
+  pending transactions of the account a read of the account, a read of each of those transactions and a second
+  simulation.
+- A call with `maxGas` (on the call or in `SupraConfig`) waits only until the calls ahead of it have been submitted or
+  have failed, then signs and submits.
+- To submit faster from one account, set `maxGas`; to submit in parallel, send from several accounts, which do not wait
+  for each other.
+
+A call with an explicit `sequenceNumber` does not take part in this order. The counter and the order live in one
+`SupraClient`. Two clients, or two processes, that send from the same account each keep their own counter and recover
+from each other's transactions through the refusal and re-read described above.
 
 The max gas estimate simulates against committed state. For a transaction sent while an earlier transaction of the
 account has not committed, the node reports the number as too new; the SDK then simulates the same transaction with the
 account's number on the chain and submits it with the counter's number, so pipelined transfers work with the default
 gas settings. It does so only when every number between the chain's and the transaction's belongs to a transaction
-that the node accepted from this client and the one at the chain's number is still pending; otherwise the counter is
-read from the chain and the transaction sent once more. A transaction that depends on an earlier one that has not
+that the node accepted from this client and that is still pending (the SDK reads each of them). Otherwise (one of them
+expired or was discarded, or another client or wallet used a number) the counter continues from the lowest of those
+numbers that has no pending transaction of this client, and the transaction is sent once more with it. A transaction
+that depends on an earlier one that has not
 committed (for example a call to a module that the earlier transaction publishes) fails that simulation and throws
 `SupraSimulationFailedError`, and nothing is submitted. Pass `maxGas` for such a transaction, or wait for the earlier
 transaction to commit.
@@ -409,7 +426,7 @@ to five minutes after the transaction was built.
 ```ts
 const supra = new SupraClient({ network: Network.TESTNET });
 
-// Ten transfers from one account, all accepted without waiting for each other.
+// Ten transfers from one account, submitted one after another without waiting for the earlier ones to commit.
 const responses = await Promise.all(
   Array.from({ length: 10 }, () =>
     supra.coin.transferSupraCoin({ senderAccount: sender, receiverAccountAddress: "0x1234", amount: 100n }),

@@ -75,7 +75,8 @@ export class FungibleAsset {
      * store; `supra.coin.transferSupraCoin` transfers SUPRA held in either form.
      *
      * The sequence number comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is
-     * set. The client checks the chain ID of its node before it signs; see {@link SupraConfig}.
+     * set, and the client submits its calls from one account one after another. The client checks the chain ID of its
+     * node before it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The account sending the SUPRA.
      * @param args.receiverAccountAddress - The address of the account receiving the SUPRA.
      * @param args.amount - The amount of SUPRA to transfer, in quants.
@@ -130,6 +131,10 @@ export class FungibleAsset {
      * paired fungible asset (`0x1::coin::migrate_to_fungible_store`). The coin store is removed; the balance is
      * unchanged as reported by `0x1::coin::balance` and is available to fungible asset transfers afterwards. The
      * transaction aborts when the chain has the migration disabled or the coin type has no coin info.
+     *
+     * The sequence number comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is
+     * set, and the client submits its calls from one account one after another. The client checks the chain ID of its
+     * node before it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The account whose balance is migrated.
      * @param args.coinType - The coin type to migrate. Defaults to SUPRA, `0x1::supra_coin::SupraCoin`.
      * @param args.optionalTransactionArgs - Optional transaction arguments. The gas settings in
@@ -178,7 +183,8 @@ export class FungibleAsset {
      * it throws {@link SupraInsufficientFungibleAssetBalanceError} without submitting when the sender's fungible
      * asset balance is below `amount`.
      * The sequence number comes from the client's counter unless `optionalTransactionPayloadArgs.sequenceNumber` is
-     * set. The client checks the chain ID of its node before it signs; see {@link SupraConfig}.
+     * set, and the client submits its calls from one account one after another. The client checks the chain ID of its
+     * node before it signs; see {@link SupraConfig}.
      * @param args.senderAccount - The account sending the fungible asset.
      * @param args.receiverAccountAddress - The address of the account receiving the fungible asset.
      * @param args.amount - The amount of the fungible asset to transfer, in its smallest unit.

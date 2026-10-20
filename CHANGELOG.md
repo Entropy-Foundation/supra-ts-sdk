@@ -54,18 +54,22 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   submitted have not committed, it uses the account's sequence number on the chain, so pipelined transactions work
   with the default gas settings; a transaction that depends on an earlier uncommitted one fails its estimate and needs
   `maxGas`. The estimate uses the chain's number only when every number between it and the transaction's belongs to a
-  transaction that the node accepted from this client and the one at the chain's number is still pending (one read of
-  that transaction); otherwise the transaction's number is stale, and the helper reads the number from the chain and
-  sends the transaction once more. A concurrent call waits until the calls with lower numbers have been submitted or
-  have failed before it makes that check.
+  transaction that the node accepted from this client and that is still pending (one read of each of those
+  transactions); otherwise the counter continues from the lowest of those numbers that has no pending transaction of
+  this client, and the helper sends the transaction once more with it.
 - **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
   without a request.
 - **Per-account sequence-number counter.** Each `SupraClient` keeps the next sequence number of every account that its
   helpers send from. The first use reads the number from the chain; each transaction the node accepts advances it. A
   refusal for a stale number (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or the nodes' refusal of a number
   beyond what they queue for the account, or a number that already has a pending transaction) reads the number from
-  the chain again, and the helper sends the transaction once more with the fresh number. A transaction the node refused for another reason gives its number back.
-  Concurrent sends from one account in a process get distinct consecutive numbers.
+  the chain again, and the helper sends the transaction once more with the fresh number. A transaction that fails
+  before the node accepts it for another reason gives its number back, and the next call uses it. Calls of one client
+  from one account are submitted one after another: a call holds the account from taking its number until the node
+  answers its submission, and the wait for the final status comes after that. A call without `maxGas` holds the account
+  while its max gas is estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted or
+  have failed. Concurrent sends from one account get consecutive numbers. To submit faster, set `maxGas` or send from
+  several accounts. A call with an explicit `sequenceNumber` does not take part in this order.
 - **`SupraClient.resetSequenceNumber(address)`** forgets the counter of an account; the next transaction reads its
   number from the chain.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
@@ -187,7 +191,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Breaking:** `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
   `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI` (and
   the new `fungibleAsset.migrateCoinToFungibleStore`) take the sequence number from the client's counter instead of
-  reading it from the chain on every call. Transactions sent by other means from the same account (another client or
+  reading it from the chain on every call, and the calls of one client from one account are submitted one after
+  another (see the counter under Added); they ran independently of each other. Transactions sent by other means from the same account (another client or
   process, a wallet, a transaction built with an explicit number) make the counter stale; the next helper call then
   costs one refused submission and a read of the chain, and succeeds. After a `SupraTransactionTimeoutError` for a
   transaction that will not commit, call `resetSequenceNumber`. A transaction the node discarded after accepting it

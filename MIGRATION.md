@@ -334,9 +334,9 @@ The simulation runs against committed state. When earlier transactions of the sa
 have not committed, the SDK simulates the transaction with the account's sequence number on the chain and submits it
 with the counter's number, so transfers sent one after another without waiting work with the default gas settings. It
 does so only when every number between the chain's and the transaction's belongs to a transaction that the node
-accepted from this client and the one at the chain's number is still pending; otherwise the counter is read from the
-chain and the transaction sent once more. A transaction that depends on an
-earlier one that has not committed (for example a call to a module that the earlier one publishes) fails its estimate
+accepted from this client and that is still pending; otherwise the counter continues from the lowest of those numbers
+that has no pending transaction of this client, and the transaction is sent once more with it. A transaction that
+depends on an earlier one that has not committed (for example a call to a module that the earlier one publishes) fails its estimate
 and throws `SupraSimulationFailedError`; set `maxGas` for such a transaction.
 
 To submit with a fixed max gas, set `maxGas` on the client or on the call; `estimateMaxGas: false` uses
@@ -394,9 +394,16 @@ const transfer = supra.transaction.build.rawTxnObject({
 ## Sequence numbers
 
 The transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the
-sequence number from a counter in the client instead of reading it from the chain on every call. Concurrent sends from
-one account in a process get distinct consecutive numbers. A refusal for a stale number reads the number from the chain
-again and sends the transaction once more.
+sequence number from a counter in the client instead of reading it from the chain on every call. A refusal for a stale
+number reads the number from the chain again and sends the transaction once more.
+
+Calls of one client from one account are submitted one after another: a call holds the account from taking its number
+until the node answers its submission (accepted, refused, or the request fails), so concurrent sends get consecutive
+numbers, and a number that a failed call did not use is the next one handed out. The wait for the final status
+(`enableWaitForTransaction`) comes after the submission and does not hold the account. A call without `maxGas` holds the
+account while its max gas is estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted
+or have failed. To submit faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A
+call with an explicit `sequenceNumber` does not take part in this order.
 
 When the account also sends transactions by other means (another client or process, a wallet, a builder of
 `transaction.build` with an explicit number), reset the counter, or set the number of one transaction:

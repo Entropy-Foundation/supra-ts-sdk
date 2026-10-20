@@ -57,8 +57,8 @@ export class Contract {
      * TypeScript values. `contracts.<module name>.entry.<function>(args)` builds, signs and submits an entry function
      * transaction: the `&signer` argument is the sender's `SupraAccount`, `optionalTransactionPayloadArgs` and
      * `enableTransactionWaitAndSimulationArgs` are optional, the sequence number comes from the client's counter unless
-     * `optionalTransactionPayloadArgs.sequenceNumber` is set, and the client checks the chain ID of its node before it
-     * signs; see {@link SupraConfig}. Without a `maxGas` the max gas is estimated (see
+     * `optionalTransactionPayloadArgs.sequenceNumber` is set, the client submits its calls from one account one after
+     * another, and the client checks the chain ID of its node before it signs; see {@link SupraConfig}. Without a `maxGas` the max gas is estimated (see
      * {@link OptionalTransactionPayloadArgs}).
      * @beta
      * @param abis - An array of MoveModule (Contract ABI) objects.
