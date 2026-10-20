@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BCS, HexString, SupraAccount, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import { SupraClient } from "../../../api/supraClient";
+import { SupraSubmissionOutcomeUnknownError } from "../../../errors/transactionError";
 import type { MoveFunctionId } from "../../../types/move";
 import type { OptionalTransactionPayloadArgs } from "../../../types/transactionManager/transactionBuild";
 
@@ -94,6 +95,8 @@ interface FixtureFile {
     schema: number;
     cases: TransactionFixture[];
 }
+
+const originalFetch = global.fetch;
 
 const fixtureFile = JSON.parse(readFileSync(join(__dirname, "fixtures", "transactions.json"), "utf8")) as FixtureFile;
 
@@ -292,6 +295,14 @@ describe("fixtures recorded from a Supra node", () => {
         expect([...authenticators].sort()).toEqual(["ed25519", "fee_payer", "multi_agent"]);
         const payloads = new Set(fixtureFile.cases.map((fixture) => fixture.raw.payload.type));
         expect([...payloads].sort()).toEqual(["automation_registration", "entry_function", "multisig", "script"]);
+        const names = fixtureFile.cases.map((fixture) => fixture.name);
+        expect(names).toEqual(
+            expect.arrayContaining([
+                "module_publish",
+                "multisig_create_transaction",
+                "multisig_create_transaction_with_hash",
+            ]),
+        );
     });
 
     describe.each(fixtureFile.cases.map((fixture) => [fixture.name, fixture] as const))("%s", (_name, fixture) => {
@@ -347,6 +358,62 @@ describe("fixtures recorded from a Supra node", () => {
             expect(supra.transaction.deriveTransactionHash({ signedTransaction: signed })).toBe(
                 `0x${fixture.expected.transactionHash}`,
             );
+        });
+
+        test("the submit helpers derive the recorded hash before submitting", async () => {
+            // The submission request fails before the node answers, so the error carries the derived hash.
+            const fetchMock = jest.fn((_input: unknown, _init?: RequestInit) =>
+                Promise.reject(new TypeError("fetch failed")),
+            );
+            global.fetch = fetchMock as unknown as typeof fetch;
+            const signed = await signedTransaction(fixture, rawTxn, accounts, target);
+            const authenticator = signed.authenticator;
+            const submissions: Array<Promise<unknown>> = [];
+            if (authenticator instanceof TxnBuilderTypes.TransactionAuthenticatorMultiAgent) {
+                submissions.push(
+                    rawTxn.submitMultiAgentTransaction({
+                        secondarySignersAccountAddress: authenticator.secondary_signer_addresses.map((address) =>
+                            HexString.fromUint8Array(address.address).hex(),
+                        ),
+                        senderAuthenticator: authenticator.sender as TxnBuilderTypes.AccountAuthenticatorEd25519,
+                        secondarySignersAuthenticator:
+                            authenticator.secondary_signers as TxnBuilderTypes.AccountAuthenticatorEd25519[],
+                    }),
+                );
+            } else if (authenticator instanceof TxnBuilderTypes.TransactionAuthenticatorFeePayer) {
+                submissions.push(
+                    rawTxn.submitSponsorTransaction({
+                        feePayerAddress: HexString.fromUint8Array(authenticator.fee_payer.address.address).hex(),
+                        secondarySignersAccountAddress: authenticator.secondary_signer_addresses.map((address) =>
+                            HexString.fromUint8Array(address.address).hex(),
+                        ),
+                        senderAuthenticator: authenticator.sender as TxnBuilderTypes.AccountAuthenticatorEd25519,
+                        feePayerAuthenticator: authenticator.fee_payer
+                            .authenticator as TxnBuilderTypes.AccountAuthenticatorEd25519,
+                        secondarySignersAuthenticator:
+                            authenticator.secondary_signers as TxnBuilderTypes.AccountAuthenticatorEd25519[],
+                    }),
+                );
+            } else {
+                const sender = accounts[0] as SupraAccount;
+                submissions.push(rawTxn.submitTransaction({ senderAccount: sender }));
+                submissions.push(
+                    rawTxn.submitTransactionAndSignature({
+                        senderPubkey: sender.pubKey(),
+                        signature: new HexString(fixture.expected.signatures[0] as string),
+                    }),
+                );
+            }
+            try {
+                for (const submission of submissions) {
+                    const error = (await submission.catch((e: unknown) => e)) as SupraSubmissionOutcomeUnknownError;
+                    expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+                    expect(error.transactionHash).toBe(`0x${fixture.expected.transactionHash}`);
+                }
+                expect(fetchMock).toHaveBeenCalledTimes(submissions.length);
+            } finally {
+                global.fetch = originalFetch;
+            }
         });
 
         test("every recorded value states its provenance", () => {

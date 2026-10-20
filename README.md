@@ -248,13 +248,14 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraRateLimitError` (extends `SupraAPIError`) | HTTP 429 | `retryAfterSeconds` |
 | `SupraServiceUnavailableError` (extends `SupraAPIError`) | HTTP 503 | |
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | HTTP 400 for a submission beyond the sequence numbers the node queues for the account | `sequenceNumber` |
-| `SupraTimeoutError` | a request exceeds the timeout | `url`, `timeoutMs`, `cause` |
-| `SupraNetworkError` | the connection fails before the node answers | `url`, `cause` |
+| `SupraTimeoutError` | a request exceeds the timeout (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `timeoutMs`, `cause` |
+| `SupraNetworkError` | the connection fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `cause` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
 | `SupraChainIdMismatchError` | before signing, the configured chain ID or the transaction's chain ID is not the node's | `configuredChainId`, `nodeChainId`, `transactionChainId` |
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` | `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
 | `SupraTransactionFailedError` | a transaction the SDK waited for ends with `Fail` or `Invalid` | `hash`, `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
 | `SupraTransactionTimeoutError` | a transaction the SDK waited for has no final status within the wait timeout | `hash`, `timeoutMs`, `lastStatus`, `transaction`, `cause` |
+| `SupraSubmissionOutcomeUnknownError` (extends `SupraTransactionTimeoutError`) | a submission request times out or fails before the node answers; the node may have accepted the transaction | `transactionHash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause` |
 
 `SupraAPIError.message` is the node's `message` when the error body has one, otherwise the HTTP status text.
 `major_status` is the name of the Move VM status the message reports, for example `SEQUENCE_NUMBER_TOO_OLD`,
@@ -332,6 +333,15 @@ transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handl
 - Without `enableWaitForTransaction`, the call returns the transaction as the node reports it right after the
   submission. When that read fails, it returns `{ hash, status: "NotReadBack", readError }`: the node accepted the
   transaction, and `hash` can be passed to `waitForTransaction`.
+- The SDK derives the transaction's hash from the signed transaction before it submits it. When the submission
+  request times out or fails before the node answers, the node may have accepted the transaction: the call throws
+  `SupraSubmissionOutcomeUnknownError` with `transactionHash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`
+  and the `SupraTimeoutError` or `SupraNetworkError` as `cause`. Look the hash up or wait for it before sending the
+  transaction again. With `enableWaitForTransaction: true`, the call first waits for that hash as above: a
+  transaction that commits is returned (or throws `SupraTransactionFailedError`), and
+  `SupraSubmissionOutcomeUnknownError` is thrown when the wait ends without a final status, with the wait's error as
+  `waitError`. It extends `SupraTransactionTimeoutError`, whose `hash` it also sets. A node that answers the submission
+  with an error status did not accept the transaction; that is thrown as `SupraAPIError`.
 
 ```ts
 import {
@@ -339,6 +349,7 @@ import {
   Network,
   SupraAccount,
   SupraSimulationFailedError,
+  SupraSubmissionOutcomeUnknownError,
   SupraTransactionFailedError,
   SupraTransactionTimeoutError,
 } from 'supra-ts-sdk';
@@ -361,6 +372,8 @@ try {
     console.log(`Not submitted: ${error.vm_status}`);
   } else if (error instanceof SupraTransactionFailedError) {
     console.log(`${error.hash} failed with status ${error.status}: ${error.vm_status}`);
+  } else if (error instanceof SupraSubmissionOutcomeUnknownError) {
+    console.log(`The node may have accepted ${error.transactionHash}; it can commit until ${error.expirationTimestampSecs}`);
   } else if (error instanceof SupraTransactionTimeoutError) {
     console.log(`${error.hash} has no final status after ${error.timeoutMs} ms (last status ${error.lastStatus})`);
   } else {
@@ -378,7 +391,8 @@ counter that the `SupraClient` keeps for each account:
 
 - The counter records every transaction the client submits: those the node accepted, and those whose submission
   request failed without an answer (a timeout, a lost connection, a 5xx other than 503), which the node may have
-  accepted. Each record keeps the transaction's expiration time. A transaction the node accepted either commits or, once
+  accepted. Each record keeps the transaction's expiration time and hash (the node's answer, or the hash derived
+  before the submission when there was no answer). A transaction the node accepted either commits or, once
   the timestamp of the latest block has reached its expiration time, can no longer commit.
 - A record is dropped when the account's sequence number on the chain passes it, when the timestamp of a latest block
   the client reads (`GET /rpc/v3/block`) has reached its expiration time, or when a read of the transaction through

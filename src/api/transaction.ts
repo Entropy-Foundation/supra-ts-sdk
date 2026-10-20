@@ -18,12 +18,12 @@ import {
 
 import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
 import { Build } from "./transactionManager/txnBuild";
-import { BCS, TxnBuilderTypes, type AnyRawTransaction, type HexString, type SupraAccount } from "supra-l1-sdk-core";
+import { TxnBuilderTypes, type AnyRawTransaction, type HexString, type SupraAccount } from "supra-l1-sdk-core";
 import { Simulate } from "./transactionManager/txnSimulate";
 import { Submit } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
-import sha3 from "js-sha3";
 import { validateTransactionHash } from "../helper/validation";
+import { transactionHashInternal } from "../internal/transactionManager/txnHash";
 
 /**
  * The Transaction class provides methods for interacting with the Supra network.
@@ -275,14 +275,16 @@ export class Transaction {
     }
 
     /**
-     * Derives the transaction hash from a signed transaction.
+     * Derives the transaction hash from a signed transaction: the Keccak-256 of its BCS bytes, the hash the node gives
+     * the transaction. The submit helpers derive the hash the same way before they submit, and report it in
+     * `SupraSubmissionOutcomeUnknownError` when the submission request gets no answer.
      * @param args.signedTransaction - The signed transaction.
-     * @returns The transaction hash as a `0x`-prefixed hex string, the form `getTransactionByHash` and
+     * @returns The transaction hash as a `0x`-prefixed lower-case hex string, the form `getTransactionByHash` and
      * `waitForTransaction` accept.
      * @group Transaction
      */
     deriveTransactionHash(args: { signedTransaction: TxnBuilderTypes.SignedTransaction }): string {
-        return `0x${sha3.keccak256(BCS.bcsToBytes(args.signedTransaction))}`;
+        return transactionHashInternal(args.signedTransaction);
     }
 
     /**

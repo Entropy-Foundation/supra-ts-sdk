@@ -5,16 +5,19 @@
  *
  *   node scripts/fixtures/generate.ts --cli <supra> --rpc <url> --out <file> \
  *       [--also-cli <supra> --also-rpc <url>]
+ *   node scripts/fixtures/generate.ts --sdk-signed-only --rpc <url> --out <file> [--also-rpc <url>]
  *
  * `--cli` is a Supra node CLI binary and `--rpc` the RPC service of a localnet that serves a faucet.
  * `--also-cli` and `--also-rpc` name a second node (another release) against which every recorded
  * transaction is submitted again; the run fails when the second node reports a different hash or
- * signature. The tool runs TypeScript directly, so it needs Node 22.18 or later, and it imports the
+ * signature. `--sdk-signed-only` records only the entry function cases that the SDK signs (a module
+ * publish and the two multisig proposals), without the CLI, and replaces those cases in the existing
+ * `--out` file. The tool runs TypeScript directly, so it needs Node 22.18 or later, and it imports the
  * built SDK: run `pnpm build` first. Details are in `scripts/fixtures/README.md`.
  */
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
@@ -142,16 +145,23 @@ function runCli(node: Node, args: string[], env: Record<string, string> = {}): s
     return result.stdout;
 }
 
-async function connect(label: string, cli: string, rpc: string): Promise<Node> {
+/**
+ * Connects to the RPC service `rpc`. Without `cli` (`--sdk-signed-only`) the node's version is the commit its
+ * `/rpc/v3/version` reports, and the CLI is not run.
+ */
+async function connect(label: string, cli: string | undefined, rpc: string): Promise<Node> {
     const chainId = Number(await (await fetch(`${rpc}/rpc/v3/transactions/chain_id`)).json());
-    const versionOutput = runCliVersion(cli);
+    const version =
+        cli !== undefined
+            ? runCliVersion(cli)
+            : `commit ${((await (await fetch(`${rpc}/rpc/v3/version`)).json()) as { commit_hash: string }).commit_hash}`;
     return {
         label,
-        cli,
+        cli: cli ?? "",
         rpc,
-        home: mkdtempSync(join(tmpdir(), `supra-fixtures-${label}-`)),
+        home: cli !== undefined ? mkdtempSync(join(tmpdir(), `supra-fixtures-${label}-`)) : "",
         chainId,
-        version: versionOutput,
+        version,
         client: new SupraClient({ rpcUrl: rpc, chainId }),
     };
 }
@@ -715,6 +725,221 @@ async function sdkSignedFixture(node: Node, runId: string, kind: "multi_agent" |
     };
 }
 
+/** Entry function transactions that the SDK signs and submits, recorded with `--sdk-signed-only`. */
+const SDK_ENTRY_KINDS = ["module_publish", "multisig_create_transaction", "multisig_create_transaction_with_hash"] as const;
+type SdkEntryKind = (typeof SDK_ENTRY_KINDS)[number];
+
+/** Max gas of the publish transaction, which needs more than `MAX_GAS`. */
+const PUBLISH_MAX_GAS = 200_000n;
+
+/** The package of `e2e/fixtures`, described in `e2e/fixtures/README.md`. */
+const compiledPackage = JSON.parse(
+    readFileSync(join(import.meta.dirname, "..", "..", "e2e", "fixtures", "compiled.json"), "utf8"),
+) as { moduleAddress: string; metadata: string; module: string };
+
+/** The compiled module of `e2e/fixtures` with the address it was compiled for replaced by `address`. */
+function packageModuleFor(address: string): Uint8Array {
+    const bytecode = Buffer.from(compiledPackage.module, "hex");
+    const from = Buffer.from(bare(compiledPackage.moduleAddress), "hex");
+    const at = bytecode.indexOf(from);
+    if (at < 0) {
+        fail("The compiled module does not contain its compile-time address");
+    }
+    Buffer.from(TxnBuilderTypes.AccountAddress.fromHex(address).address).copy(bytecode, at);
+    return new Uint8Array(bytecode);
+}
+
+/** The BCS of the multisig payload that the multisig fixtures propose: a transfer of 4321 quants to `receiver`. */
+function proposedPayload(receiver: string): Uint8Array {
+    return BCS.bcsToBytes(
+        new TxnBuilderTypes.MultiSigTransactionPayload(
+            new TxnBuilderTypes.EntryFunction(
+                TxnBuilderTypes.ModuleId.fromStr("0x1::supra_account"),
+                new TxnBuilderTypes.Identifier("transfer"),
+                [],
+                [TxnBuilderTypes.AccountAddress.fromHex(receiver).address, BCS.bcsSerializeUint64(4321n)],
+            ),
+        ),
+    );
+}
+
+/** Submits `rawTxn` signed by `signer` with the SDK, waits for it, and returns the hash the node reports. */
+async function submitSigned(
+    node: Node,
+    signer: Signer,
+    rawTxn: ReturnType<typeof buildRawTransaction>,
+    what: string,
+): Promise<string> {
+    const response = await rawTxn.submitTransaction({
+        senderAccount: accountOf(signer),
+        enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+    });
+    if (response.status !== "Success") {
+        fail(`${what} finished with status ${String(response.status)} on ${node.label}`);
+    }
+    return bare((await fetchTransaction(node, response.hash)).hash);
+}
+
+/**
+ * Creates, with the SDK, a multisig account owned by `signer` that requires one signature, as the signer's
+ * transaction with sequence number 0, and returns its address.
+ */
+async function createMultisigWithSdk(node: Node, signer: Signer): Promise<string> {
+    const response = await fetch(`${node.rpc}/rpc/v3/view`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            function: "0x1::multisig_account::get_next_multisig_account_address",
+            type_arguments: [],
+            arguments: [signer.address],
+        }),
+    });
+    const address = ((await response.json()) as { result: string[] }).result[0] ?? fail("The view returned no address");
+    const emptyVector = hex(new Uint8Array([0]));
+    const rawTxn = buildRawTransaction(node, {
+        sender: signer.address,
+        sequenceNumber: "0",
+        maxGasAmount: String(MAX_GAS),
+        gasUnitPrice: String(GAS_PRICE),
+        expirationTimestampSecs: String(Math.floor(Date.now() / 1000) + 300),
+        payload: {
+            type: "entry_function",
+            function: "0x1::multisig_account::create",
+            typeArguments: [],
+            arguments: [u64Argument(1n), emptyVector, emptyVector, u64Argument(3600n)],
+        },
+    });
+    await submitSigned(node, signer, rawTxn, "The creation of a multisig account");
+    return address;
+}
+
+/**
+ * Prepares the account state the fixture transaction of `kind` needs (a multisig account for the multisig kinds) and
+ * returns the fixture's sequence number and entry function.
+ */
+async function prepareSdkEntry(
+    node: Node,
+    kind: SdkEntryKind,
+    signer: Signer,
+    receiver: string,
+): Promise<{ sequenceNumber: bigint; function: string; arguments: string[] }> {
+    if (kind === "module_publish") {
+        const modules = new BCS.Serializer();
+        BCS.serializeVector([new TxnBuilderTypes.Module(packageModuleFor(signer.address))], modules);
+        return {
+            sequenceNumber: 0n,
+            function: "0x1::code::publish_package_txn",
+            arguments: [
+                hex(BCS.bcsSerializeBytes(new Uint8Array(Buffer.from(compiledPackage.metadata, "hex")))),
+                hex(modules.getBytes()),
+            ],
+        };
+    }
+    const multisigAddress = await createMultisigWithSdk(node, signer);
+    const payload = proposedPayload(receiver);
+    return {
+        sequenceNumber: 1n,
+        function:
+            kind === "multisig_create_transaction"
+                ? "0x1::multisig_account::create_transaction"
+                : "0x1::multisig_account::create_transaction_with_hash",
+        arguments: [
+            addressArgument(multisigAddress),
+            hex(
+                BCS.bcsSerializeBytes(
+                    kind === "multisig_create_transaction"
+                        ? payload
+                        : new Uint8Array(createHash("sha3-256").update(payload).digest()),
+                ),
+            ),
+        ],
+    };
+}
+
+const SDK_ENTRY_DESCRIPTIONS: Record<SdkEntryKind, string> = {
+    module_publish: "0x1::code::publish_package_txn publishing one module, signed with one Ed25519 key.",
+    multisig_create_transaction:
+        "0x1::multisig_account::create_transaction proposing a transfer with its payload, signed by the owner.",
+    multisig_create_transaction_with_hash:
+        "0x1::multisig_account::create_transaction_with_hash proposing a transfer by the hash of its payload.",
+};
+
+/**
+ * An entry function transaction that the SDK signs and submits. The fixture records the hash the node reports, and
+ * the run fails unless it equals the hash the SDK derives.
+ */
+async function sdkEntryFunctionFixture(node: Node, runId: string, kind: SdkEntryKind): Promise<Fixture> {
+    const signer = await newSigner(node, runId, kind);
+    const receiver = signerOf("secondary", seedFor(runId, "receiver")).address;
+    const prepared = await prepareSdkEntry(node, kind, signer, receiver);
+    const raw: FixtureRaw = {
+        sender: signer.address,
+        sequenceNumber: String(prepared.sequenceNumber),
+        maxGasAmount: String(kind === "module_publish" ? PUBLISH_MAX_GAS : MAX_GAS),
+        gasUnitPrice: String(GAS_PRICE),
+        // The second node receives the same transaction later; a v12 node refuses an expiration time more than
+        // 600 s ahead.
+        expirationTimestampSecs: String(Math.floor(Date.now() / 1000) + 540),
+        payload: {
+            type: "entry_function",
+            function: prepared.function,
+            typeArguments: [],
+            arguments: prepared.arguments,
+        },
+    };
+    const rawTxn = buildRawTransaction(node, raw);
+    const account = accountOf(signer);
+    const signed = await rawTxn.signedTransaction(account);
+    const derived = bare(node.client.transaction.deriveTransactionHash({ signedTransaction: signed }));
+    const nodeHash = await submitSigned(node, signer, rawTxn, kind);
+    if (derived !== nodeHash) {
+        fail(`${kind}: the SDK hash ${derived} differs from the node's ${nodeHash}`);
+    }
+    const signature = await node.client.transaction.signTransaction({ senderAccount: account, rawTxn });
+
+    return {
+        name: kind,
+        description: SDK_ENTRY_DESCRIPTIONS[kind],
+        authenticator: "ed25519",
+        chainId: node.chainId,
+        signers: [signer],
+        raw,
+        expected: {
+            rawTransactionBcs: hex(BCS.bcsToBytes(rawTxn)),
+            signingMessage: hex(node.client.transaction.getTransactionSignatureMessage({ rawTxn })),
+            signatures: [hex(signature.toUint8Array())],
+            signedTransactionBcs: hex(BCS.bcsToBytes(signed)),
+            transactionHash: nodeHash,
+        },
+        provenance: {
+            inputs: "specification",
+            rawTransactionBcs: "specification",
+            signingMessage: "specification",
+            signatures: "node-verified",
+            signedTransactionBcs: "specification",
+            transactionHash: "node",
+        },
+    };
+}
+
+/**
+ * Submits the transaction of an `SdkEntryKind` fixture to `other`, after the same preparation by the same account,
+ * and fails unless that node reports the same hash.
+ */
+async function crossCheckSdkEntry(other: Node, runId: string, fixture: Fixture, kind: SdkEntryKind): Promise<void> {
+    const signer = fixture.signers[0] ?? fail("A fixture needs a signer");
+    await fund(other, signer.address);
+    const receiver = signerOf("secondary", seedFor(runId, "receiver")).address;
+    const prepared = await prepareSdkEntry(other, kind, signer, receiver);
+    if (prepared.arguments.join() !== (fixture.raw.payload["arguments"] as string[]).join()) {
+        fail(`${fixture.name}: the arguments prepared on ${other.label} differ from the fixture's`);
+    }
+    const nodeHash = await submitSigned(other, signer, buildRawTransaction(other, fixture.raw), fixture.name);
+    if (nodeHash !== fixture.expected.transactionHash) {
+        fail(`${fixture.name}: ${other.label} reports hash ${nodeHash}, expected ${fixture.expected.transactionHash}`);
+    }
+}
+
 function addressOf(signer: Signer): TxnBuilderTypes.AccountAddress {
     return TxnBuilderTypes.AccountAddress.fromHex(signer.address);
 }
@@ -879,52 +1104,77 @@ async function main(): Promise<void> {
             "also-cli": { type: "string" },
             "also-rpc": { type: "string" },
             "run-id": { type: "string" },
+            "sdk-signed-only": { type: "boolean" },
         },
     });
     const { cli, rpc, out } = values;
-    if (cli === undefined || rpc === undefined || out === undefined) {
-        fail("Usage: generate.ts --cli <supra> --rpc <url> --out <file> [--also-cli <supra> --also-rpc <url>]");
+    const sdkSignedOnly = values["sdk-signed-only"] === true;
+    if ((cli === undefined && !sdkSignedOnly) || rpc === undefined || out === undefined) {
+        fail(
+            "Usage: generate.ts --cli <supra> --rpc <url> --out <file> [--also-cli <supra> --also-rpc <url>]\n" +
+                "       generate.ts --sdk-signed-only --rpc <url> --out <file> [--also-rpc <url>]",
+        );
     }
     const runId = values["run-id"] ?? randomBytes(8).toString("hex");
 
-    const primary = await connect("primary", cli, rpc.replace(/\/+$/, ""));
+    const primary = await connect("primary", sdkSignedOnly ? undefined : cli, rpc.replace(/\/+$/, ""));
     const alsoCli = values["also-cli"];
     const alsoRpc = values["also-rpc"];
     const secondary =
-        alsoCli !== undefined && alsoRpc !== undefined
-            ? await connect("secondary", alsoCli, alsoRpc.replace(/\/+$/, ""))
+        alsoRpc !== undefined && (alsoCli !== undefined || sdkSignedOnly)
+            ? await connect("secondary", sdkSignedOnly ? undefined : alsoCli, alsoRpc.replace(/\/+$/, ""))
             : undefined;
     if (secondary !== undefined && secondary.chainId !== primary.chainId) {
         fail("The two nodes have different chain IDs, so their signatures cannot be compared");
     }
 
-    const fixtures: Fixture[] = [
-        ...(await entryFunctionFixtures(primary, runId)),
-        await scriptFixture(primary, runId),
-        await multisigFixture(primary, runId),
-        await automationFixture(primary, runId),
-        await sdkSignedFixture(primary, runId, "multi_agent"),
-        await sdkSignedFixture(primary, runId, "fee_payer"),
-    ];
+    const fixtures: Fixture[] = sdkSignedOnly
+        ? []
+        : [
+              ...(await entryFunctionFixtures(primary, runId)),
+              await scriptFixture(primary, runId),
+              await multisigFixture(primary, runId),
+              await automationFixture(primary, runId),
+              await sdkSignedFixture(primary, runId, "multi_agent"),
+              await sdkSignedFixture(primary, runId, "fee_payer"),
+          ];
+    for (const kind of SDK_ENTRY_KINDS) {
+        fixtures.push(await sdkEntryFunctionFixture(primary, runId, kind));
+    }
 
     if (secondary !== undefined) {
         for (const fixture of fixtures) {
-            await crossCheck(secondary, runId, fixture);
+            const kind = SDK_ENTRY_KINDS.find((name) => name === fixture.name);
+            if (kind !== undefined) {
+                await crossCheckSdkEntry(secondary, runId, fixture, kind);
+            } else {
+                await crossCheck(secondary, runId, fixture);
+            }
             process.stdout.write(`${fixture.name}: identical on ${secondary.version}\n`);
         }
     }
 
-    const file = {
-        schema: 1,
-        generatedWith: {
-            node: primary.version,
-            crossCheckedAgainst: secondary?.version ?? null,
-            chainId: primary.chainId,
-        },
-        cases: fixtures,
+    const generatedWith = {
+        node: primary.version,
+        crossCheckedAgainst: secondary?.version ?? null,
+        chainId: primary.chainId,
     };
+    let file: { schema: number; generatedWith: Record<string, unknown>; cases: Fixture[] };
+    if (sdkSignedOnly && existsSync(out)) {
+        // The cases recorded here replace those of the same name in the file; the others are kept.
+        const existing = JSON.parse(readFileSync(out, "utf8")) as typeof file;
+        const names = new Set(fixtures.map((fixture) => fixture.name));
+        file = {
+            schema: existing.schema,
+            generatedWith: { ...existing.generatedWith, sdkSignedCases: { ...generatedWith, cases: [...names] } },
+            cases: [...existing.cases.filter((fixture) => !names.has(fixture.name)), ...fixtures],
+        };
+    } else {
+        file = { schema: 1, generatedWith, cases: fixtures };
+    }
     mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, `${JSON.stringify(file, null, 2)}\n`);
+    // Four spaces, the indentation Prettier gives the file (`pnpm format`).
+    writeFileSync(out, `${JSON.stringify(file, null, 4)}\n`);
     process.stdout.write(`Wrote ${fixtures.length} fixtures to ${out}\n`);
 }
 

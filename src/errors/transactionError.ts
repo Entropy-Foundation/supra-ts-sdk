@@ -114,6 +114,9 @@ export class SupraSimulationFailedError extends SupraError {
  *
  * `lastStatus` is the status of the last successful read: `Pending` or `PendingAfterExecution`, or `undefined` when
  * the node never returned the transaction. When the last read failed, its error is available as `cause`.
+ *
+ * Its subclass {@link SupraSubmissionOutcomeUnknownError} is thrown when a submission request gets no answer; its
+ * `cause` is the error of that request.
  * @group Errors
  */
 export class SupraTransactionTimeoutError extends SupraError {
@@ -152,6 +155,85 @@ export class SupraTransactionTimeoutError extends SupraError {
             hash: this.hash,
             timeoutMs: this.timeoutMs,
             lastStatus: this.lastStatus,
+        };
+    }
+}
+
+/**
+ * SupraSubmissionOutcomeUnknownError is thrown by a submit helper when the request that submits the transaction times
+ * out or fails before the node answers. The node may have accepted the transaction. Look `transactionHash` up with
+ * `getTransactionByHash`, or wait for it with `waitForTransaction`, before sending the transaction again: a
+ * transaction the node accepted can commit until the chain's time reaches `expirationTimestampSecs`.
+ *
+ * The SDK derives `transactionHash` from the signed transaction before it submits it; it is the hash the node gives
+ * the transaction. The error of the submission request, a `SupraTimeoutError` or `SupraNetworkError`, is `cause`.
+ *
+ * With `enableWaitForTransaction`, the submit helper waits for `transactionHash` within the wait timeout before it
+ * throws: a transaction that commits is returned (or throws `SupraTransactionFailedError`) as after an answered
+ * submission, and this error is thrown when the wait ends without a final status. The wait's
+ * `SupraTransactionTimeoutError` is then `waitError`, and `timeoutMs`, `lastStatus` and `transaction` are the wait's.
+ *
+ * It extends {@link SupraTransactionTimeoutError}: both carry the hash of a transaction whose final status is not
+ * known, which `hash` holds here too. Without a wait, `timeoutMs` is 0 and `lastStatus` and `transaction` are
+ * `undefined`.
+ * @group Errors
+ */
+export class SupraSubmissionOutcomeUnknownError extends SupraTransactionTimeoutError {
+    /** The hash of the transaction, derived from the signed transaction. */
+    readonly transactionHash: string;
+    /** The sender's address, as the transaction carries it. */
+    readonly sender: string;
+    /** The sequence number of the transaction. */
+    readonly sequenceNumber: bigint;
+    /** The expiration time of the transaction, in seconds since the Unix epoch. */
+    readonly expirationTimestampSecs: bigint;
+    /** The error of the wait for `transactionHash`, or `undefined` when the SDK did not wait. */
+    readonly waitError: SupraTransactionTimeoutError | undefined;
+
+    constructor(args: {
+        transactionHash: string;
+        sender: string;
+        sequenceNumber: bigint;
+        expirationTimestampSecs: bigint;
+        cause: unknown;
+        waitError?: SupraTransactionTimeoutError | undefined;
+    }) {
+        const wait = args.waitError;
+        super({
+            hash: args.transactionHash,
+            timeoutMs: wait?.timeoutMs ?? 0,
+            transaction: wait?.transaction,
+            cause: args.cause,
+        });
+        const reason = args.cause instanceof Error ? ` (${args.cause.message})` : "";
+        const waited =
+            wait === undefined
+                ? ""
+                : ` It has no final status after a wait of ${wait.timeoutMs} ms` +
+                  (wait.lastStatus !== undefined
+                      ? ` (last status ${wait.lastStatus}).`
+                      : " (not returned by the node).");
+        this.message =
+            `The submission of transaction ${args.transactionHash} (sender ${args.sender}, sequence number ` +
+            `${args.sequenceNumber}) failed before the node answered${reason}, and the node may have accepted it.` +
+            waited +
+            ` Look the hash up or wait for it before resending; the transaction can commit until its expiration time ` +
+            `${args.expirationTimestampSecs}.`;
+        this.name = "SupraSubmissionOutcomeUnknownError";
+        this.transactionHash = args.transactionHash;
+        this.sender = args.sender;
+        this.sequenceNumber = args.sequenceNumber;
+        this.expirationTimestampSecs = args.expirationTimestampSecs;
+        this.waitError = wait;
+    }
+
+    override toJSON() {
+        return {
+            ...super.toJSON(),
+            transactionHash: this.transactionHash,
+            sender: this.sender,
+            sequenceNumber: this.sequenceNumber.toString(),
+            expirationTimestampSecs: this.expirationTimestampSecs.toString(),
         };
     }
 }

@@ -65,7 +65,10 @@ export interface SequenceNumberReservation {
 export interface SubmissionRecord {
     /** The transaction's expiration time, in seconds since the Unix epoch. */
     readonly expiration: bigint;
-    /** The transaction's hash, when the node returned it. */
+    /**
+     * The transaction's hash: the one the node returned, or for a submission without an answer the one derived from
+     * the signed transaction. `undefined` when it could not be read.
+     */
     readonly hash: string | undefined;
 }
 
@@ -164,9 +167,9 @@ export class SequenceNumberTracker {
 
     /**
      * Records the transaction of `address` with `sequenceNumber` and `expiration` (seconds since the Unix epoch) that
-     * this client submitted and that the node accepted (with its `hash`) or may have accepted (without a hash), whether
-     * or not its number came from the counter. Nothing is recorded when the address, the number or the expiration time
-     * cannot be read; a hash that cannot be read is not kept.
+     * this client submitted and that the node accepted (with the hash the node returned) or may have accepted (with the
+     * hash derived from the signed transaction), whether or not its number came from the counter. Nothing is recorded
+     * when the address, the number or the expiration time cannot be read; a hash that cannot be read is not kept.
      */
     record(
         address: AccountAddressInput,
@@ -478,13 +481,13 @@ export function settleUnsubmittedSequenceNumberInternal(
  * - Another answer with an error status of the client, and a 503: the node did not take the number; with
  *   `reservation`, the number is handed out next.
  * - Any other error (a timeout, a connection failure, a 5xx other than 503): the node may have accepted the
- *   transaction, so it is recorded without a hash, whether or not its number came from the counter. The record's
- *   expiration time is the transaction's.
+ *   transaction, so it is recorded with `hash`, the hash derived from the signed transaction, whether or not its
+ *   number came from the counter. The record's expiration time is the transaction's.
  *
  * A reservation is released in every case.
  */
 export function settleFailedSubmissionInternal(
-    args: { rawTxn: RawTxnJSON; reservation: SequenceNumberReservation | undefined },
+    args: { rawTxn: RawTxnJSON; reservation: SequenceNumberReservation | undefined; hash: string | undefined },
     error: unknown,
     config: NetworkConfig,
 ): unknown {
@@ -514,7 +517,7 @@ export function settleFailedSubmissionInternal(
     } else if (error instanceof SupraAPIError && (error.status < 500 || error.status === 503)) {
         settle(false);
     } else {
-        tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs);
+        tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, args.hash);
         settle(false);
     }
     return error;

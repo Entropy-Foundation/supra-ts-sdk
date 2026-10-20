@@ -26,6 +26,7 @@ import type {
 } from "../../types/move";
 import { convertPayloadTypeArgsToMoveType, getFunctionParts, uint8ArrayToHexString } from "../../helper/general";
 import { signTransactionInternal } from "../transaction";
+import { ed25519TransactionAuthenticator, withTransactionHash } from "./txnHash";
 import { fromUint8ArrayToJSArray, parseFunctionTypeArgs, parseScriptArgs } from "../../utils/functions";
 import { getAccountModuleInternal } from "../account";
 import { getFunctionABI } from "../../helper/abi";
@@ -397,6 +398,10 @@ export function getRawTxnJSONInternal(rawTxn: TxnBuilderTypes.RawTransaction): R
     };
 }
 
+/**
+ * Signs `rawTxn` with `senderAccount` and returns the JSON form of the signed transaction, the body of a submission.
+ * The hash of the signed transaction is recorded on the returned object (`withTransactionHash`).
+ */
 export async function sendTxnPayloadInternal(
     args: {
         senderAccount: SupraAccount;
@@ -412,17 +417,22 @@ export async function sendTxnPayloadInternal(
         config,
     );
 
-    return {
-        Move: {
-            raw_txn: getRawTxnJSONInternal(args.rawTxn),
-            authenticator: {
-                Ed25519: {
-                    public_key: args.senderAccount.pubKey().toString(),
-                    signature: signature.toString(),
+    const publicKey = args.senderAccount.pubKey();
+    return withTransactionHash(
+        {
+            Move: {
+                raw_txn: getRawTxnJSONInternal(args.rawTxn),
+                authenticator: {
+                    Ed25519: {
+                        public_key: publicKey.toString(),
+                        signature: signature.toString(),
+                    },
                 },
             },
         },
-    };
+        args.rawTxn,
+        ed25519TransactionAuthenticator(publicKey.toUint8Array(), signature.toUint8Array()),
+    );
 }
 
 export function scriptRawTxnObjectInternal(
