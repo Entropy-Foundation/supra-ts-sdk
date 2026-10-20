@@ -324,10 +324,15 @@ export class SupraClient {
      * The client keeps, per account, the account's sequence number on the chain and a record of each transaction that
      * it submitted and that can still commit, for the transactions that its helpers (`transferSupraCoin`,
      * `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `migrateCoinToFungibleStore`,
-     * `publishPackage` and the entry functions of `Contract.fromABI`) send (see `SupraConfig`). The chain is read again
-     * automatically when the node reports a stale number; call this method after the account has sent transactions by
-     * other means (another client or process, a wallet, or the builders of `transaction.build`), or to hand out the
-     * number of a transaction that will not commit before its expiration time.
+     * `publishPackage` and the entry functions of `Contract.fromABI`) send, and for the transactions submitted through
+     * its submit methods (see `SupraConfig`). The chain is read again automatically when the node reports a stale
+     * number, including after the account has sent transactions by other means (another client or process, a wallet);
+     * a call whose number such a transaction holds while it is pending is refused.
+     *
+     * A reset also forgets the records of this client's pending transactions of the account: the next helper call
+     * takes the account's number on the chain, which such a transaction holds, and the node refuses it until that
+     * transaction has committed. Call this method when no transaction of this client from the account is pending, or
+     * when the expiration times of those that are have passed.
      * @param address - The account whose counter is reset.
      * @example
      * ```typescript

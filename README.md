@@ -380,16 +380,21 @@ counter that the `SupraClient` keeps for each account:
   request failed without an answer (a timeout, a lost connection, a 5xx other than 503), which the node may have
   accepted. Each record keeps the transaction's expiration time. A transaction the node accepted either commits or, once
   the timestamp of the latest block has reached its expiration time, can no longer commit.
-- A record is dropped when the account's sequence number on the chain passes it, when a block the client reads has
-  reached its expiration time, or when a read of the transaction through the client returns `Invalid`. An HTTP 404 does
-  not drop a record: an RPC node answers 404 for a pending transaction that another RPC node behind the same URL
-  received.
+- A record is dropped when the account's sequence number on the chain passes it, when the timestamp of a latest block
+  the client reads (`GET /rpc/v3/block`) has reached its expiration time, or when a read of the transaction through
+  the client returns `Invalid`. Reads of a block by height or by hash do not drop records. An HTTP 404 does not drop a
+  record: an RPC node answers 404 for a pending transaction that another RPC node behind the same URL received.
+- A submission whose outcome is unknown is recorded with its expiration time, at most 605 seconds after the client's
+  clock (a node refuses an expiration time more than 600 seconds after its clock).
 - The number handed out is the lowest number at or above the account's sequence number on the chain that has no
   record. So transactions sent without waiting for the previous one to commit get consecutive numbers, also when they
   are sent concurrently (`Promise.all`), and a number whose transaction can no longer commit is used again.
 - The first use reads the account and the latest block (two requests). So does the next call after a refusal for a
-  stale number or a full queue, and once the client's estimate of the chain's time has passed the expiration time of a
-  record by two seconds. A read updates the chain's number and time and drops the records they show dead; it keeps the others.
+  stale number or a full queue, and every call while the client's estimate of the chain's time has passed the
+  expiration time of a record by two seconds and no latest block read has reached it (a call makes at most one such
+  read). The estimate is the client's clock shifted by the largest difference between a latest block's timestamp and
+  the client's clock seen at its read, so it does not move backwards when a read returns an older block. A read updates
+  the chain's number and time and drops the records they show dead; it keeps the others.
 - A transaction that fails before the node accepts it (its estimate or signing throws, or the node refuses it for
   another reason, for example an insufficient balance) has no record, and the next call uses its number.
 - When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the
@@ -399,10 +404,15 @@ counter that the `SupraClient` keeps for each account:
 - When the node refuses a number because its queue for the account is full, `SupraAccountQueueFullError` is thrown and
   the transaction is not sent again.
 - After a submission whose outcome is unknown and that the node did not in fact accept, later transactions wait in the
-  node behind its number until the chain's time reaches its expiration time (at most `txExpirySecs`, 60 seconds by
-  default); the next call after that takes the number, and the waiting transactions commit if they have not expired.
-- `supra.resetSequenceNumber(address)` forgets the counter and the records of an account. Call it after the account has
-  sent transactions by other means, or to use the number of a transaction that will not commit before it expires.
+  node behind its number until the chain's time reaches its expiration time (`txExpirySecs` after the client's clock,
+  60 seconds by default); the next call after that takes the number, and the waiting transactions commit if they have
+  not expired.
+- `supra.resetSequenceNumber(address)` forgets the counter and the records of an account, including those of this
+  client's pending transactions: the next call takes the account's number on the chain, and while a pending
+  transaction of this client holds it the node refuses the call. Call it only when no transaction of this client from
+  the account is pending, or when the expiration times of those that are have passed. Transactions sent by other
+  means (another client or process, a wallet) need no reset: the refusal of a stale number makes the next call read
+  the chain.
 - `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given. The counter records
   that transaction like its own and does not hand out its number while it can commit. The builders of
   `supra.transaction.build` always take the number as `senderSequenceNumber`.
@@ -443,11 +453,12 @@ it have been sent. The node holds at most 25 numbers per account by default and 
 (`enableWaitForTransaction: true`) when sending more than that.
 
 A transaction expires at `txExpiryTime` (seconds since the Unix epoch, used as given). Without it, a transaction expires
-`SupraConfig.txExpirySecs` seconds (default 60, at most 600) after the client's estimate of the chain's time: the
-client's clock shifted by the difference to the timestamp of the latest block the client has read, so a client whose
-clock is off still gives its transactions 60 seconds of chain time. A client that has read no block, for example one
-that only builds transactions with `supra.transaction.build`, uses its clock. Set `txExpirySecs` or `txExpiryTime`
-for a transaction that is signed or submitted later.
+`SupraConfig.txExpirySecs` seconds (default 60) after the client's clock in whole seconds, at most 595 seconds after
+it: the node refuses an expiration time more than 600 seconds after its own clock, and the 5 seconds left cover a
+node clock that is up to 5 seconds behind the client's, so `txExpirySecs: 600` is accepted. The node also refuses a
+transaction whose expiration time is not after its clock, so a client whose clock is far from the node's has its
+transactions refused (as expired, or as too far in the future); these refusals are thrown as they are. Set
+`txExpirySecs` or `txExpiryTime` for a transaction that is signed or submitted later.
 
 ```ts
 const supra = new SupraClient({ network: Network.TESTNET });

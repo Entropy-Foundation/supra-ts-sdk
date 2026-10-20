@@ -64,33 +64,41 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   account's sequence number on the chain and a record of each transaction it submitted (accepted, or whose submission
   request failed without an answer, so the node may have accepted it) with that transaction's expiration time. A
   transaction the node accepted either commits or, once the timestamp of the latest block has reached its expiration
-  time, can no longer commit. A record is dropped when the chain's number passes it, when a block the client reads has
-  reached its expiration time, or when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it, since
-  an RPC node answers 404 for a pending transaction that another RPC node received. The next number is the lowest
-  number at or above the chain's that has no record. The first use reads the account and the latest block; so does the
-  next call after a refusal for a stale number or a full queue, and once the estimated chain time has passed the
-  expiration time of a record by two seconds. A read never drops a record that can still commit. A refusal for a stale number
+  time, can no longer commit. A record is dropped when the chain's number passes it, when the timestamp of a latest
+  block the client reads (`GET /rpc/v3/block`; not a block read by height or hash) has reached its expiration time, or
+  when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it, since an RPC node answers 404 for a
+  pending transaction that another RPC node received. A submission whose outcome is unknown is recorded with an
+  expiration time at most 605 seconds after the client's clock. The next number is the lowest number at or above the
+  chain's that has no record. The first use reads the account and the latest block; so does the next call after a
+  refusal for a stale number or a full queue, and every call (once per call) while the estimated chain time has passed
+  the expiration time of a record by two seconds and no latest block read has reached it. The estimated chain time is
+  the client's clock shifted by the largest difference between a latest block's timestamp and the client's clock seen
+  at its read; it does not move backwards. A read never drops a record that can still commit. A check behind pending
+  transactions uses the higher of the account's number read and the highest number the client has observed on the
+  chain. A refusal for a stale number
   (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the account's, or a number that already has a
   pending transaction) makes the helper send the transaction once more with the next number. A transaction refused
   for another reason has no record, and the next call uses its number. Transactions with an explicit
   `sequenceNumber` are recorded as well. After a submission whose outcome is unknown that the node did not accept,
-  later calls wait behind its number in the node until the chain's time reaches its expiration time, at most
-  `txExpirySecs`, and the next call then takes that number. Calls of one client
+  later calls wait behind its number in the node until the chain's time reaches its expiration time, and the next
+  call then takes that number. Calls of one client
   from one account are submitted one after another: a call holds the account from taking its number until the node
   answers its submission, and the wait for the final status comes after that. A call without `maxGas` holds the account
   while its max gas is estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted or
   have failed. Concurrent sends from one account get consecutive numbers. To submit faster, set `maxGas` or send from
   several accounts. A call with an explicit `sequenceNumber` does not take part in this order.
 - **`SupraClient.resetSequenceNumber(address)`** forgets the counter of an account and its records of the client's
-  transactions; the next transaction reads its number from the chain.
+  transactions; the next transaction reads its number from the chain. While a transaction of this client from the
+  account is pending, the node refuses the next helper call, whose number that transaction holds; reset when none is
+  pending or their expiration times have passed.
 - **`SupraAccountQueueFullError`** (extends `SupraAPIError`; carries `sequenceNumber`) is thrown when the node refuses a
   submission whose sequence number is beyond the numbers it queues for the account ahead of the chain's (25 by
   default). The helpers do not send it again; the next call reads the chain before it takes a number.
-- **`SupraConfig.txExpirySecs`** sets how many seconds after the estimated chain time a transaction built without
-  `txExpiryTime` expires: an integer from 1 to `MAX_TX_EXPIRATION_DURATION` (600), default
-  `DEFAULT_TX_EXPIRATION_DURATION` (60). The estimated chain time is the client's clock shifted by the difference
-  between the timestamp of the latest block the client has read (any block read, including the counter's) and the
-  client's clock at that read; before the client has read a block it is the client's clock.
+- **`SupraConfig.txExpirySecs`** sets how many seconds after the client's clock (in whole seconds) a transaction built
+  without `txExpiryTime` expires: an integer from 1 to `MAX_TX_EXPIRATION_DURATION` (600), default
+  `DEFAULT_TX_EXPIRATION_DURATION` (60). The expiration time is at most 595 seconds after the client's clock
+  (`MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`), so that a node whose clock is up to 5 seconds behind the
+  client's accepts `txExpirySecs: 600`.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
   `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage` and
@@ -214,17 +222,20 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI` (and
   the new `fungibleAsset.migrateCoinToFungibleStore`) take the sequence number from the client's counter instead of
   reading it from the chain on every call, and the calls of one client from one account are submitted one after
-  another (see the counter under Added); they ran independently of each other. Transactions sent by other means from the same account (another client or
-  process, a wallet, a transaction built with an explicit number) make the counter stale; the next helper call then
-  costs one refused submission and a read of the chain, and succeeds. A transaction that will not commit keeps its
-  number until the chain's time reaches its expiration time; `resetSequenceNumber` frees it at once. A transaction the
+  another (see the counter under Added); they ran independently of each other. Transactions sent by other means from
+  the same account (another client or process, a wallet) make the counter stale: a helper call whose number such a
+  transaction holds is refused, sent once more after a read of the chain, and refused again while that transaction is
+  pending; the next call after it has committed takes the next number. Transactions submitted through the client,
+  including those built with an explicit number, are recorded and do not make it stale. A transaction that will not
+  commit keeps its number until the timestamp of a latest block the client reads reaches its expiration time. A transaction the
   node discarded after accepting it frees its number when any read of it through the client (`waitForTransaction`,
   `getTransactionByHash`, `isPendingTransaction`, a submission's wait or read-back) returns `Invalid`.
 - **Breaking:** a transaction built without `txExpiryTime` expires `DEFAULT_TX_EXPIRATION_DURATION` (now 60) seconds
-  after the client's estimate of the chain's time, or `SupraConfig.txExpirySecs` seconds; it expired 300 seconds after
-  the client's clock. This applies to every builder, including `rawTxnObject` and the other builders of
-  `transaction.build`, which use the client's clock until the client has read a block. Set `txExpiryTime` (absolute,
-  used as given) or `txExpirySecs` for a transaction that is signed or submitted later.
+  after the client's clock in whole seconds, or `SupraConfig.txExpirySecs` seconds (at most 595); it expired 300
+  seconds after the client's clock. This applies to every builder, including `rawTxnObject` and the other builders of
+  `transaction.build`. The node refuses a transaction whose expiration time is not after its clock or more than 600
+  seconds after it, so a client whose clock is far from the node's has its transactions refused. Set `txExpiryTime`
+  (absolute, used as given) or `txExpirySecs` for a transaction that is signed or submitted later.
 - **Breaking:** `signTransaction`, `transaction.build.signedTransaction`, `transaction.build.sendTxnPayload` and the
   `signTransaction`, `signedTransaction` and `sendTxnPayload` methods of a built transaction return promises, since a
   client's first signature reads the node's chain ID. Code that already awaits them is unaffected.
