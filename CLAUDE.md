@@ -19,6 +19,8 @@ pnpm lint             # ESLint (zero warnings enforced: --max-warnings 0)
 pnpm format           # Prettier formatting
 pnpm format:check     # Prettier check of src/, run in CI
 pnpm typecheck        # tsc --noEmit
+pnpm check:exports    # attw --pack: type resolution of the package under node10, node16 and bundler
+pnpm check:module-resolution  # tsc on CommonJS (node16) and ESM (nodenext) fixtures against the packed package; run after build
 pnpm doc              # Generate TypeDoc to docs/
 ```
 
@@ -78,7 +80,7 @@ All RPC calls go through `src/client/get.ts` and `src/client/post.ts` using nati
 ## Build
 
 - **Bundler**: tsup (esbuild-based), config in `tsup.config.ts`
-- **Output**: `dist/index.js` (ESM), `dist/index.cjs` (CJS), `dist/index.d.ts` (types)
+- **Output**: `dist/index.js` (ESM), `dist/index.cjs` (CJS), `dist/index.d.ts` and `dist/index.d.cts` (types for `import` and `require`)
 - **Target**: ES2022
 - **External deps**: supra-l1-sdk-core, js-sha3
 - **TypeScript**: Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`

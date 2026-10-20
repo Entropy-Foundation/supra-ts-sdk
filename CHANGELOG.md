@@ -410,6 +410,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `isAccountExists`, the typed errors, async signing, the chain ID check, the sequence-number counter,
   `Network.DEVNET`, `migrateCoinToFungibleStore`, cursors, and quants as the smallest SUPRA unit. Its code blocks
   type-check.
+- The `exports` map of `package.json` gives the `require` condition its own declarations (`dist/index.d.cts`), so a
+  CommonJS TypeScript project with `moduleResolution` `node16` or `nodenext` type-checks `import ... from
+  "supra-ts-sdk"`; the types resolved as an ES module before.
 
 ### Removed
 
