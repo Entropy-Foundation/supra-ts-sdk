@@ -191,8 +191,9 @@ export async function submitTxnInternal(
  * and released when the node answers the submission or one of those steps throws. The max gas estimate simulates the
  * transaction with that number, and the submission uses it, unless the estimate or the simulation before submission
  * gave the reservation a lower number that has no submission of this client (the transaction is then built and signed
- * again with it). The gas unit price is the call's, else the client's, else the node's estimate, which is read once
- * before the lock is taken; a failed read throws and no number is used. When building, estimating or signing throws,
+ * again with it). The gas unit price is the call's, else the client's, else the node's estimate, which is read once;
+ * the read starts before the lock is requested and is awaited under the lock, before building, and a failed read
+ * throws like a failed build. When building, estimating or signing throws,
  * the number is handed out next, or the chain is read before the next number when the error reports a stale number.
  */
 export async function buildAndSubmitEntryFunctionInternal(
@@ -205,16 +206,17 @@ export async function buildAndSubmitEntryFunctionInternal(
 ): Promise<SubmitTransactionResponse> {
     const senderAddress = args.senderAccount.address();
     validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
-    // The node's gas unit price estimate is read before the account's lock is taken, so that sends from one account
-    // do not wait behind the read.
-    const optionalTransactionPayloadArgs = await withResolvedGasUnitPriceInternal(
-        args.optionalTransactionArgs?.optionalTransactionPayloadArgs,
-        config,
-    );
+    const callOptions = args.optionalTransactionArgs?.optionalTransactionPayloadArgs;
+    // The read of the node's gas unit price estimate starts before the account's lock is requested and is awaited
+    // inside the lock, so the lock is requested in the order of the calls and the read overlaps the calls ahead. The
+    // no-op catch keeps a rejection from being reported as unhandled before it is awaited.
+    const priceRead = withResolvedGasUnitPriceInternal(callOptions, config);
+    priceRead.catch(() => undefined);
     return withSequenceNumberInternal(
-        { address: senderAddress, sequenceNumber: optionalTransactionPayloadArgs?.sequenceNumber },
+        { address: senderAddress, sequenceNumber: callOptions?.sequenceNumber },
         config,
         async (senderSequenceNumber, reservation) => {
+            const optionalTransactionPayloadArgs = await priceRead;
             const rawTxn = await buildWithResolvedMaxGasInternal(
                 {
                     senderAddress,

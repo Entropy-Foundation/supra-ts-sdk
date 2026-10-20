@@ -1,10 +1,8 @@
-import { buildRpcUrl } from "../../client/url";
-import { SupraAPIError, SupraGasUnitPriceBelowMinimumError } from "../../errors/apiError";
+import { SupraAPIError } from "../../errors/apiError";
 import { MoveVmError } from "../../errors/moveVmErrors";
-import { SupraSimulationFailedError } from "../../errors/transactionError";
+import { SupraGasUnitPriceBelowMinimumError, SupraSimulationFailedError } from "../../errors/transactionError";
 import type { OptionalTransactionPayloadArgs } from "../../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import { DEFAULT_RPC_VERSION } from "../../utils/constants";
 import { getEstimatedGasUnitPriceInternal, getMinGasUnitPriceInternal } from "../supraClient";
 
 /** The gas unit price that the call or the client sets, or `undefined` when neither sets one. */
@@ -77,22 +75,12 @@ export async function mapGasUnitPriceRefusalInternal(
     if (error instanceof SupraGasUnitPriceBelowMinimumError) {
         return error;
     }
-    let options;
-    if (error instanceof SupraAPIError && error.major_status === MoveVmError.GAS_UNIT_PRICE_BELOW_MIN_BOUND) {
-        options = { status: error.status, statusText: error.statusText, url: error.url, data: error.data };
-    } else if (
-        error instanceof SupraSimulationFailedError &&
-        error.major_status === MoveVmError.GAS_UNIT_PRICE_BELOW_MIN_BOUND
+    if (
+        !(error instanceof SupraAPIError || error instanceof SupraSimulationFailedError) ||
+        error.major_status !== MoveVmError.GAS_UNIT_PRICE_BELOW_MIN_BOUND
     ) {
-        options = {
-            status: 200,
-            statusText: "OK",
-            url: buildRpcUrl(config.rpcUrl, DEFAULT_RPC_VERSION, "/transactions/simulate").toString(),
-            data: { message: error.vm_status ?? error.message, transaction: error.transaction },
-        };
-    } else {
         return error;
     }
     const minimumGasUnitPrice = await getMinGasUnitPriceInternal(config).catch(() => undefined);
-    return new SupraGasUnitPriceBelowMinimumError({ ...options, gasUnitPrice, minimumGasUnitPrice });
+    return new SupraGasUnitPriceBelowMinimumError({ cause: error, gasUnitPrice, minimumGasUnitPrice });
 }

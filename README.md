@@ -249,7 +249,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraRateLimitError` (extends `SupraAPIError`) | HTTP 429 | `retryAfterSeconds` |
 | `SupraServiceUnavailableError` (extends `SupraAPIError`) | HTTP 503 | |
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | HTTP 400 for a submission beyond the sequence numbers the node queues for the account | `sequenceNumber` |
-| `SupraGasUnitPriceBelowMinimumError` (extends `SupraAPIError`) | the node refuses a submission or a simulation because the gas unit price is below its minimum | `gasUnitPrice`, `minimumGasUnitPrice` |
+| `SupraGasUnitPriceBelowMinimumError` | the node refuses a submission or a simulation because the gas unit price is below its minimum | `gasUnitPrice`, `minimumGasUnitPrice`, `major_status`, `cause` (the `SupraAPIError` or `SupraSimulationFailedError`) |
 | `SupraTimeoutError` | a request exceeds the timeout | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers | `url`, `cause` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
@@ -487,14 +487,16 @@ The gas unit price of a transaction is, in this order:
 2. the client's `SupraConfig.gasUnitPrice`;
 3. the node's estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`
    (`supra.getEstimatedGasUnitPrice()` returns it). The median is taken over the last transactions the RPC node
-   executed and can be below the node's current minimum. The estimate is read for each transaction that needs it, before
-   the sender's account is held, and the same price is used for the max gas estimate and the transaction. A failed read
-   throws its error and nothing is submitted.
+   executed and can be below the node's current minimum. The estimate is read for each transaction that needs it. The
+   read starts when the call is made, before the sender's account is requested, and is awaited in the call's turn, so
+   calls from one account keep the order of the calls; the same price is used for the max gas estimate and the
+   transaction. A failed read throws its error, like a failed build, and nothing is submitted.
 
 A price set by the call or the client is used as given and makes no request. When it is below the node's minimum, the
 node refuses the transaction and the SDK throws `SupraGasUnitPriceBelowMinimumError` (`gasUnitPrice`,
-`minimumGasUnitPrice`) from the submission or from the simulation; it does not send the transaction again or raise the
-price, and the sequence number is used by the next transaction. The builders that make no request cannot read the
+`minimumGasUnitPrice`) from the submission or from the simulation. It is not a `SupraAPIError` or a
+`SupraSimulationFailedError`; that original error is its `cause`. The SDK does not send the transaction again or raise
+the price, and the sequence number is used by the next transaction. The builders that make no request cannot read the
 estimate: without a price on the call or the client they throw a `RangeError` before building.
 
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas

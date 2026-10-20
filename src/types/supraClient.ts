@@ -19,7 +19,7 @@ export interface RetryConfig {
  * `maxGas` sets the max gas of every transaction that sets none; without it the max gas is estimated (see
  * `OptionalTransactionPayloadArgs`). `gasUnitPrice` sets the gas unit price of every transaction that sets none, used
  * as given and in quants; without it each transaction that sets none carries the node's estimate, `max(median gas
- * price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, read when the transaction is built
+ * price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, read for each transaction
  * (`getEstimatedGasUnitPrice()`). The builders that make no request need a price on the call or here (see
  * `OptionalTransactionPayloadArgs`). `estimateMaxGas: false` turns the estimate off: a transaction without `maxGas` then has
  * `DEFAULT_MAX_GAS_UNITS`. A simulation whose status is not `Success` throws `SupraSimulationFailedError` and nothing is

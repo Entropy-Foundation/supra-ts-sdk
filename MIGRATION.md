@@ -395,8 +395,7 @@ In 1.2.0 a transaction without a `gasUnitPrice` on the call used `SupraConfig.mi
 `DEFAULT_GAS_PRICE` (100,000 quants), and never read the node; a network that raised its minimum refused every client
 that relied on the default. In 2.0.0 the price of a transaction is the call's `gasUnitPrice`, else the client's
 `gasUnitPrice`, else the node's estimate: `max(median gas price, minimum gas price)` of
-`GET /rpc/v3/transactions/estimate_gas_price`, read for each transaction that needs it, before the sender's account is
-held. A price set by the call or the client is used as given and makes no request. The changes:
+`GET /rpc/v3/transactions/estimate_gas_price`, read for each transaction that needs it. A price set by the call or the client is used as given and makes no request. The changes:
 
 - **Breaking:** `SupraConfig.minGasUnitPrice` and `NetworkConfig.minGasUnitPrice` are renamed `gasUnitPrice`. There is no
   alias. `SupraClient.networkInformation.gasUnitPrice` is `undefined` when the configuration sets none; it was
@@ -406,15 +405,17 @@ held. A price set by the call or the client is used as given and makes no reques
   `automationRegistrationRawTxnObject`, `multisigRawTxnObject`, `multisigProposalTxRawTxnObject`) cannot read the
   estimate. Without a `gasUnitPrice` on the call or the client they throw a `RangeError` before building. Pass a price
   (`getEstimatedGasUnitPrice()` returns the node's estimate) or set `SupraConfig.gasUnitPrice`.
-- A price below the node's minimum is refused by the node. The SDK throws `SupraGasUnitPriceBelowMinimumError`, a
-  `SupraAPIError`, with `gasUnitPrice` (the price sent) and `minimumGasUnitPrice` (read from the node after the refusal,
-  `undefined` when that read fails), from the submission and from the simulation that precedes it (the max gas estimate
-  and `enableTransactionSimulation`). The transaction is not sent again and its price is not raised; the sequence number
-  is used by the next transaction. Simulations of a built transaction (`simulate`) throw it too, where they threw
-  `SupraSimulationFailedError`.
-- A failed read of the estimate throws that read's error and nothing is submitted.
-- Because the read happens before the account is held, two calls from one account are submitted in the order in which
-  their reads finish when neither sets a price.
+- **Breaking:** a price below the node's minimum is refused by the node. The SDK throws
+  `SupraGasUnitPriceBelowMinimumError`, a `SupraError`, with `gasUnitPrice` (the price sent), `minimumGasUnitPrice` (read
+  from the node after the refusal, `undefined` when that read fails), `major_status` and the original error as `cause`,
+  from the submission and from the simulation that precedes it (the max gas estimate and `enableTransactionSimulation`).
+  It is neither a `SupraAPIError` nor a `SupraSimulationFailedError`: a submission refusal that was caught as a
+  `SupraAPIError`, and a simulation of a built transaction (`simulate`) that was caught as a
+  `SupraSimulationFailedError`, are now caught as `SupraGasUnitPriceBelowMinimumError`, and the original is in `cause`.
+  The transaction is not sent again and its price is not raised; the sequence number is used by the next transaction.
+- A failed read of the estimate throws that read's error, like a failed build, and nothing is submitted. The read starts
+  when the call is made and is awaited in the call's turn for the sender's account, so calls from one account keep the
+  order of the calls.
 - `getEstimatedGasUnitPrice()` is new; `getGasPrice()` (the median) and `getMinGasUnitPrice()` (the minimum) are
   unchanged.
 
@@ -437,7 +438,7 @@ try {
     });
 } catch (error) {
     if (error instanceof SupraGasUnitPriceBelowMinimumError) {
-        console.log(error.gasUnitPrice, error.minimumGasUnitPrice);
+        console.log(error.gasUnitPrice, error.minimumGasUnitPrice, error.cause);
     }
 }
 console.log(priced.networkInformation.gasUnitPrice);

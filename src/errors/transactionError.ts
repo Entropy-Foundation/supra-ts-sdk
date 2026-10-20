@@ -1,4 +1,5 @@
 import type { TransactionResponse, TransactionStatus } from "../types/transaction";
+import type { SupraAPIError } from "./apiError";
 import { SupraError } from "./supraError";
 import { parseVmStatus } from "./vmStatus";
 
@@ -104,6 +105,51 @@ export class SupraSimulationFailedError extends SupraError {
             vm_status: this.vm_status,
             major_status: this.major_status,
             sub_status: this.sub_status,
+        };
+    }
+}
+
+/**
+ * SupraGasUnitPriceBelowMinimumError is thrown when the node refuses a transaction because its gas unit price is below
+ * the node's minimum (`GAS_UNIT_PRICE_BELOW_MIN_BOUND`), in a submission or in a simulation (the max gas estimate, the
+ * simulation before a submission, or `simulate` of a built transaction). The price is never changed by the SDK: it is
+ * the price of the call, else the client's `gasUnitPrice`, and the transaction is not sent again. The helpers that take
+ * the sequence number from the client's counter hand the number out again.
+ *
+ * The original error is available as `cause`: the {@link SupraAPIError} of the submission or the
+ * {@link SupraSimulationFailedError} of the simulation. This error is neither of them, so `instanceof` checks for those
+ * classes do not match it. `message` is the original error's message.
+ *
+ * `gasUnitPrice` is the price the transaction carried, in quants. `minimumGasUnitPrice` is the node's minimum
+ * (`getMinGasUnitPrice()`), read after the refusal, or `undefined` when that read failed.
+ * @group Errors
+ */
+export class SupraGasUnitPriceBelowMinimumError extends SupraError {
+    /** The name of the Move VM status of the refusal: `GAS_UNIT_PRICE_BELOW_MIN_BOUND`. */
+    readonly major_status = "GAS_UNIT_PRICE_BELOW_MIN_BOUND";
+    /** The gas unit price of the refused transaction, in quants. */
+    readonly gasUnitPrice: bigint;
+    /** The node's minimum gas unit price in quants, or `undefined` when reading it failed. */
+    readonly minimumGasUnitPrice: bigint | undefined;
+
+    constructor(args: {
+        cause: SupraAPIError | SupraSimulationFailedError;
+        gasUnitPrice: bigint;
+        minimumGasUnitPrice?: bigint | undefined;
+    }) {
+        super(args.cause.message, { cause: args.cause });
+        this.name = "SupraGasUnitPriceBelowMinimumError";
+        this.gasUnitPrice = args.gasUnitPrice;
+        this.minimumGasUnitPrice = args.minimumGasUnitPrice;
+    }
+
+    toJSON() {
+        return {
+            name: this.name,
+            message: this.message,
+            major_status: this.major_status,
+            gasUnitPrice: this.gasUnitPrice.toString(),
+            minimumGasUnitPrice: this.minimumGasUnitPrice?.toString(),
         };
     }
 }

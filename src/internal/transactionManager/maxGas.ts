@@ -11,11 +11,10 @@ import {
     SUPRA_COIN_TYPE,
 } from "../../utils/constants";
 import { standardizeAddress } from "../../helper/account";
-import { SupraSimulationFailedError } from "../../errors/transactionError";
+import { SupraGasUnitPriceBelowMinimumError, SupraSimulationFailedError } from "../../errors/transactionError";
 import { viewRawInternal } from "../methods";
 import { sequenceNumberTrackerOf, type SequenceNumberReservation } from "../sequenceNumber";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
-import { SupraGasUnitPriceBelowMinimumError } from "../../errors/apiError";
 import { resolveGasUnitPriceInternal } from "./gasPrice";
 import { simulateTxnInternal } from "./txnSimulate";
 import { sendTxnPayloadInternal, withSequenceNumber } from "./txnBuild";

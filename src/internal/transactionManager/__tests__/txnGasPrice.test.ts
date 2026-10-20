@@ -1,18 +1,16 @@
 import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import { SupraClient } from "../../../api/supraClient";
-import {
-    SupraAPIError,
-    SupraGasUnitPriceBelowMinimumError,
-    SupraServiceUnavailableError,
-} from "../../../errors/apiError";
-import { SupraSimulationFailedError } from "../../../errors/transactionError";
+import { SupraAPIError, SupraServiceUnavailableError } from "../../../errors/apiError";
+import { SupraError } from "../../../errors/supraError";
+import { SupraGasUnitPriceBelowMinimumError, SupraSimulationFailedError } from "../../../errors/transactionError";
 import { MockNode } from "./helpers/mockNode";
 import { newClient, RECEIVER, RPC_URL, transfer } from "./helpers/transfers";
 
 /**
  * The gas unit price of a transaction: the call's, else the client's, else the node's estimate
- * (`max(median, minimum)`), read for each transaction before the account's lock is taken. A price the caller set that
- * the node refuses as below its minimum throws `SupraGasUnitPriceBelowMinimumError`.
+ * (`max(median, minimum)`), read for each transaction; the read starts before the account's lock is requested and is
+ * awaited under it. A price the caller set that the node refuses as below its minimum throws
+ * `SupraGasUnitPriceBelowMinimumError`, with the original error as its cause.
  */
 
 const originalFetch = global.fetch;
@@ -99,7 +97,7 @@ describe("the default gas unit price", () => {
         expect(node.gasUnitPrices).toStrictEqual([222_222n, 333_333n]);
     });
 
-    it("is read before the account's number is taken: a failed read throws its error, submits nothing and uses no number", async () => {
+    it("a failed read throws its error, submits nothing, and the next call uses the number", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
         node.failEstimateReads = 1;
@@ -108,33 +106,86 @@ describe("the default gas unit price", () => {
 
         expect(error).toBeInstanceOf(SupraServiceUnavailableError);
         expect(node.submitted).toStrictEqual([]);
-        expect(node.counts["account"]).toBeUndefined();
 
         await transfer(supra, sender, { maxGas: 5_000n });
         expect(node.submitted).toStrictEqual([5]);
     });
 
-    it("is read without holding the account: a transaction behind a slow read is not blocked by it", async () => {
-        const supra = newClient();
-        const sender = new SupraAccount();
-        let release: (() => void) | undefined;
-        const held = new Promise<void>((resolve) => (release = resolve));
-        let holdNext = true;
-        global.fetch = ((input: string | URL | Request, init?: RequestInit) => {
-            if (new URL(String(input)).pathname.endsWith("/transactions/estimate_gas_price") && holdNext) {
-                holdNext = false;
-                return held.then(() => node.fetch(input, init));
-            }
-            return node.fetch(input, init);
-        }) as typeof fetch;
+    describe("in the order of the calls", () => {
+        /** Holds the answer to the first read of the estimate until the returned function is called. */
+        function holdFirstEstimate(): () => void {
+            let release: (() => void) | undefined;
+            const held = new Promise<void>((resolve) => (release = resolve));
+            let holdNext = true;
+            global.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+                if (new URL(String(input)).pathname.endsWith("/transactions/estimate_gas_price") && holdNext) {
+                    holdNext = false;
+                    return held.then(() => node.fetch(input, init));
+                }
+                return node.fetch(input, init);
+            }) as typeof fetch;
+            return () => release?.();
+        }
 
-        const slow = transfer(supra, sender, { maxGas: 5_000n });
-        await transfer(supra, sender, { maxGas: 5_000n, gasUnitPrice: 100_000n });
-        expect(node.submitted).toStrictEqual([5]);
+        const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-        release?.();
-        await slow;
-        expect(node.submitted).toStrictEqual([5, 6]);
+        it("gives the lower sequence number to the first of two calls whose first read is slower", async () => {
+            const supra = newClient();
+            const sender = new SupraAccount();
+            const release = holdFirstEstimate();
+
+            const first = transfer(supra, sender, { maxGas: 5_000n });
+            const second = transfer(supra, sender, { maxGas: 5_000n });
+            await pause(100);
+            // The second call's read has finished (the first call's answer is held); its number waits for the first
+            // call's.
+            expect(estimateReads()).toBe(1);
+            expect(node.submitted).toStrictEqual([]);
+
+            release();
+            const [firstResult, secondResult] = await Promise.all([first, second]);
+
+            expect(node.submitted).toStrictEqual([5, 6]);
+            expect(firstResult.hash).toBe(node.submissionHash(5));
+            expect(secondResult.hash).toBe(node.submissionHash(6));
+        });
+
+        it("hands the number of a call whose read fails to the next call and records nothing for it", async () => {
+            const supra = newClient();
+            const sender = new SupraAccount();
+            node.failEstimateReads = 1;
+
+            const first = transfer(supra, sender, { maxGas: 5_000n }).catch((e: unknown) => e);
+            const second = transfer(supra, sender, { maxGas: 5_000n });
+            const [firstResult, secondResult] = await Promise.all([first, second]);
+
+            expect(firstResult).toBeInstanceOf(SupraServiceUnavailableError);
+            expect(node.submitted).toStrictEqual([5]);
+            expect(secondResult.hash).toBe(node.submissionHash(5));
+
+            // No record holds a number for the failed call: the next call takes the next number.
+            await transfer(supra, sender, { maxGas: 5_000n });
+            expect(node.submitted).toStrictEqual([5, 6]);
+            expect(node.pooled()).toStrictEqual([5, 6]);
+        });
+
+        it("makes a call with an explicit price wait for the calls ahead of it", async () => {
+            const supra = newClient();
+            const sender = new SupraAccount();
+            const release = holdFirstEstimate();
+
+            const first = transfer(supra, sender, { maxGas: 5_000n });
+            const second = transfer(supra, sender, { maxGas: 5_000n, gasUnitPrice: 100_000n });
+            await pause(100);
+            expect(node.submitted).toStrictEqual([]);
+
+            release();
+            const [firstResult, secondResult] = await Promise.all([first, second]);
+
+            expect(node.submitted).toStrictEqual([5, 6]);
+            expect(firstResult.hash).toBe(node.submissionHash(5));
+            expect(secondResult.hash).toBe(node.submissionHash(6));
+        });
     });
 });
 
@@ -250,18 +301,21 @@ describe("a gas unit price below the node's minimum", () => {
         node.gasPrice = { median: 100_000, min: 100_000 };
     });
 
-    it("is refused on submission with SupraGasUnitPriceBelowMinimumError, which carries both prices and is a SupraAPIError", async () => {
+    it("is refused on submission with SupraGasUnitPriceBelowMinimumError, which carries both prices and the SupraAPIError as cause", async () => {
         const error: unknown = await transfer(newClient(), new SupraAccount(), {
             maxGas: 5_000n,
             gasUnitPrice: 1n,
         }).catch((e: unknown) => e);
 
         expect(error).toBeInstanceOf(SupraGasUnitPriceBelowMinimumError);
-        expect(error).toBeInstanceOf(SupraAPIError);
+        expect(error).toBeInstanceOf(SupraError);
+        expect(error).not.toBeInstanceOf(SupraAPIError);
         const refusal = error as SupraGasUnitPriceBelowMinimumError;
         expect(refusal.gasUnitPrice).toBe(1n);
         expect(refusal.minimumGasUnitPrice).toBe(100_000n);
-        expect(refusal.status).toBe(400);
+        expect(refusal.cause).toBeInstanceOf(SupraAPIError);
+        expect((refusal.cause as SupraAPIError).status).toBe(400);
+        expect(refusal.message).toBe((refusal.cause as SupraAPIError).message);
         expect(refusal.major_status).toBe("GAS_UNIT_PRICE_BELOW_MIN_BOUND");
         expect(refusal.toJSON()).toMatchObject({ gasUnitPrice: "1", minimumGasUnitPrice: "100000" });
     });
@@ -308,7 +362,7 @@ describe("a gas unit price below the node's minimum", () => {
         const refusal = error as SupraGasUnitPriceBelowMinimumError;
         expect(refusal.gasUnitPrice).toBe(1n);
         expect(refusal.minimumGasUnitPrice).toBe(100_000n);
-        expect(refusal.status).toBe(200);
+        expect(refusal.cause).toBeInstanceOf(SupraSimulationFailedError);
         expect(refusal.major_status).toBe("GAS_UNIT_PRICE_BELOW_MIN_BOUND");
         expect(node.submitted).toStrictEqual([]);
 

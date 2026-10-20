@@ -8,9 +8,10 @@ import type { MoveInnerAuthenticator } from "../move";
  *   too, the max gas is estimated (see `estimateMaxGas`).
  * - `gasUnitPrice`: gas unit price, in quants, used as given. Default the client's `gasUnitPrice`, else the node's
  *   estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, read for each
- *   transaction when it is built, before the sender's account is held. The max gas estimate uses the same price. A
- *   price below the node's minimum is refused by the node with `SupraGasUnitPriceBelowMinimumError`; the SDK does not
- *   change it. A failed read of the estimate throws its error and nothing is submitted.
+ *   transaction. The read starts when the call is made and is awaited in the call's turn for the sender's account. The
+ *   max gas estimate uses the same price. A price below the node's minimum is refused by the node with
+ *   `SupraGasUnitPriceBelowMinimumError` (its `cause` is the original error); the SDK does not change it. A failed read
+ *   of the estimate throws its error and nothing is submitted.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
  *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole
  *   seconds when the transaction is built, at most 595 seconds after it (`MAX_TX_EXPIRATION_DURATION -

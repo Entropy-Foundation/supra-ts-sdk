@@ -400,10 +400,11 @@ describeE2E("gas settings", () => {
                 .catch((e: unknown) => e);
 
             expect(error).toBeInstanceOf(SupraGasUnitPriceBelowMinimumError);
-            expect(error).toBeInstanceOf(SupraAPIError);
+            expect(error).not.toBeInstanceOf(SupraAPIError);
             expect((error as SupraGasUnitPriceBelowMinimumError).gasUnitPrice).toBe(1n);
             expect((error as SupraGasUnitPriceBelowMinimumError).minimumGasUnitPrice).toBe(minimum);
-            expect((error as SupraGasUnitPriceBelowMinimumError).status).toBe(400);
+            expect((error as SupraGasUnitPriceBelowMinimumError).cause).toBeInstanceOf(SupraAPIError);
+            expect(((error as SupraGasUnitPriceBelowMinimumError).cause as SupraAPIError).status).toBe(400);
 
             const next = await ctx.supra.coin.transferSupraCoin({
                 senderAccount: account,
@@ -431,7 +432,7 @@ describeE2E("gas settings", () => {
             expect((error as SupraGasUnitPriceBelowMinimumError).minimumGasUnitPrice).toBe(
                 await ctx.supra.getMinGasUnitPrice(),
             );
-            expect((error as SupraGasUnitPriceBelowMinimumError).status).toBe(200);
+            expect((error as SupraGasUnitPriceBelowMinimumError).cause).toBeInstanceOf(SupraSimulationFailedError);
         });
 
         test("a price below the node's minimum is refused by the simulation before submission", async () => {

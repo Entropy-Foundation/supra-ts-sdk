@@ -47,21 +47,21 @@ export async function callContractInternal(
     }
 
     validateSubmitOptions(args.enableTransactionWaitAndSimulationArgs ?? {});
-    // The gas unit price is resolved before the lock, so that sends from one account do not wait behind the read of
-    // the node's estimate.
-    const optionalTransactionPayloadArgs = await withResolvedGasUnitPriceInternal(
-        args.optionalTransactionPayloadArgs,
-        config,
-    );
+    // The read of the node's gas unit price estimate starts before the account's lock is requested and is awaited
+    // inside the lock, so the lock is requested in the order of the calls and the read overlaps the calls ahead. The
+    // no-op catch keeps a rejection from being reported as unhandled before it is awaited.
+    const priceRead = withResolvedGasUnitPriceInternal(args.optionalTransactionPayloadArgs, config);
+    priceRead.catch(() => undefined);
     // A number from the client's counter is taken under the account's lock, which the submission releases when the
     // node answers it (`withSequenceNumberInternal`).
     return withSequenceNumberInternal(
         {
             address: senderAccount.address(),
-            sequenceNumber: optionalTransactionPayloadArgs.sequenceNumber,
+            sequenceNumber: args.optionalTransactionPayloadArgs?.sequenceNumber,
         },
         config,
         async (senderSequenceNumber, reservation) => {
+            const optionalTransactionPayloadArgs = await priceRead;
             // The max gas estimate simulates the transaction with `senderSequenceNumber`.
             const simpleRawTxn = await simpleInternal(
                 {

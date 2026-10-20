@@ -18,10 +18,9 @@
  *   full), for an expiration time not after the node's clock, and for an expiration time more than 600 s after the
  *   node's clock in whole seconds. Otherwise it is accepted. `refuseNext` answers the next submissions of a number with
  *   the status and message given, and pools the transaction when `pool` is set.
- * - `GET /transactions/estimate_gas_price` returns `gasPrice` (median and minimum, 100,000 each by default) without
- *   latency. A
- *   submission or simulation whose gas unit price is below `gasPrice.min` is refused with `GAS_UNIT_PRICE_BELOW_MIN_BOUND`,
- *   as the nodes do (400 for a submission, status `Invalid` for a simulation).
+ * - `GET /transactions/estimate_gas_price` returns `gasPrice` (median and minimum, 100,000 each by default). A
+ *   submission or simulation whose gas unit price is below `gasPrice.min` is refused with
+ *   `GAS_UNIT_PRICE_BELOW_MIN_BOUND`, as the nodes do (400 for a submission, status `Invalid` for a simulation).
  * - A read by hash returns `Success` once committed, `Pending` while pooled (HTTP 404 instead with
  *   `pendingVisible: false`, as from an RPC node that did not receive the transaction), `Invalid` for a transaction
  *   dropped as discarded, and 404 for an expired or unknown one.
@@ -244,20 +243,17 @@ export class MockNode {
             this.count("estimate_gas_price");
             if (this.failEstimateReads > 0) {
                 this.failEstimateReads -= 1;
-                return this.respond({ status: 503, body: { message: "Service Unavailable" } }, true);
+                return this.respond({ status: 503, body: { message: "Service Unavailable" } });
             }
-            return this.respond(
-                {
-                    status: 200,
-                    body: {
-                        mean_gas_price: this.gasPrice.median,
-                        max_gas_price: this.gasPrice.median,
-                        median_gas_price: this.gasPrice.median,
-                        min_configured_gas_price: this.gasPrice.min,
-                    },
+            return this.respond({
+                status: 200,
+                body: {
+                    mean_gas_price: this.gasPrice.median,
+                    max_gas_price: this.gasPrice.median,
+                    median_gas_price: this.gasPrice.median,
+                    min_configured_gas_price: this.gasPrice.min,
                 },
-                true,
-            );
+            });
         }
         if (method === "GET" && path === "/transactions/chain_id") {
             this.count("chain_id");
@@ -460,20 +456,7 @@ export class MockNode {
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     }
 
-    /**
-     * Answers after the latency, or at once with `immediate`. An immediate answer draws no number from the generator, so
-     * the latencies of the other answers do not depend on the gas price reads, and the reads of calls made one after
-     * another finish in that order.
-     */
-    private respond(answer: Answer, immediate = false): Promise<Response> {
-        if (immediate) {
-            return Promise.resolve(
-                new Response(JSON.stringify(answer.body), {
-                    status: answer.status,
-                    headers: { "Content-Type": "application/json" },
-                }),
-            );
-        }
+    private respond(answer: Answer): Promise<Response> {
         const delay = this.latencyMs[0] + this.random() * this.latencyMs[1];
         return new Promise((resolve) =>
             setTimeout(
