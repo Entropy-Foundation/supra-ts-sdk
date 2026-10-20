@@ -19,15 +19,11 @@ export async function sleep(timeMs: number): Promise<null> {
     });
 }
 
-export const parseFunctionTypeArgs = (
-    functionTypeArgs: TxnBuilderTypes.TypeTag[]
-): Array<FunctionTypeArgs> => {
+export const parseFunctionTypeArgs = (functionTypeArgs: TxnBuilderTypes.TypeTag[]): Array<FunctionTypeArgs> => {
     return functionTypeArgs.map(typeTagToJSON);
 };
 
-export const parseScriptArgs = (
-    scriptArgs: TxnBuilderTypes.TransactionArgument[]
-): Array<ScriptArgumentJson> => {
+export const parseScriptArgs = (scriptArgs: TxnBuilderTypes.TransactionArgument[]): Array<ScriptArgumentJson> => {
     const parsedArgs: Array<ScriptArgumentJson> = [];
     scriptArgs.forEach((arg) => {
         if (arg instanceof TxnBuilderTypes.TransactionArgumentU8) {
@@ -58,9 +54,7 @@ export const parseScriptArgs = (
     return parsedArgs;
 };
 
-export const fromUint8ArrayToJSArray = (
-    arr: Uint8Array[]
-): Array<Array<number>> => {
+export const fromUint8ArrayToJSArray = (arr: Uint8Array[]): Array<Array<number>> => {
     const resData: Array<Array<number>> = [];
     for (let i = 0; i < arr.length; i++) {
         if (arr[i]) {
@@ -75,13 +69,13 @@ export const fromUint8ArrayToJSArray = (
  */
 export function convertMoveValueToJSONParsable<T extends string>(type: T, value: unknown): unknown {
     // Primitive types
-    if (type === 'u8' || type === 'u16' || type === 'u32') return String(value);
-    if (type === 'u64' || type === 'u128' || type === 'u256') return String(value);
-    if (type === 'address') return String(value);
-    if (type === 'bool') return Boolean(value);
-    if (type.startsWith('vector<')) {
+    if (type === "u8" || type === "u16" || type === "u32") return String(value);
+    if (type === "u64" || type === "u128" || type === "u256") return String(value);
+    if (type === "address") return String(value);
+    if (type === "bool") return Boolean(value);
+    if (type.startsWith("vector<")) {
         const innerType = type.slice(7, -1) as string;
-        return (value as unknown[]).map(v => convertMoveValueToJSONParsable(innerType, v));
+        return (value as unknown[]).map((v) => convertMoveValueToJSONParsable(innerType, v));
     }
     // fallback for structs or unknown
     return value;
@@ -92,13 +86,14 @@ export function convertMoveValueToJSONParsable<T extends string>(type: T, value:
  */
 export function convertMoveValue<T extends string>(type: T, value: unknown): MoveToTS<T> {
     // Primitive types
-    if (type === 'u8' || type === 'u16' || type === 'u32') return Number(value) as MoveToTS<T>;
-    if (type === 'u64' || type === 'u128' || type === 'u256') return BigInt(value as string | number | bigint) as MoveToTS<T>;
-    if (type === 'address') return String(value) as MoveToTS<T>;
-    if (type === 'bool') return Boolean(value) as MoveToTS<T>;
-    if (type.startsWith('vector<')) {
+    if (type === "u8" || type === "u16" || type === "u32") return Number(value) as MoveToTS<T>;
+    if (type === "u64" || type === "u128" || type === "u256")
+        return BigInt(value as string | number | bigint) as MoveToTS<T>;
+    if (type === "address") return String(value) as MoveToTS<T>;
+    if (type === "bool") return Boolean(value) as MoveToTS<T>;
+    if (type.startsWith("vector<")) {
         const innerType = type.slice(7, -1) as string;
-        return (value as unknown[]).map(v => convertMoveValue(innerType, v)) as MoveToTS<T>;
+        return (value as unknown[]).map((v) => convertMoveValue(innerType, v)) as MoveToTS<T>;
     }
     // fallback for structs or unknown
     return value as MoveToTS<T>;

@@ -86,23 +86,21 @@ describe("client/post", () => {
     });
 
     it("should throw SupraAPIError on 400 response", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockFetchResponse(400, { message: "Bad request" }),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(400, { message: "Bad request" }));
 
         await expect(post({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
     });
 
     it("should throw SupraAPIError on 500 response", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockFetchResponse(500, { message: "Server error" }),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(500, { message: "Server error" }));
 
         await expect(post({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
     });
 
     it("should include error details in SupraAPIError", async () => {
-        const errorData = { message: "Failed to execute view function: ABORTED with sub status 4001 at location UNDEFINED" };
+        const errorData = {
+            message: "Failed to execute view function: ABORTED with sub status 4001 at location UNDEFINED",
+        };
         (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(400, errorData));
 
         const error = (await post({ path: "/view" }, testConfig).catch((e: unknown) => e)) as SupraAPIError;
@@ -123,9 +121,7 @@ describe("client/post", () => {
     });
 
     it("should throw SupraAPIError (not SyntaxError) on a non-JSON 2xx body", async () => {
-        (global.fetch as jest.Mock).mockResolvedValue(
-            mockRawResponse(200, "<html>502 Bad Gateway</html>"),
-        );
+        (global.fetch as jest.Mock).mockResolvedValue(mockRawResponse(200, "<html>502 Bad Gateway</html>"));
 
         await expect(post({ path: "/test" }, testConfig)).rejects.toThrow(SupraAPIError);
     });

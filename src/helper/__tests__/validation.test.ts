@@ -13,7 +13,9 @@ import {
 describe("validateAddress", () => {
     it("accepts valid hex addresses", () => {
         expect(() => validateAddress("0x1")).not.toThrow();
-        expect(() => validateAddress("0x0000000000000000000000000000000000000000000000000000000000000001")).not.toThrow();
+        expect(() =>
+            validateAddress("0x0000000000000000000000000000000000000000000000000000000000000001"),
+        ).not.toThrow();
         expect(() => validateAddress("0xabcdef1234567890")).not.toThrow();
     });
 
@@ -88,12 +90,16 @@ describe("validateStructId", () => {
         expect(() => validateStructId("badaddr::coin::CoinStore")).toThrow("Invalid resourceType module address");
     });
 
-    it.each(["0x1::../resources::X", "0x1::coin::Co/in", "0x1::coin::Co in", "0x1::::X", "0x1::1coin::X", "0x1::coin::"])(
-        "rejects a module or struct name that is not a Move identifier: %s",
-        (structId) => {
-            expect(() => validateStructId(structId)).toThrow("Invalid resourceType");
-        },
-    );
+    it.each([
+        "0x1::../resources::X",
+        "0x1::coin::Co/in",
+        "0x1::coin::Co in",
+        "0x1::::X",
+        "0x1::1coin::X",
+        "0x1::coin::",
+    ])("rejects a module or struct name that is not a Move identifier: %s", (structId) => {
+        expect(() => validateStructId(structId)).toThrow("Invalid resourceType");
+    });
 
     it("does not check the type arguments", () => {
         expect(() => validateStructId("0x1::coin::CoinStore<0x1::supra_coin::SupraCoin, vector<u8>>")).not.toThrow();
@@ -116,7 +122,9 @@ describe("validateMoveIdentifier", () => {
 
 describe("validateTransactionHash", () => {
     it("accepts valid transaction hashes", () => {
-        expect(() => validateTransactionHash("0x0000000000000000000000000000000000000000000000000000000000000001")).not.toThrow();
+        expect(() =>
+            validateTransactionHash("0x0000000000000000000000000000000000000000000000000000000000000001"),
+        ).not.toThrow();
         expect(() => validateTransactionHash("0x" + "aB".repeat(32))).not.toThrow();
     });
 

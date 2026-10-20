@@ -1,6 +1,13 @@
 // Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
 // Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
-import type { Authenticator, AutomationAuthenticator, MoveEvent, MoveFunctionId, MoveScriptBytecode, MoveTransactionAuthenticator } from "./move";
+import type {
+    Authenticator,
+    AutomationAuthenticator,
+    MoveEvent,
+    MoveFunctionId,
+    MoveScriptBytecode,
+    MoveTransactionAuthenticator,
+} from "./move";
 
 /**
  * The response for a transaction, which can be either pending or committed.
@@ -30,12 +37,10 @@ export type CommittedTransactionResponse =
     | AutomationRecordTransactionResponse
     | SettlementTransactionResponse;
 
-
 /**
  * The response for an auto transaction, which is a subset of a supra transaction response.
  */
 export type AutoTransactionResponse = PendingTransactionResponse | AutomationTransactionResponse;
-
 
 /**
  * The value of `txn_type` in a transaction response.
@@ -65,14 +70,17 @@ export enum TransactionStatus {
     // code that indicates that it may succeed in a future execution (e.g. sequence number too high).
     PendingAfterExecution = "PendingAfterExecution",
     // Transaction is accepted by RPC, pending for execution.
-    Pending = 'Pending',
+    Pending = "Pending",
 }
-
 
 /**
  * The payload for a transaction response, which can be an entry function, script, or multisig payload.
  */
-export type TransactionPayloadResponse = EntryFunctionPayloadResponse | ScriptPayloadResponse | MultisigPayloadResponse | AutomationRegistrationPayloadResponse;
+export type TransactionPayloadResponse =
+    | EntryFunctionPayloadResponse
+    | ScriptPayloadResponse
+    | MultisigPayloadResponse
+    | AutomationRegistrationPayloadResponse;
 
 /**
  * The payload for an entry function, containing the type of the entry and the arguments.
@@ -95,14 +103,13 @@ export interface EntryFunctionPayload {
  */
 export type EntryFunctionPayloadResponse = {
     type: "entry_function_payload";
-
 } & EntryFunctionPayload;
 
 /**
  * The payload for a script response, containing the type of the script.
  */
 export type ScriptPayloadResponse = {
-    type: 'script_payload';
+    type: "script_payload";
     code: MoveScriptBytecode;
     /**
      * Type arguments of the function
@@ -143,7 +150,6 @@ export interface AutomationRegistrationPayloadResponse {
     V2?: AutomationRegistrationParamsV2;
 }
 
-
 /**
  * Automation registration payload for version 1
  */
@@ -161,15 +167,15 @@ export interface AutomationRegistrationParamsV1 {
  * Automation registration payload for version 2
  */
 export interface AutomationRegistrationParamsV2 {
-    automated_function: EntryFunctionPayload,
-    expiration_timestamp_secs: number,
-    max_gas_amount: number,
-    gas_price_cap: number,
-    automation_fee_cap: number,
+    automated_function: EntryFunctionPayload;
+    expiration_timestamp_secs: number;
+    max_gas_amount: number;
+    gas_price_cap: number;
+    automation_fee_cap: number;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    aux_data: any[],
-    task_type: "User" | "System",
-    task_priority?: number,
+    aux_data: any[];
+    task_type: "User" | "System";
+    task_priority?: number;
 }
 
 export interface BlockHeader {
@@ -243,7 +249,6 @@ export interface MoveTransactionOutput {
     };
 }
 
-
 /**
  * The output for a Dkg transaction, which contains the status of the transaction.
  */
@@ -271,7 +276,6 @@ export interface EvmTransactionOutput {
     Evm: Record<string, any>;
 }
 
-
 /**
  * The output for a transaction, which can be Move, Dkg, Oracle, Evm, or Empty.
  */
@@ -281,7 +285,6 @@ export type TransactionOutput =
     | OracleTransactionOutput
     | EvmTransactionOutput
     | EmptyTransactionOutput;
-
 
 /**
  * The fields of a user or automated transaction response.
@@ -320,7 +323,6 @@ export interface PendingTransactionResponse extends SupraTransactionResponse {
     output: null;
 }
 
-
 /**
  * The response for a user transaction, which is a subset of a supra transaction response.
  */
@@ -334,7 +336,7 @@ export interface UserTransactionResponse extends SupraTransactionResponse {
  */
 export interface AutomationTransactionResponse extends SupraTransactionResponse {
     txn_type: TransactionType.Auto;
-    authenticator: AutomationAuthenticator,
+    authenticator: AutomationAuthenticator;
     /**
      * The predicate that gated the task's execution. Absent or `null` when the task ran unconditionally.
      * Nodes before v12 do not send this field.
@@ -373,13 +375,12 @@ export interface BlockMetadataTransactionResponse extends SystemTransactionRespo
     txn_type: TransactionType.BlockMetadata;
 }
 
-
 /**
  * The response for an automation record transaction. It has no `header`, `payload` or `authenticator`.
  */
 export interface AutomationRecordTransactionResponse extends SystemTransactionResponseFields {
     txn_type: TransactionType.AutomationRecord;
-    data: AutomationRecordData
+    data: AutomationRecordData;
 }
 
 /**
@@ -387,13 +388,13 @@ export interface AutomationRecordTransactionResponse extends SystemTransactionRe
  */
 export interface AutomationRecordData {
     /// Record index. It is unique in scope of the block.
-    record_index: number,
+    record_index: number;
     /// Cycle index for which automation bookkeeping is done.
-    cycle_index: number,
+    cycle_index: number;
     /// Height of the block in scope of which the record is executed.
-    block_height: number,
+    block_height: number;
     /// Action performed in scope of the bookkeeping record.
-    action: AutomationRecordAction,
+    action: AutomationRecordAction;
 }
 
 /**
@@ -482,7 +483,6 @@ export interface SettlementCreditSummary {
  */
 export type TransactionQueryType = "user" | "auto" | "meta" | "record" | "settlement";
 
-
 /**
  * Options for configuring the behavior of the waitForTransaction() function.
  */
@@ -500,8 +500,3 @@ export type WaitForTransactionOptions = {
     /** Throw `SupraTransactionFailedError` for a final status other than `Success`. Default true. */
     checkSuccess?: boolean;
 };
-
-
-
-
-

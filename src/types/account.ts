@@ -5,7 +5,7 @@ import type { HexString } from "supra-l1-sdk-core";
 /**
  * The data associated with an account, including its sequence number.
  */
-export interface AccountData{
+export interface AccountData {
     /**
      * The sequence number of the account, a `u64`. The node sends it as a JSON number; the SDK converts it.
      */
@@ -14,8 +14,7 @@ export interface AccountData{
      * The authentication key of the account.
      */
     authentication_key: string;
-};
-
+}
 
 /**
  * The SUPRA balance of an account in quants, in total and by the form in which it is held. SUPRA is held as a legacy
@@ -30,12 +29,10 @@ export interface SupraBalance {
     fungibleAsset: bigint;
 }
 
-
 /**
  * The address of an account. which can be a string or a HexString
  */
 export type AccountAddressInput = string | HexString;
-
 
 /**
  * One page of a feed, with the cursor of the next page.
@@ -72,9 +69,9 @@ export interface PaginatedResponse<T> {
     /**
      * The items of this page. It can be empty when `cursor` is defined.
      */
-    response: T,
+    response: T;
     /**
      * The cursor of the next page, or `undefined` when there are no more results.
      */
-    cursor?: string | undefined
+    cursor?: string | undefined;
 }

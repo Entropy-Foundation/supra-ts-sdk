@@ -26,9 +26,7 @@ describe("DynamicTransactionSerializer - unsigned integers", () => {
     });
 
     it("serializes u32", () => {
-        expect(Array.from(ser(305419896, "u32"))).toEqual(
-            Array.from(core((s) => s.serializeU32(305419896))),
-        );
+        expect(Array.from(ser(305419896, "u32"))).toEqual(Array.from(core((s) => s.serializeU32(305419896))));
     });
 
     it("serializes small u64", () => {
@@ -91,9 +89,7 @@ describe("DynamicTransactionSerializer - validation", () => {
     });
 
     it("throws on argument/param count mismatch", () => {
-        expect(() => serializer.prepareTransactionArgs([1, 2] as never[], ["u8"])).toThrow(
-            /count mismatch/,
-        );
+        expect(() => serializer.prepareTransactionArgs([1, 2] as never[], ["u8"])).toThrow(/count mismatch/);
     });
 });
 
@@ -110,7 +106,9 @@ describe("DynamicTransactionSerializer - other types", () => {
 
     it("refuses other bool values", () => {
         for (const value of ["TRUE", "False", "1", "0", "", " true", 1, 0, null, {}]) {
-            expect(() => ser(value, "bool")).toThrow('Failed to serialize argument 0 (bool): Expected a boolean, "true"');
+            expect(() => ser(value, "bool")).toThrow(
+                'Failed to serialize argument 0 (bool): Expected a boolean, "true"',
+            );
         }
     });
 
@@ -237,10 +235,13 @@ describe("DynamicTransactionSerializer - numbers above Number.MAX_SAFE_INTEGER",
         }
     });
 
-    it.each(["u64", "u128", "u256"])("accepts Number.MAX_SAFE_INTEGER, and larger values as bigint or string, for %s", (type) => {
-        expect(() => ser(Number.MAX_SAFE_INTEGER, type)).not.toThrow();
-        expect(Array.from(ser(2n ** 53n + 1n, type))).toEqual(Array.from(ser((2n ** 53n + 1n).toString(), type)));
-    });
+    it.each(["u64", "u128", "u256"])(
+        "accepts Number.MAX_SAFE_INTEGER, and larger values as bigint or string, for %s",
+        (type) => {
+            expect(() => ser(Number.MAX_SAFE_INTEGER, type)).not.toThrow();
+            expect(Array.from(ser(2n ** 53n + 1n, type))).toEqual(Array.from(ser((2n ** 53n + 1n).toString(), type)));
+        },
+    );
 
     it("encodes 2^53 + 1 given as a bigint exactly", () => {
         expect(Array.from(ser(2n ** 53n + 1n, "u64"))).toEqual(Array.from(core((s) => s.serializeU64(2n ** 53n + 1n))));

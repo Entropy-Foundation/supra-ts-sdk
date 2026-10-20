@@ -20,70 +20,82 @@ export function getAccountLegacyCoins(resources: MoveResource[]) {
         }, {});
 }
 
-
-export async function getAccountInfoInternal(args: { accountAddress: AccountAddressInput }, config: NetworkConfig): Promise<AccountData> {
-
+export async function getAccountInfoInternal(
+    args: { accountAddress: AccountAddressInput },
+    config: NetworkConfig,
+): Promise<AccountData> {
     // The node reports the sequence number as a JSON number.
-    const { data } = await get<{ sequence_number: number | string; authentication_key: string }>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}`,
-    }, config);
+    const { data } = await get<{ sequence_number: number | string; authentication_key: string }>(
+        {
+            path: `/accounts/${standardizeAddress(args.accountAddress)}`,
+        },
+        config,
+    );
 
     return {
         sequence_number: BigInt(data.sequence_number),
         authentication_key: data.authentication_key,
     };
-
 }
-
 
 export async function getAccountModulesInternal(
     args: {
         accountAddress: AccountAddressInput;
         options?: { count?: number; start?: string | undefined };
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<PaginatedResponse<MoveModuleBytecode[]>> {
-    return getPage<MoveModuleBytecode[], MoveModuleBytecode>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/modules`,
-        query: {
-            count: args.options?.count,
-            start: args.options?.start
+    return getPage<MoveModuleBytecode[], MoveModuleBytecode>(
+        {
+            path: `/accounts/${standardizeAddress(args.accountAddress)}/modules`,
+            query: {
+                count: args.options?.count,
+                start: args.options?.start,
+            },
+            cursorParam: "start",
         },
-        cursorParam: "start",
-    }, config, (data) => data);
+        config,
+        (data) => data,
+    );
 }
-
 
 export async function getAccountModuleInternal(
     args: {
         accountAddress: AccountAddressInput;
         moduleName: string;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<MoveModuleBytecode> {
-    return (await get<MoveModuleBytecode>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/modules/${encodeURIComponent(args.moduleName)}`,
-    }, config)).data;
+    return (
+        await get<MoveModuleBytecode>(
+            {
+                path: `/accounts/${standardizeAddress(args.accountAddress)}/modules/${encodeURIComponent(args.moduleName)}`,
+            },
+            config,
+        )
+    ).data;
 }
-
 
 export async function getAccountResourcesInternal(
     args: {
         accountAddress: AccountAddressInput;
         options?: { count?: number; start?: string | undefined };
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<PaginatedResponse<MoveResource[]>> {
-    return getPage<MoveResource[], MoveResource>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/resources`,
-        query: {
-            count: args.options?.count,
-            start: args.options?.start
+    return getPage<MoveResource[], MoveResource>(
+        {
+            path: `/accounts/${standardizeAddress(args.accountAddress)}/resources`,
+            query: {
+                count: args.options?.count,
+                start: args.options?.start,
+            },
+            cursorParam: "start",
         },
-        cursorParam: "start",
-    }, config, (data) => data);
+        config,
+        (data) => data,
+    );
 }
-
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getAccountResourceInternal<T extends object = any>(
@@ -91,14 +103,17 @@ export async function getAccountResourceInternal<T extends object = any>(
         accountAddress: AccountAddressInput;
         resourceType: MoveStructId;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<MoveResource<T>> {
-    return (await get<MoveResource<T>>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/resources/${encodeURIComponent(args.resourceType)}`,
-    }, config)).data;
+    return (
+        await get<MoveResource<T>>(
+            {
+                path: `/accounts/${standardizeAddress(args.accountAddress)}/resources/${encodeURIComponent(args.resourceType)}`,
+            },
+            config,
+        )
+    ).data;
 }
-
-
 
 /**
  * The cursor of the next page of `/accounts/{address}/transactions`, which the node pages by sequence number
@@ -106,7 +121,10 @@ export async function getAccountResourceInternal<T extends object = any>(
  * the requested order, as a decimal string, or `undefined` when the page is empty or ends at sequence number 0
  * in descending order.
  */
-export function nextSequenceNumberCursor(items: readonly TransactionResponse[], ascending: boolean): string | undefined {
+export function nextSequenceNumberCursor(
+    items: readonly TransactionResponse[],
+    ascending: boolean,
+): string | undefined {
     const last = items[items.length - 1];
     if (last === undefined || !("header" in last)) {
         return undefined;
@@ -118,7 +136,6 @@ export function nextSequenceNumberCursor(items: readonly TransactionResponse[], 
     return sequenceNumber === 0n ? undefined : (sequenceNumber - 1n).toString();
 }
 
-
 export async function getAccountTransactionsInternal<T extends TransactionResponse = TransactionResponse>(
     args: {
         accountAddress: AccountAddressInput;
@@ -128,22 +145,24 @@ export async function getAccountTransactionsInternal<T extends TransactionRespon
             ascending?: boolean;
         };
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<PaginatedResponse<T[]>> {
     const start = args.options?.start;
     const ascending = args.options?.ascending ?? false;
-    const { data } = await get<T[]>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/transactions`,
-        query: {
-            count: args.options?.count,
-            start: start === undefined || start === "" ? undefined : String(start),
-            ascending: args.options?.ascending
-        }
-    }, config);
+    const { data } = await get<T[]>(
+        {
+            path: `/accounts/${standardizeAddress(args.accountAddress)}/transactions`,
+            query: {
+                count: args.options?.count,
+                start: start === undefined || start === "" ? undefined : String(start),
+                ascending: args.options?.ascending,
+            },
+        },
+        config,
+    );
 
     return { response: data, cursor: nextSequenceNumberCursor(data, ascending) };
 }
-
 
 export async function getAccountCoinTransactionsInternal<T extends TransactionResponse = TransactionResponse>(
     args: {
@@ -152,23 +171,26 @@ export async function getAccountCoinTransactionsInternal<T extends TransactionRe
             count?: number;
             start?: string | undefined;
             ascending?: boolean;
-            type?: TransactionQueryType
+            type?: TransactionQueryType;
         };
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<PaginatedResponse<T[]>> {
-    return getPage<T[], T>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/coin_transactions`,
-        query: {
-            count: args.options?.count,
-            start: args.options?.start,
-            ascending: args.options?.ascending,
-            type: args.options?.type
+    return getPage<T[], T>(
+        {
+            path: `/accounts/${standardizeAddress(args.accountAddress)}/coin_transactions`,
+            query: {
+                count: args.options?.count,
+                start: args.options?.start,
+                ascending: args.options?.ascending,
+                type: args.options?.type,
+            },
+            cursorParam: "start",
         },
-        cursorParam: "start",
-    }, config, (data) => data);
+        config,
+        (data) => data,
+    );
 }
-
 
 export async function getAccountAutoTransactionsInternal<T extends AutoTransactionResponse = AutoTransactionResponse>(
     args: {
@@ -180,33 +202,39 @@ export async function getAccountAutoTransactionsInternal<T extends AutoTransacti
             ascending?: boolean;
         };
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<PaginatedResponse<T[]>> {
-    return getPage<T[], T>({
-        path: `/accounts/${standardizeAddress(args.accountAddress)}/automated_transactions`,
-        query: {
-            count: args.options?.count,
-            block_height: args.options?.block_height,
-            cursor: args.options?.cursor,
-            ascending: args.options?.ascending
+    return getPage<T[], T>(
+        {
+            path: `/accounts/${standardizeAddress(args.accountAddress)}/automated_transactions`,
+            query: {
+                count: args.options?.count,
+                block_height: args.options?.block_height,
+                cursor: args.options?.cursor,
+                ascending: args.options?.ascending,
+            },
+            cursorParam: "cursor",
         },
-        cursorParam: "cursor",
-    }, config, (data) => data);
+        config,
+        (data) => data,
+    );
 }
-
 
 export async function getAccountCoinsCountInternal(
     args: {
         accountAddress: AccountAddressInput;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<number> {
     let cursor: string | undefined;
     let legacyTokensCount = 0;
     let hasSupraCoinStore = false;
 
     do {
-        const page = await getAccountResourcesInternal({ accountAddress: args.accountAddress, options: { start: cursor } }, config);
+        const page = await getAccountResourcesInternal(
+            { accountAddress: args.accountAddress, options: { start: cursor } },
+            config,
+        );
         const tokens = getAccountLegacyCoins(page.response);
         legacyTokensCount += Object.keys(tokens).length;
         hasSupraCoinStore ||= `0x1::coin::CoinStore<${SUPRA_COIN_TYPE}>` in tokens;
@@ -221,18 +249,19 @@ export async function getAccountCoinsCountInternal(
     return legacyTokensCount;
 }
 
-
 async function getAccountHasSupraFungibleStoreInternal(
     args: { accountAddress: AccountAddressInput },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<boolean> {
-    return await viewInternal<[boolean]>({
-        function: "0x1::primary_fungible_store::primary_store_exists",
-        functionArguments: [args.accountAddress.toString(), SUPRA_FUNGIBLE_ASSET_ADDRESS],
-        typeArguments: [OBJECT_CORE]
-    }, config).then(res => res[0]);
+    return await viewInternal<[boolean]>(
+        {
+            function: "0x1::primary_fungible_store::primary_store_exists",
+            functionArguments: [args.accountAddress.toString(), SUPRA_FUNGIBLE_ASSET_ADDRESS],
+            typeArguments: [OBJECT_CORE],
+        },
+        config,
+    ).then((res) => res[0]);
 }
-
 
 /**
  * Reads the SUPRA balance of an account in both forms. `0x1::coin::balance` returns the sum of the `CoinStore`
@@ -241,65 +270,68 @@ async function getAccountHasSupraFungibleStoreInternal(
  */
 export async function getAccountSupraBalanceInternal(
     args: { accountAddress: AccountAddressInput },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SupraBalance> {
     const [total, fungibleAsset] = await Promise.all([
         getAccountCoinBalanceInternal({ accountAddress: args.accountAddress, asset: SUPRA_COIN_TYPE }, config),
-        getAccountCoinBalanceInternal({ accountAddress: args.accountAddress, asset: SUPRA_FUNGIBLE_ASSET_ADDRESS }, config),
+        getAccountCoinBalanceInternal(
+            { accountAddress: args.accountAddress, asset: SUPRA_FUNGIBLE_ASSET_ADDRESS },
+            config,
+        ),
     ]);
     // The two reads can straddle a block; the coin part is never reported as negative.
     const coin = total > fungibleAsset ? total - fungibleAsset : BigInt(0);
     return { total, coin, fungibleAsset };
 }
 
-
 export async function getAccountCoinBalanceInternal(
     args: {
         accountAddress: AccountAddressInput;
         asset: MoveStructId | AccountAddressInput;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<bigint> {
-
     if (isMoveStruct(args.asset.toString())) {
-        return await viewInternal<[bigint]>({
-            function: "0x1::coin::balance",
-            functionArguments: [args.accountAddress.toString()],
-            typeArguments: [args.asset.toString()]
-        }, config).then(res => res[0]);
+        return await viewInternal<[bigint]>(
+            {
+                function: "0x1::coin::balance",
+                functionArguments: [args.accountAddress.toString()],
+                typeArguments: [args.asset.toString()],
+            },
+            config,
+        ).then((res) => res[0]);
     } else {
-        return await viewInternal<[bigint]>({
-            function: "0x1::primary_fungible_store::balance",
-            functionArguments: [args.accountAddress.toString(), args.asset.toString()],
-            typeArguments: [OBJECT_CORE]
-        }, config).then(res => res[0]);
+        return await viewInternal<[bigint]>(
+            {
+                function: "0x1::primary_fungible_store::balance",
+                functionArguments: [args.accountAddress.toString(), args.asset.toString()],
+                typeArguments: [OBJECT_CORE],
+            },
+            config,
+        ).then((res) => res[0]);
     }
-
 }
-
 
 /**
  * Whether the account exists. Only the node's answer for an absent account is `false`: HTTP 404 on v12 nodes, and
  * on v11 nodes HTTP 400 with a "Resource not found" message (a v11 node also answers 400 for its own faults). Any
  * other failure is thrown.
  */
-export async function isAccountExistsInternal(args: { accountAddress: AccountAddressInput }, config: NetworkConfig): Promise<boolean> {
-
+export async function isAccountExistsInternal(
+    args: { accountAddress: AccountAddressInput },
+    config: NetworkConfig,
+): Promise<boolean> {
     try {
-
         await getAccountInfoInternal({ accountAddress: args.accountAddress }, config);
 
         return true;
-
     } catch (error) {
-
         if (error instanceof SupraAPIError && isAbsentAccountAnswer(error)) {
             return false;
         }
 
         throw error;
     }
-
 }
 
 function isAbsentAccountAnswer(error: SupraAPIError): boolean {

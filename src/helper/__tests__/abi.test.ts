@@ -40,17 +40,17 @@ describe("getFunctionABI", () => {
     it("should throw when function not found", async () => {
         const module = createMockModule([createMockFunction("balance")]);
 
-        await expect(
-            getFunctionABI(module, "0x1", "coin", "transfer"),
-        ).rejects.toThrow("Function 'transfer' not found in module '0x1::coin'");
+        await expect(getFunctionABI(module, "0x1", "coin", "transfer")).rejects.toThrow(
+            "Function 'transfer' not found in module '0x1::coin'",
+        );
     });
 
     it("should include module info in error message", async () => {
         const module = createMockModule([]);
 
-        await expect(
-            getFunctionABI(module, "0xdead", "token", "mint"),
-        ).rejects.toThrow("Function 'mint' not found in module '0xdead::token'");
+        await expect(getFunctionABI(module, "0xdead", "token", "mint")).rejects.toThrow(
+            "Function 'mint' not found in module '0xdead::token'",
+        );
     });
 
     it("should work with multiple functions in module", async () => {

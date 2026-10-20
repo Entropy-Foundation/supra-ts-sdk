@@ -9,29 +9,25 @@ import { validatePaginationCount, validateStructId } from "../helper/validation"
  * @group Events
  */
 export class Events {
-
-
     /**
-    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-    */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
 
-
     /**
-    * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
-    * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
-    * @example
-    * ```typescript
-    * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
-    * const supra = new SupraClient({ network: Network.TESTNET });
-    * ```  
-    * @group Events
-    */
+     * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
+     * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     * ```
+     * @group Events
+     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Get the events of the given type.
@@ -48,20 +44,23 @@ export class Events {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const eventType = "0x1::coin::Transfer";
      *    const {response: events, cursor} = await supra.events.getEventsByType({ eventType: eventType, options: {} });
      *    console.log(events);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Events
      */
-    async getEventsByType(args: { eventType: MoveFunctionId, options: { startHeight?: number, endHeight?: number, limit?: number, start?: string | undefined } }): Promise<PaginatedResponse<Event[]>> {
+    async getEventsByType(args: {
+        eventType: MoveFunctionId;
+        options: { startHeight?: number; endHeight?: number; limit?: number; start?: string | undefined };
+    }): Promise<PaginatedResponse<Event[]>> {
         validateStructId(args.eventType, "eventType");
         validatePaginationCount(args.options?.limit, "limit");
         return getEventsByTypeInternal(args, this.networkInformation);

@@ -4,18 +4,15 @@ import { viewInternal, viewRawInternal } from "../internal/methods";
 import type { MoveValue } from "../types/move";
 import { validateFunctionId } from "../helper/validation";
 
-
 /**
  * The Methods class provides general methods for interacting with the Supra network.
  * @group Methods
  */
 export class Methods {
-
     /**
-    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-    */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
-
 
     /**
      * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
@@ -23,7 +20,7 @@ export class Methods {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
      * ```
      * @group Methods
@@ -31,7 +28,6 @@ export class Methods {
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Queries a Move view function. The arguments are encoded and the results converted to TypeScript values by the
@@ -47,9 +43,9 @@ export class Methods {
      * @example
      * ```typescript
      * import { Network, SupraClient, TypeTagParser } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const supraCoin = new TypeTagParser("0x1::supra_coin::SupraCoin").parseTypeTag();
@@ -60,7 +56,7 @@ export class Methods {
      *    });
      *    console.log("Account supra balance:", accountSupraBalance[0]);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Methods
@@ -69,7 +65,6 @@ export class Methods {
         validateFunctionId(args.function, "function");
         return viewInternal(args, this.networkInformation);
     }
-
 
     /**
      * Queries a Move view function without type conversion or parsing: the arguments are sent as given and the
@@ -82,9 +77,9 @@ export class Methods {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const accountAddress = "0x1";
      *    const accountSupraBalance = await supra.methods.viewRaw({
@@ -94,7 +89,7 @@ export class Methods {
      *    });
      *    console.log("Account supra balance:", accountSupraBalance[0]);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Methods

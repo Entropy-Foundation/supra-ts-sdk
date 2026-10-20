@@ -1,9 +1,16 @@
 import { BCS, type HexString, type SupraAccount, type TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
-import { submitMultiAgentTransactionInternal, submitSerializedRawTransactionAndSignatureInternal, submitSerializedRawTransactionInternal, submitSponsorTransactionInternal } from "../../internal/transactionManager/txnSubmit";
+import type {
+    EnableTransactionWaitAndSimulationArgs,
+    SubmitTransactionResponse,
+} from "../../types/transactionManager/transactionSubmit";
+import {
+    submitMultiAgentTransactionInternal,
+    submitSerializedRawTransactionAndSignatureInternal,
+    submitSerializedRawTransactionInternal,
+    submitSponsorTransactionInternal,
+} from "../../internal/transactionManager/txnSubmit";
 import type { AccountAddressInput } from "../../types/account";
-
 
 /**
  * The Submit class provides methods for submitting transactions to the Supra network.
@@ -37,7 +44,6 @@ import type { AccountAddressInput } from "../../types/account";
  * @group Transaction
  */
 export class Submit {
-
     /**
      * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
      */
@@ -49,15 +55,14 @@ export class Submit {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * ```  
+     * ```
      * @group Transaction
      */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Signs a raw transaction with the sender's key and submits it. The client checks the chain ID of its node before
@@ -100,14 +105,15 @@ export class Submit {
      * ```
      * @group Transaction
      */
-    async submitRawTransaction(
-        args: {
-            senderAccount: SupraAccount,
-            rawTransaction: TxnBuilderTypes.RawTransaction,
-            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
-        return submitSerializedRawTransactionInternal({ ...args, serializedRawTransaction: BCS.bcsToBytes(args.rawTransaction) }, this.networkInformation);
+    async submitRawTransaction(args: {
+        senderAccount: SupraAccount;
+        rawTransaction: TxnBuilderTypes.RawTransaction;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+    }): Promise<SubmitTransactionResponse> {
+        return submitSerializedRawTransactionInternal(
+            { ...args, serializedRawTransaction: BCS.bcsToBytes(args.rawTransaction) },
+            this.networkInformation,
+        );
     }
 
     /**
@@ -148,24 +154,21 @@ export class Submit {
      *           enableWaitForTransaction: true
      *       }
      *   });
-     * 
+     *
      *   console.log("Transaction submitted:", txn);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Transaction
      */
-    async submitSerializedRawTransaction(
-        args: {
-            senderAccount: SupraAccount,
-            serializedRawTransaction: Uint8Array,
-            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async submitSerializedRawTransaction(args: {
+        senderAccount: SupraAccount;
+        serializedRawTransaction: Uint8Array;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+    }): Promise<SubmitTransactionResponse> {
         return submitSerializedRawTransactionInternal(args, this.networkInformation);
     }
-
 
     /**
      * Submits a serialized raw transaction with an ed25519 signature made elsewhere. No key is used and the chain ID
@@ -208,27 +211,23 @@ export class Submit {
      *           enableWaitForTransaction: true
      *       }
      *   });
-     * 
+     *
      *   console.log("Transaction submitted:", txn);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Transaction
-     * 
+     *
      */
-    async submitSerializedRawTransactionAndSignature(
-        args: {
-            senderPubkey: HexString,
-            signature: HexString,
-            serializedRawTransaction: Uint8Array,
-            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async submitSerializedRawTransactionAndSignature(args: {
+        senderPubkey: HexString;
+        signature: HexString;
+        serializedRawTransaction: Uint8Array;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+    }): Promise<SubmitTransactionResponse> {
         return submitSerializedRawTransactionAndSignatureInternal(args, this.networkInformation);
     }
-
-
 
     /**
      * Sends sponsor transaction. The authenticators are made with `supra.transaction.signTransaction` on a
@@ -287,31 +286,26 @@ export class Submit {
      *           enableWaitForTransaction: true
      *       }
      *   });
-     * 
+     *
      *   console.log("Transaction submitted:", txn);
      * }
-     * 
+     *
      * runExample().catch(console.error);
      * ```
      * @group Transaction
-     *      
+     *
      */
-    async submitSponsorTransaction(
-        args: {
-            feePayerAddress: AccountAddressInput,
-            secondarySignersAccountAddress: Array<string>,
-            rawTxn: TxnBuilderTypes.RawTransaction,
-            senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-            feePayerAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-            secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
-            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
-
+    async submitSponsorTransaction(args: {
+        feePayerAddress: AccountAddressInput;
+        secondarySignersAccountAddress: Array<string>;
+        rawTxn: TxnBuilderTypes.RawTransaction;
+        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        feePayerAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+    }): Promise<SubmitTransactionResponse> {
         return submitSponsorTransactionInternal(args, this.networkInformation);
     }
-
-
 
     /**
      * Sends multi-agent transaction. The authenticators are made with `supra.transaction.signTransaction` on a
@@ -371,22 +365,20 @@ export class Submit {
      *             enableTransactionSimulation: true,
      *         }
      *     });
-     * 
+     *
      *     console.log("Transaction submitted:", txn);
      * }
      * runExample().catch(console.error);
      * ```
      * @group Transaction
      */
-    async submitMultiAgentTransaction(
-        args: {
-            secondarySignersAccountAddress: Array<string>,
-            rawTxn: TxnBuilderTypes.RawTransaction,
-            senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-            secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
-            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async submitMultiAgentTransaction(args: {
+        secondarySignersAccountAddress: Array<string>;
+        rawTxn: TxnBuilderTypes.RawTransaction;
+        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+    }): Promise<SubmitTransactionResponse> {
         return submitMultiAgentTransactionInternal(args, this.networkInformation);
     }
 }

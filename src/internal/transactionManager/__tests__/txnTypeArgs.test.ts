@@ -32,15 +32,11 @@ describe("type arguments in transaction payloads", () => {
 
     it("are written for a script, next to its u16, u32 and u256 arguments", () => {
         const payload = new TxnBuilderTypes.TransactionPayloadScript(
-            new TxnBuilderTypes.Script(
-                new Uint8Array([1]),
-                tags,
-                [
-                    new TxnBuilderTypes.TransactionArgumentU16(65535),
-                    new TxnBuilderTypes.TransactionArgumentU32(4294967295),
-                    new TxnBuilderTypes.TransactionArgumentU256(1n),
-                ],
-            ),
+            new TxnBuilderTypes.Script(new Uint8Array([1]), tags, [
+                new TxnBuilderTypes.TransactionArgumentU16(65535),
+                new TxnBuilderTypes.TransactionArgumentU32(4294967295),
+                new TxnBuilderTypes.TransactionArgumentU256(1n),
+            ]),
         );
         expect(getTransactionPayloadJSONInternal(payload)).toEqual({
             Script: {

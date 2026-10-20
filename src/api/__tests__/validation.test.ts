@@ -147,9 +147,9 @@ describe("Events validation", () => {
     const events = new Events(config);
 
     it("rejects a bad eventType", async () => {
-        await expect(
-            events.getEventsByType({ eventType: "bad" as never, options: {} }),
-        ).rejects.toThrow("Invalid eventType");
+        await expect(events.getEventsByType({ eventType: "bad" as never, options: {} })).rejects.toThrow(
+            "Invalid eventType",
+        );
         expect(getEventsByTypeInternal).not.toHaveBeenCalled();
     });
 

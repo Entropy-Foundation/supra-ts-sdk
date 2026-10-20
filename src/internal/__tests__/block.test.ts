@@ -1,4 +1,9 @@
-import { getLatestBlockInternal, getBlockByHeightInternal, getBlockByHashInternal, getTransactionsByBlockHashInternal } from "../block";
+import {
+    getLatestBlockInternal,
+    getBlockByHeightInternal,
+    getBlockByHashInternal,
+    getTransactionsByBlockHashInternal,
+} from "../block";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 
 jest.mock("../../client/get", () => ({
@@ -67,10 +72,7 @@ describe("internal/block", () => {
         it("should call get with correct path", async () => {
             mockGet.mockResolvedValue({ data: mockBlockHeader });
             await getBlockByHashInternal({ blockHash: "0xabc" }, testConfig);
-            expect(mockGet).toHaveBeenCalledWith(
-                { path: "/block/0xabc" },
-                testConfig,
-            );
+            expect(mockGet).toHaveBeenCalledWith({ path: "/block/0xabc" }, testConfig);
         });
     });
 

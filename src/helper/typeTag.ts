@@ -37,7 +37,9 @@ function addressToString(address: TxnBuilderTypes.AccountAddress): string {
     const bytes = address.address;
     const last = bytes[bytes.length - 1] ?? 0;
     const isSpecial = bytes.slice(0, -1).every((byte) => byte === 0) && last < 0x10;
-    return isSpecial ? `0x${last.toString(16)}` : `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    return isSpecial
+        ? `0x${last.toString(16)}`
+        : `0x${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 /**
