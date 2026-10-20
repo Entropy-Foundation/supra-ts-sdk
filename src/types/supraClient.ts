@@ -6,7 +6,7 @@ import type { Network } from "../utils/apiEndpoints";
  */
 export type SupraConfig =
     {
-        network: Network.MAINNET | Network.TESTNET;
+        network: Network.MAINNET | Network.TESTNET | Network.DEVNET;
         maxGas?: bigint;
         minGasUnitPrice?: bigint;
     }

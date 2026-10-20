@@ -12,7 +12,7 @@
 
 It provides strongly-typed helpers for:
 
-- Connecting to Supra nodes (Mainnet / Testnet)
+- Connecting to Supra nodes (Mainnet / Testnet / Devnet)
 - Reading account balances & resources
 - Submitting transactions
 - Calling view / entry functions on Move modules
@@ -25,7 +25,7 @@ It provides strongly-typed helpers for:
 - Native Move function calling (entry & view)
 - Clean builder-style transaction creation
 - Automatic BCS serialization / deserialization
-- Built-in support for Supra Mainnet & Testnet
+- Built-in support for Supra Mainnet, Testnet & Devnet
 - Minimal dependencies
 
 ## 📦 Installation
@@ -55,6 +55,7 @@ import { SupraClient, Network } from 'supra-ts-sdk';
 (async () => {
   const supra = new SupraClient({ network: Network.TESTNET });
   console.log("Connected to Supra Testnet (Chain ID 6)");
+  // Devnet: new SupraClient({ network: Network.DEVNET }) (Chain ID 50)
 })();
 ```
 

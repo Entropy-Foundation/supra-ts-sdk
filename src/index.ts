@@ -33,6 +33,7 @@ export * from "./types/transactionManager/transactionSubmit";
 
 // errors
 export * from "./errors/apiError";
+export * from "./errors/faucetError";
 export * from "./errors/moveVmErrors";
 
 //function 
