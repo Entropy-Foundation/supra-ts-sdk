@@ -24,6 +24,11 @@ export interface NetworkConfig {
     /** Longest wait for a transaction's final status, in milliseconds, when the call sets none. */
     waitTimeoutMs?: number,
     /**
+     * Seconds from the estimated chain time to the expiration time of a transaction built without `txExpiryTime`;
+     * default `DEFAULT_TX_EXPIRATION_DURATION`.
+     */
+    txExpirySecs?: number,
+    /**
      * `false` signs with `chainId` without reading the node's chain ID. Absent or `true`: the node's chain ID is read
      * before the first signature and every signature checks `chainId` and the transaction's chain ID against it.
      */

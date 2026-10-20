@@ -1,17 +1,14 @@
 import { HexString, SupraAccount } from "supra-l1-sdk-core";
-import { SupraClient } from "../../../api/supraClient";
 import { SupraAPIError, SupraRateLimitError } from "../../../errors/apiError";
 import { SupraSimulationFailedError, SupraTransactionTimeoutError } from "../../../errors/transactionError";
-import type { SubmitTransactionResponse } from "../../../types/transactionManager/transactionSubmit";
 import { ABORT_AMOUNT, MockNode, type MockNodeOptions } from "./helpers/mockNode";
+import { ClientClock, newClient, transfer, within, type TransferOptions } from "./helpers/transfers";
 
 /**
  * Helper calls of one client from one account, against a node answered from memory (`MockNode`). The calls hold the
  * account's lock from taking a sequence number until the node answers the submission.
  */
 
-const RPC_URL = "http://node.test";
-const RECEIVER = "0x" + "ab".repeat(32);
 const originalFetch = global.fetch;
 let node: MockNode | undefined;
 
@@ -30,38 +27,6 @@ afterEach(() => {
     jest.restoreAllMocks();
 });
 
-function newClient(): SupraClient {
-    return new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
-}
-
-interface TransferOptions {
-    amount?: bigint;
-    maxGas?: bigint | undefined;
-    simulate?: boolean;
-    wait?: boolean;
-    waitTimeoutMs?: number;
-}
-
-function transfer(
-    supra: SupraClient,
-    sender: SupraAccount,
-    options: TransferOptions = {},
-): Promise<SubmitTransactionResponse> {
-    return supra.coin.transferSupraCoin({
-        senderAccount: sender,
-        receiverAccountAddress: RECEIVER,
-        amount: options.amount ?? 1_000n,
-        optionalTransactionArgs: {
-            ...(options.maxGas === undefined ? {} : { optionalTransactionPayloadArgs: { maxGas: options.maxGas } }),
-            enableTransactionWaitAndSimulationArgs: {
-                enableWaitForTransaction: options.wait ?? false,
-                enableTransactionSimulation: options.simulate ?? false,
-                ...(options.waitTimeoutMs === undefined ? {} : { waitTimeoutMs: options.waitTimeoutMs }),
-            },
-        },
-    });
-}
-
 /** Two `SupraAccount` objects for one key; signing with the second one throws. */
 function senderAndFailingSigner(): { sender: SupraAccount; failingSigner: SupraAccount } {
     const key = new Uint8Array(32).fill(7);
@@ -70,15 +35,6 @@ function senderAndFailingSigner(): { sender: SupraAccount; failingSigner: SupraA
         throw new Error("signing failed");
     });
     return { sender: new SupraAccount(key), failingSigner };
-}
-
-/** Rejects with "blocked" when `promise` has not settled within `ms` milliseconds. */
-function within<T>(promise: Promise<T>, ms = 2_000): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("blocked")), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 describe("concurrent transfers of one client from one account", () => {
@@ -241,64 +197,91 @@ describe("concurrent transfers of one client from one account", () => {
     });
 });
 
-describe("a transaction of this client that the node no longer holds", () => {
-    it.each(["404", "Invalid"] as const)(
-        "gives its number (read %s) to the next transfer while the transaction below it is pending",
-        async (as) => {
-            const mock = start();
-            const supra = newClient();
-            const sender = new SupraAccount();
+describe("a transaction of this client that can no longer commit", () => {
+    /** An expiration time 500 seconds after the node's latest block. */
+    const later = (mock: MockNode) => BigInt(mock.blockSeconds() + 500);
+
+    it("gives the number of a transaction that a read shows Invalid to the next transfer while the one below it is pending", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        await transfer(supra, sender);
+        mock.drop(6, "Invalid");
+        await expect(supra.getTransactionByHash({ transactionHash: mock.submissionHash(6) })).resolves.toMatchObject({
+            status: "Invalid",
+        });
+
+        await transfer(supra, sender);
+
+        expect(mock.pooled()).toEqual([5, 6]);
+        mock.tick();
+        expect(mock.chain).toBe(7);
+        expect(mock.pool.size).toBe(0);
+    });
+
+    it("keeps the number of a transaction that reads HTTP 404 until the chain's time reaches its expiration time", async () => {
+        const mock = start();
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender, { txExpiryTime: later(mock) });
+        await transfer(supra, sender);
+        // The node no longer holds 6, which has not expired.
+        mock.drop(6, "404");
+
+        await transfer(supra, sender, { txExpiryTime: later(mock) });
+        expect(mock.pooled()).toEqual([5, 7]);
+
+        clock.advance(mock, 61_000);
+        await transfer(supra, sender);
+
+        expect(mock.pooled()).toEqual([5, 6, 7]);
+        mock.tick();
+        expect(mock.chain).toBe(8);
+        expect(mock.submitted).toEqual([5, 6, 7, 6]);
+    });
+
+    it("in the middle of the pipeline (read Invalid) gives its number to the next transfer and keeps the pending ones", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        for (let index = 0; index < 3; index += 1) {
             await transfer(supra, sender);
-            await transfer(supra, sender);
-            mock.drop(6, as);
+        }
+        expect(mock.pooled()).toEqual([5, 6, 7]);
+        mock.drop(6, "Invalid");
+        await supra.getTransactionByHash({ transactionHash: mock.submissionHash(6) });
 
-            await transfer(supra, sender);
+        await transfer(supra, sender);
+        expect(mock.pooled()).toEqual([5, 6, 7]);
+        // The next number is 8: 7 is pending.
+        await transfer(supra, sender);
+        expect(mock.pooled()).toEqual([5, 6, 7, 8]);
 
-            expect(mock.pooled()).toEqual([5, 6]);
-            mock.tick();
-            expect(mock.chain).toBe(7);
-            expect(mock.pool.size).toBe(0);
-        },
-    );
+        mock.tick();
+        expect(mock.chain).toBe(9);
+        expect(mock.submitted).toEqual([5, 6, 7, 6, 8]);
+    });
 
-    it.each(["404", "Invalid"] as const)(
-        "in the middle of the pipeline (read %s) gives its number to the next transfer and keeps the pending ones",
-        async (as) => {
-            const mock = start();
-            const supra = newClient();
-            const sender = new SupraAccount();
-            for (let index = 0; index < 3; index += 1) {
-                await transfer(supra, sender);
-            }
-            expect(mock.pooled()).toEqual([5, 6, 7]);
-            mock.drop(6, as);
-
-            await transfer(supra, sender);
-            expect(mock.pooled()).toEqual([5, 6, 7]);
-            // The next number is 8: 7 is pending.
-            await transfer(supra, sender);
-            expect(mock.pooled()).toEqual([5, 6, 7, 8]);
-
-            mock.tick();
-            expect(mock.chain).toBe(9);
-            expect(mock.submitted).toEqual([5, 6, 7, 6, 8]);
-        },
-    );
-
-    it("with explicit max gas and the simulation before submission, gives its number to the next transfer", async () => {
+    it("with explicit max gas and the simulation before submission, signs the next transfer again with an expired number", async () => {
         const mock = start();
         const supra = newClient();
         const sender = new SupraAccount();
         const options = { maxGas: 5_000n, simulate: true };
-        for (let index = 0; index < 3; index += 1) {
-            await transfer(supra, sender, options);
-        }
-        mock.drop(6, "404");
-
+        await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });
         await transfer(supra, sender, options);
+        await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });
+        // The chain's time passes 6's expiration time; the client's clock does not move, so only the check before
+        // submission, which reads the latest block, finds 6 expired.
+        mock.advance(61_000);
+
+        await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });
         await transfer(supra, sender, options);
 
         expect(mock.submitted).toEqual([5, 6, 7, 6, 8]);
+        // The transfer that took 8 first was simulated at 8, then signed again with 6.
+        expect(mock.log.filter((line) => line.startsWith("SIMULATE"))).toContain("SIMULATE 8 (chain 5) -> PendingAfterExecution");
         mock.tick();
         expect(mock.chain).toBe(9);
     });

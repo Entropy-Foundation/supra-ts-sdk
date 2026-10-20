@@ -21,6 +21,7 @@ export interface SupraAPIErrorOptions {
  * | {@link SupraGoneError} | HTTP 410 (the requested data has been pruned) |
  * | {@link SupraRateLimitError} | HTTP 429, with `retryAfterSeconds` |
  * | {@link SupraServiceUnavailableError} | HTTP 503 |
+ * | {@link SupraAccountQueueFullError} | HTTP 400 for a submission beyond the sequence numbers the node queues for the account |
  *
  * Errors that are not error statuses of the node derive from {@link SupraError}: {@link SupraTimeoutError} and
  * {@link SupraNetworkError} (a request that timed out or never reached the node), the faucet errors, and the
@@ -131,6 +132,32 @@ export class SupraServiceUnavailableError extends SupraAPIError {
     constructor(args: SupraAPIErrorOptions) {
         super(args);
         this.name = "SupraServiceUnavailableError";
+    }
+}
+
+/**
+ * SupraAccountQueueFullError is thrown when the node refuses a submission because its sequence number is beyond the
+ * numbers the node queues for the account ahead of the account's sequence number on the chain (25 by default,
+ * configured by the node's operator). The transactions with the numbers below it have not committed yet; the
+ * submission can be sent again after some of them have committed. `message` is the node's message; `sequenceNumber` is
+ * the refused number.
+ *
+ * The helpers that take the sequence number from the client's counter do not send the transaction again; the next
+ * call reads the account's sequence number from the chain before it takes a number.
+ * @group SupraAPIError
+ */
+export class SupraAccountQueueFullError extends SupraAPIError {
+    /** The sequence number of the refused transaction. */
+    readonly sequenceNumber: bigint;
+
+    constructor(args: SupraAPIErrorOptions & { sequenceNumber: bigint }) {
+        super(args);
+        this.name = "SupraAccountQueueFullError";
+        this.sequenceNumber = args.sequenceNumber;
+    }
+
+    override toJSON() {
+        return { ...super.toJSON(), sequenceNumber: this.sequenceNumber.toString() };
     }
 }
 

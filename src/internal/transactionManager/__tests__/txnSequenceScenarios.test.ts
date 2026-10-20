@@ -1,0 +1,461 @@
+import { HexString, SupraAccount } from "supra-l1-sdk-core";
+import { SupraAccountQueueFullError, SupraAPIError } from "../../../errors/apiError";
+import { SupraSimulationFailedError } from "../../../errors/transactionError";
+import { MockNode, u64Mark, type MockNodeOptions } from "./helpers/mockNode";
+import { ClientClock, newClient, transfer, type TransferOptions } from "./helpers/transfers";
+
+/**
+ * Helper calls of one client from one account against a node answered from memory (`MockNode`), with block timestamps
+ * and transactions that expire. The counter keeps the number of every transaction this client submitted until the
+ * chain's number passes it, a block read from the node reaches its expiration time, or a read shows it `Invalid`.
+ */
+
+const originalFetch = global.fetch;
+let node: MockNode | undefined;
+
+function start(options: MockNodeOptions = {}): MockNode {
+    node?.stop();
+    const started = new MockNode(options);
+    node = started;
+    global.fetch = started.fetch;
+    return started;
+}
+
+afterEach(() => {
+    node?.stop();
+    node = undefined;
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+});
+
+/** An expiration time 500 seconds after the node's latest block. */
+const later = (mock: MockNode) => BigInt(mock.blockSeconds() + 500);
+
+/** The sequence numbers of the accepted submissions, in order of arrival. */
+const acceptedNumbers = (mock: MockNode) =>
+    mock.submissions.filter((submission) => submission.status === 200).map((submission) => submission.sequenceNumber);
+
+/** The settled outcomes of `calls`, as "fulfilled" or the name of the error. */
+async function outcomes(calls: Array<Promise<unknown>>): Promise<string[]> {
+    return (await Promise.allSettled(calls)).map((result) =>
+        result.status === "fulfilled" ? "fulfilled" : (result.reason as Error).name,
+    );
+}
+
+describe("request counts", () => {
+    beforeEach(() => {
+        // The mock node does not verify signatures; a fixed signature keeps the runs fast.
+        jest.spyOn(SupraAccount.prototype, "signBuffer").mockReturnValue(new HexString("00".repeat(64)));
+    });
+
+    const cases: Array<[string, TransferOptions]> = [
+        ["the estimated max gas", {}],
+        ["the estimated max gas and the simulation before submission", { simulate: true }],
+        ["an explicit max gas", { maxGas: 5_000n }],
+        ["an explicit max gas and the simulation before submission", { maxGas: 5_000n, simulate: true }],
+    ];
+
+    it.each(cases)("of a first call, a call behind it and Promise.all of five, with %s", async (_name, options) => {
+        const first = start();
+        let supra = newClient();
+        let sender = new SupraAccount();
+        await transfer(supra, sender, options);
+        const single = { ...first.counts };
+        for (const kind of Object.keys(first.counts)) {
+            first.counts[kind] = 0;
+        }
+        await transfer(supra, sender, options);
+        const behind = Object.fromEntries(Object.entries(first.counts).filter(([, count]) => count > 0));
+
+        const all = start();
+        supra = newClient();
+        sender = new SupraAccount();
+        await Promise.all(Array.from({ length: 5 }, () => transfer(supra, sender, options)));
+
+        const estimate = options.maxGas === undefined;
+        const simulate = options.simulate === true;
+        // The first call reads the account and the latest block, the chain ID before signing, the balance and one
+        // simulation for an estimate, one simulation before submission, and the transaction after submission.
+        expect(single).toEqual({
+            account: 1,
+            block: 1,
+            chain_id: 1,
+            ...(estimate ? { view: 1 } : {}),
+            ...(estimate || simulate ? { simulate: (estimate ? 1 : 0) + (simulate ? 1 : 0) } : {}),
+            submit: 1,
+            transaction: 1,
+        });
+        // Behind a pending transaction, each simulation reports the number as too new and is made again at the
+        // chain's number after a read of the account and the latest block.
+        const checks = (estimate ? 1 : 0) + (simulate ? 1 : 0);
+        expect(behind).toEqual({
+            ...(checks > 0 ? { account: checks, block: checks } : {}),
+            ...(estimate ? { view: 1 } : {}),
+            ...(checks > 0 ? { simulate: 2 * checks } : {}),
+            submit: 1,
+            transaction: 1,
+        });
+        expect(all.counts).toEqual({
+            account: 1 + 4 * checks,
+            block: 1 + 4 * checks,
+            chain_id: 1,
+            ...(estimate ? { view: 5 } : {}),
+            ...(estimate || simulate ? { simulate: 5 * checks + 4 * checks } : {}),
+            submit: 5,
+            transaction: 5,
+        });
+        expect(all.pooled()).toEqual([5, 6, 7, 8, 9]);
+    });
+});
+
+describe("transfers whose transactions the node drops or never receives", () => {
+    it("submits the other two of three with an explicit max gas when the middle one has an invalid receiver", async () => {
+        const mock = start({ blockMs: 300 });
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const invalid = supra.coin.transferSupraCoin({
+            senderAccount: sender,
+            receiverAccountAddress: "0xzz",
+            amount: 1n,
+            optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n } },
+        });
+
+        const results = await outcomes([
+            transfer(supra, sender, { maxGas: 5_000n }),
+            invalid,
+            transfer(supra, sender, { maxGas: 5_000n }),
+        ]);
+
+        // The receiver is refused before the call takes a number.
+        expect(results).toEqual(["fulfilled", "Error", "fulfilled"]);
+        expect(mock.submitted).toEqual([5, 6]);
+    });
+
+    it("fills the number of an expired transaction while the one below it is pending", async () => {
+        const mock = start();
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender, { txExpiryTime: later(mock) });
+        await transfer(supra, sender);
+
+        clock.advance(mock, 61_000);
+        expect(mock.pooled()).toEqual([5]);
+        await transfer(supra, sender);
+
+        expect(mock.submitted).toEqual([5, 6, 6]);
+        mock.tick();
+        expect(mock.chain).toBe(7);
+    });
+
+    it("gives the number of a transaction that a read shows Invalid to one of two calls in flight", async () => {
+        const mock = start({ latencyMs: [30, 0] });
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        mock.drop(5, "Invalid");
+
+        const calls = Promise.all([transfer(supra, sender), transfer(supra, sender)]);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        const read = await supra.getTransactionByHash({ transactionHash: mock.submissionHash(5) });
+        await calls;
+
+        expect(read.status).toBe("Invalid");
+        // No number was submitted twice while it was pending.
+        expect(mock.submissions.every((submission) => submission.status === 200)).toBe(true);
+        expect(mock.pooled()).toEqual([5, 6]);
+        mock.tick();
+        expect(mock.chain).toBe(7);
+    });
+
+    it("waits behind an unknown outcome that the node never accepted, then fills its number once it has expired", async () => {
+        const mock = start();
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        mock.refuseNext.set(6, { status: 500, message: "Internal error" });
+
+        const results = await outcomes([
+            transfer(supra, sender, { txExpiryTime: later(mock) }),
+            transfer(supra, sender),
+            transfer(supra, sender, { txExpiryTime: later(mock) }),
+            transfer(supra, sender, { txExpiryTime: later(mock) }),
+        ]);
+        expect(results).toEqual(["fulfilled", "SupraAPIError", "fulfilled", "fulfilled"]);
+        // 7 and 8 wait in the node behind 6; nothing commits after 5.
+        mock.tick();
+        expect(mock.chain).toBe(6);
+        expect(mock.pooled()).toEqual([7, 8]);
+
+        // A call before 6 has expired takes 9.
+        await transfer(supra, sender, { txExpiryTime: later(mock) });
+        expect(mock.pooled()).toEqual([7, 8, 9]);
+
+        clock.advance(mock, 61_000);
+        await transfer(supra, sender);
+
+        expect(acceptedNumbers(mock)).toEqual([5, 7, 8, 9, 6]);
+        mock.tick();
+        expect(mock.chain).toBe(10);
+    });
+
+    it("with an explicit max gas, fills the number of an unknown outcome once the estimated chain time has passed it", async () => {
+        const mock = start();
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const gas = { maxGas: 5_000n };
+        mock.refuseNext.set(6, { status: 500, message: "Internal error" });
+        await transfer(supra, sender, { ...gas, txExpiryTime: later(mock) });
+        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraAPIError);
+        await transfer(supra, sender, { ...gas, txExpiryTime: later(mock) });
+        const reads = mock.counts["account"];
+
+        // There is no simulation: the counter reads the chain because the estimated chain time has passed 6's
+        // expiration time.
+        clock.advance(mock, 63_000);
+        await transfer(supra, sender, gas);
+
+        expect(mock.counts["account"]).toBe((reads ?? 0) + 1);
+        expect(acceptedNumbers(mock)).toEqual([5, 7, 6]);
+        mock.tick();
+        expect(mock.chain).toBe(8);
+    });
+
+    it("keeps the number of an unknown outcome that the node accepted", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        mock.refuseNext.set(6, { status: 500, message: "Internal error", pool: true });
+
+        const results = await outcomes(Array.from({ length: 4 }, () => transfer(supra, sender)));
+        expect(results).toEqual(["fulfilled", "SupraAPIError", "fulfilled", "fulfilled"]);
+        await transfer(supra, sender);
+        mock.tick();
+        await transfer(supra, sender);
+
+        expect(mock.submissions.filter((submission) => submission.status === 400)).toEqual([]);
+        expect(mock.submitted).toEqual([5, 6, 7, 8, 9, 10]);
+        mock.tick();
+        expect(mock.chain).toBe(11);
+    });
+
+    it("fills the number of a transaction a read shows Invalid while later ones of this client are pending", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        for (let index = 0; index < 3; index += 1) {
+            await transfer(supra, sender);
+        }
+        mock.drop(5, "Invalid");
+        await supra.getTransactionByHash({ transactionHash: mock.submissionHash(5) });
+
+        for (let index = 0; index < 3; index += 1) {
+            await transfer(supra, sender);
+        }
+
+        expect(mock.submitted).toEqual([5, 6, 7, 5, 8, 9]);
+        mock.tick();
+        expect(mock.chain).toBe(10);
+    });
+
+    it("submits thirty concurrent transfers while blocks commit them", async () => {
+        jest.spyOn(SupraAccount.prototype, "signBuffer").mockReturnValue(new HexString("00".repeat(64)));
+        const mock = start({ blockMs: 50, latencyMs: [1, 2] });
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        const results = await outcomes(Array.from({ length: 30 }, () => transfer(supra, sender)));
+
+        expect(results.every((result) => result === "fulfilled")).toBe(true);
+        expect([...mock.submitted].sort((a, b) => a - b)).toEqual(Array.from({ length: 30 }, (_, index) => 5 + index));
+    }, 20_000);
+
+    it("does not read transactions by hash in the checks before submission", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        for (let index = 0; index < 4; index += 1) {
+            await transfer(supra, sender, { simulate: true });
+        }
+
+        expect(mock.submitted).toEqual([5, 6, 7, 8]);
+        // The reads by hash are the read-backs after each submission.
+        expect(mock.counts["transaction"]).toBe(4);
+    });
+
+    it("pipelines behind its pending transactions when the RPC node answers 404 for them", async () => {
+        const mock = start();
+        mock.pendingVisible = false;
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        const results = await outcomes([transfer(supra, sender), transfer(supra, sender), transfer(supra, sender)]);
+
+        expect(results).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
+        expect(mock.pooled()).toEqual([5, 6, 7]);
+        mock.tick();
+        expect(mock.chain).toBe(8);
+    });
+
+    it("keeps the order of the calls when the first one finds an expired number", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender, { txExpiryTime: later(mock) });
+        await transfer(supra, sender);
+        // Only the chain's time moves: the first of the next calls finds 6 expired in its check.
+        mock.advance(61_000);
+
+        await Promise.all([
+            transfer(supra, sender, { amount: 1_001n }),
+            transfer(supra, sender, { amount: 1_002n }),
+            transfer(supra, sender, { amount: 1_003n }),
+        ]);
+
+        const accepted = mock.submissions.filter((submission) => submission.status === 200).slice(2);
+        expect(accepted.map((submission) => submission.sequenceNumber)).toEqual([6, 7, 8]);
+        expect(accepted.map((submission) => submission.body.includes(u64Mark(1_001n)))).toEqual([true, false, false]);
+        expect(accepted.map((submission) => submission.body.includes(u64Mark(1_002n)))).toEqual([false, true, false]);
+        expect(accepted.map((submission) => submission.body.includes(u64Mark(1_003n)))).toEqual([false, false, true]);
+        mock.tick();
+        expect(mock.chain).toBe(9);
+    });
+
+    it("throws SupraAccountQueueFullError beyond the node's queue, and submits once a transaction has committed", async () => {
+        jest.spyOn(SupraAccount.prototype, "signBuffer").mockReturnValue(new HexString("00".repeat(64)));
+        const mock = start({ latencyMs: [1, 1] });
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        const results = await outcomes(Array.from({ length: 27 }, () => transfer(supra, sender)));
+
+        expect(results.slice(0, 25).every((result) => result === "fulfilled")).toBe(true);
+        expect(results.slice(25)).toEqual(["SupraAccountQueueFullError", "SupraAccountQueueFullError"]);
+        // Not retried: 30 was refused twice, once per call.
+        expect(mock.submitted.filter((number) => number === 30)).toHaveLength(2);
+
+        // One commit: the queue holds 6 to 30.
+        const first = mock.pool.get(5);
+        expect(first).toBeDefined();
+        mock.pool.delete(5);
+        mock.committed.set((first as { hash: string }).hash, 5);
+        mock.chain = 6;
+        await transfer(supra, sender);
+
+        expect(acceptedNumbers(mock).at(-1)).toBe(30);
+    }, 20_000);
+
+    it("surfaces the queue-full refusal with the refused number", async () => {
+        const mock = start({ window: 2 });
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender, { maxGas: 5_000n });
+        await transfer(supra, sender, { maxGas: 5_000n });
+
+        const error = await transfer(supra, sender, { maxGas: 5_000n }).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(SupraAccountQueueFullError);
+        expect(error).toBeInstanceOf(SupraAPIError);
+        expect((error as SupraAccountQueueFullError).sequenceNumber).toBe(7n);
+        expect(mock.submitted).toEqual([5, 6, 7]);
+    });
+});
+
+describe("the expiration time of a transaction the helpers build", () => {
+    it.each([
+        ["ahead of", 45_000],
+        ["behind", -45_000],
+    ])("is 60 seconds of chain time with a client clock 45 s %s the chain's", async (_name, offsetMs) => {
+        const mock = start();
+        const clock = new ClientClock(offsetMs);
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        await transfer(supra, sender);
+        const expiration = mock.submissions[0]?.expiration ?? 0;
+        expect(expiration - mock.blockSeconds()).toBeGreaterThanOrEqual(59);
+        expect(expiration - mock.blockSeconds()).toBeLessThanOrEqual(61);
+
+        // 30 s later the transaction at 5 is still pending, and its number is not handed out again.
+        clock.advance(mock, 30_000);
+        await transfer(supra, sender);
+        expect(mock.submitted).toEqual([5, 6]);
+        const second = mock.submissions[1]?.expiration ?? 0;
+        expect(second - mock.blockSeconds()).toBeGreaterThanOrEqual(59);
+        expect(second - mock.blockSeconds()).toBeLessThanOrEqual(61);
+    });
+
+    it("follows SupraConfig.txExpirySecs", async () => {
+        const mock = start();
+        const supra = newClient({ txExpirySecs: 300 });
+
+        await transfer(supra, new SupraAccount());
+
+        const expiration = mock.submissions[0]?.expiration ?? 0;
+        expect(expiration - mock.blockSeconds()).toBeGreaterThanOrEqual(299);
+        expect(expiration - mock.blockSeconds()).toBeLessThanOrEqual(301);
+    });
+
+    it("keeps every record while the chain produces no blocks", async () => {
+        const mock = start();
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        await transfer(supra, sender);
+        mock.stallBlocks();
+
+        clock.advance(mock, 120_000);
+        await transfer(supra, sender);
+        await transfer(supra, sender, { maxGas: 5_000n });
+
+        // The latest block is older than the expiration times of 5 and 6, which can still commit.
+        expect(mock.submitted).toEqual([5, 6, 7, 8]);
+        expect(mock.pooled()).toEqual([5, 6, 7, 8]);
+    });
+
+    it("throws the error of a failed account read in the check, before submission and in the estimate alike", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender, { maxGas: 5_000n });
+
+        mock.failAccountReads = 1;
+        const presubmit = await transfer(supra, sender, { maxGas: 5_000n, simulate: true }).catch((e: unknown) => e);
+        mock.failAccountReads = 1;
+        const estimate = await transfer(supra, sender).catch((e: unknown) => e);
+
+        expect((presubmit as SupraAPIError).status).toBe(503);
+        expect((estimate as SupraAPIError).status).toBe(503);
+        expect(mock.submitted).toEqual([5]);
+        // The number was not used: the next call takes it.
+        await transfer(supra, sender);
+        expect(mock.submitted).toEqual([5, 6]);
+    });
+
+    it("pipelines when the read of the latest block fails in the check", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+
+        mock.failBlockReads = 2;
+        await transfer(supra, sender, { simulate: true });
+
+        expect(mock.submitted).toEqual([5, 6]);
+    });
+
+    it("throws the estimate's simulation failure at the chain's number and submits nothing", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+
+        const error = await transfer(supra, sender, { amount: 0x0102030405n }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(SupraSimulationFailedError);
+        expect(mock.submitted).toEqual([5]);
+    });
+});

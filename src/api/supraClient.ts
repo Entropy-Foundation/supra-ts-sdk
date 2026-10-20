@@ -19,6 +19,7 @@ import { DEFAULT_GAS_PRICE } from "../utils/constants";
 import { validateMaxGasEstimateMultiplier } from "../internal/transactionManager/maxGas";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
 import { validateRpcUrl } from "../client/url";
+import { validateTxExpirySecs } from "../internal/transactionManager/txnBuild";
 import { validateWaitTimeoutMs } from "../internal/transaction";
 import { resetSequenceNumberInternal } from "../internal/sequenceNumber";
 import type { AccountAddressInput } from "../types/account";
@@ -179,6 +180,11 @@ export class SupraClient {
             this.networkInformation.waitTimeoutMs = validateWaitTimeoutMs(config.waitTimeoutMs, "waitTimeoutMs");
         }
 
+        // Optional expiry window of the transactions built without `txExpiryTime`
+        if (config.txExpirySecs !== undefined) {
+            this.networkInformation.txExpirySecs = validateTxExpirySecs(config.txExpirySecs);
+        }
+
         // Optional opt-out of the chain ID check
         if (config.verifyChainId !== undefined) {
             if (typeof config.verifyChainId !== "boolean") {
@@ -311,14 +317,17 @@ export class SupraClient {
     }
 
     /**
-     * Forgets the client's sequence-number counter of `address`. The next transaction of that account that a helper
-     * builds reads the sequence number from the chain again.
+     * Forgets the client's sequence-number counter of `address` and its records of the account's transactions that
+     * the client submitted. The next transaction of that account that a helper builds reads the sequence number from
+     * the chain again.
      *
-     * The client keeps, per account, the next sequence number of the transactions that its helpers
-     * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
-     * `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI`) send. The counter is reset automatically when the node reports a stale
-     * number; call this method after the account has sent transactions by other means (another client or process, a
-     * wallet, or the builders of `transaction.build` with an explicit number).
+     * The client keeps, per account, the account's sequence number on the chain and a record of each transaction that
+     * it submitted and that can still commit, for the transactions that its helpers (`transferSupraCoin`,
+     * `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `migrateCoinToFungibleStore`,
+     * `publishPackage` and the entry functions of `Contract.fromABI`) send (see `SupraConfig`). The chain is read again
+     * automatically when the node reports a stale number; call this method after the account has sent transactions by
+     * other means (another client or process, a wallet, or the builders of `transaction.build`), or to hand out the
+     * number of a transaction that will not commit before its expiration time.
      * @param address - The account whose counter is reset.
      * @example
      * ```typescript

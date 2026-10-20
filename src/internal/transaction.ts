@@ -18,8 +18,9 @@ import sha3 from 'js-sha3';
 /**
  * Queries on-chain transactions by their transaction hash, returning both pending and committed transactions.
  *
- * The status read is reported to the client's sequence-number counter: `Invalid` for a transaction that the node
- * accepted from this client makes the counter of its sender read the chain again on the next use.
+ * The status read is reported to the client's sequence-number counter: `Invalid` for a transaction that this client
+ * submitted drops its record, so its number is handed out again; `Success` or `Fail` shows the sender's sequence number
+ * on the chain above its number.
  */
 export async function getTransactionByHashInternal(
     args: { transactionHash: string, type?: TransactionQueryType, exclude_uncommitted?: boolean },

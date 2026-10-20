@@ -3,14 +3,22 @@
  * counter. The pool holds accepted transactions by sequence number; `tick` commits the transactions from the chain's
  * number upwards while there is no gap, and runs every `blockMs` when that is set.
  *
- * - Account reads return the chain's number; balance views return 500 SUPRA; the chain ID is 255.
+ * The node has a clock of its own: it starts at `startMs` (default the real time) and runs with the real time, plus
+ * what `advance` adds. The latest block's timestamp is the node's clock, or the time at which `stallBlocks` stopped the
+ * blocks. A pooled transaction whose expiration time the latest block's timestamp has reached is dropped (it then reads
+ * HTTP 404), before every answer and before every commit.
+ *
+ * - Account reads return the chain's number; balance views return 500 SUPRA; the chain ID is 255; `GET /block`
+ *   returns the latest block's timestamp.
  * - A simulation reports `SEQUENCE_NUMBER_TOO_NEW` above the chain's number, `SEQUENCE_NUMBER_TOO_OLD` below it, a
  *   Move abort for a transfer of `ABORT_AMOUNT`, and otherwise `Success` with 1,000 gas units used.
- * - A submission is refused with 400 and the message of the node below the chain's number (`SEQUENCE_NUMBER_TOO_OLD`),
- *   for a number in the pool (`already pending`) and for a number at or beyond the window; otherwise it is accepted.
- *   `refuseNext` answers the next submissions of a number with the status and message given.
- * - A read by hash returns `Success` once committed, `Pending` while pooled, `Invalid` for a transaction dropped as
- *   discarded, and 404 for a dropped (expired) or unknown one.
+ * - A submission is refused with 400 and the messages of a v12 node: below the chain's number, for a number in the
+ *   pool (`already pending`), for a number at or beyond the window ahead of the chain's number (the account's queue is
+ *   full), and for an expiration time the latest block has reached. Otherwise it is accepted. `refuseNext` answers the
+ *   next submissions of a number with the status and message given, and pools the transaction when `pool` is set.
+ * - A read by hash returns `Success` once committed, `Pending` while pooled (HTTP 404 instead with
+ *   `pendingVisible: false`, as from an RPC node that did not receive the transaction), `Invalid` for a transaction
+ *   dropped as discarded, and 404 for an expired or unknown one.
  *
  * Each answer is delayed by `latencyMs[0]` plus a pseudo-random part of up to `latencyMs[1]` milliseconds, from a
  * generator seeded with `seed`.
@@ -19,6 +27,17 @@
 export interface Pooled {
     hash: string;
     sequenceNumber: number;
+    /** Seconds since the Unix epoch. */
+    expiration: number;
+}
+
+export interface Submission {
+    sequenceNumber: number;
+    expiration: number;
+    /** The request body. */
+    body: string;
+    /** The HTTP status of the answer. */
+    status: number;
 }
 
 export interface MockNodeOptions {
@@ -27,14 +46,27 @@ export interface MockNodeOptions {
     blockMs?: number;
     latencyMs?: [number, number];
     seed?: number;
-    /** The number of sequence numbers the node queues ahead of the chain's. */
+    /** The number of sequence numbers the node queues from the chain's number. */
     window?: number;
+    /** The node's clock at the start, in milliseconds since the Unix epoch. */
+    startMs?: number;
 }
 
 /** A transfer of this amount aborts in the simulation (`EINSUFFICIENT_BALANCE`). */
 export const ABORT_AMOUNT = 0x0102030405n;
 /** `ABORT_AMOUNT` as the bytes of a u64 argument in a transaction's JSON. */
 const ABORT_MARK = "[5,4,3,2,1,0,0,0]";
+
+/** The bytes of a u64 argument in a transaction's JSON, as `[b0,b1,...,b7]`. */
+export function u64Mark(value: bigint): string {
+    const bytes: number[] = [];
+    let rest = value;
+    for (let index = 0; index < 8; index += 1) {
+        bytes.push(Number(rest & 0xffn));
+        rest >>= 8n;
+    }
+    return `[${bytes.join(",")}]`;
+}
 
 type Answer = { status: number; body: unknown };
 
@@ -50,14 +82,28 @@ export class MockNode {
     /** The number of requests of each kind. */
     readonly counts: Record<string, number> = {};
     /** The answer to the next submissions of a sequence number: `times` of them (default 1). */
-    readonly refuseNext = new Map<number, { status: number; message: string; times?: number }>();
+    readonly refuseNext = new Map<number, { status: number; message: string; times?: number; pool?: boolean }>();
     /** The sequence numbers submitted, in order of arrival. */
     readonly submitted: number[] = [];
+    /** Every submission, in order of arrival. */
+    readonly submissions: Submission[] = [];
+    /** The hash of the last accepted submission of each sequence number. */
+    readonly accepted = new Map<number, string>();
+    /** Whether a pooled transaction reads `Pending` (else HTTP 404). */
+    pendingVisible = true;
+    /** The number of the next account reads answered with HTTP 503. */
+    failAccountReads = 0;
+    /** The number of the next block reads answered with HTTP 503. */
+    failBlockReads = 0;
 
     private hashes = 0;
     private seed: number;
     private readonly latencyMs: [number, number];
     private readonly window: number;
+    private readonly startMs: number;
+    private readonly startPerformance = performance.now();
+    private advancedMs = 0;
+    private stalledAtMs: number | undefined;
     private timer: ReturnType<typeof setInterval> | undefined;
 
     constructor(options: MockNodeOptions = {}) {
@@ -65,6 +111,7 @@ export class MockNode {
         this.latencyMs = options.latencyMs ?? [1, 2];
         this.seed = options.seed ?? 1;
         this.window = options.window ?? 25;
+        this.startMs = options.startMs ?? Date.now();
         if (options.blockMs !== undefined) {
             this.timer = setInterval(() => this.tick(), options.blockMs);
         }
@@ -78,8 +125,35 @@ export class MockNode {
         }
     }
 
+    /** The node's clock, in milliseconds since the Unix epoch. */
+    nowMs(): number {
+        return this.startMs + (performance.now() - this.startPerformance) + this.advancedMs;
+    }
+
+    /** The latest block's timestamp, in milliseconds since the Unix epoch. */
+    blockMs(): number {
+        return this.stalledAtMs ?? this.nowMs();
+    }
+
+    /** The latest block's timestamp, in whole seconds. */
+    blockSeconds(): number {
+        return Math.floor(this.blockMs() / 1000);
+    }
+
+    /** Moves the node's clock forward by `ms`, and drops the transactions that expire on the way. */
+    advance(ms: number): void {
+        this.advancedMs += ms;
+        this.expire();
+    }
+
+    /** The chain produces no more blocks: the latest block's timestamp stays where it is. */
+    stallBlocks(): void {
+        this.stalledAtMs = this.blockMs();
+    }
+
     /** Commits the pooled transactions from the chain's number upwards, up to the first number without one. */
     tick(): void {
+        this.expire();
         for (;;) {
             const pooled = this.pool.get(this.chain);
             if (pooled === undefined) {
@@ -105,19 +179,42 @@ export class MockNode {
 
     /** The sequence numbers in the pool, ascending. */
     pooled(): number[] {
+        this.expire();
         return [...this.pool.keys()].sort((a, b) => a - b);
     }
 
+    /** The hash of the last accepted submission with `sequenceNumber`; throws when there is none. */
+    submissionHash(sequenceNumber: number): string {
+        const hash = this.accepted.get(sequenceNumber);
+        if (hash === undefined) {
+            throw new Error(`no accepted submission with sequence number ${sequenceNumber}`);
+        }
+        return hash;
+    }
+
     readonly fetch = ((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        this.expire();
         const path = new URL(String(input)).pathname.replace(/^\/rpc\/v3/, "");
         const method = init?.method ?? "GET";
         if (method === "GET" && /^\/accounts\/0x[0-9a-f]+$/.test(path)) {
             this.count("account");
+            if (this.failAccountReads > 0) {
+                this.failAccountReads -= 1;
+                return this.respond({ status: 503, body: { message: "Service Unavailable" } });
+            }
             this.log.push(`ACCOUNT -> ${this.chain}`);
             return this.respond({
                 status: 200,
                 body: { sequence_number: this.chain, authentication_key: "0x" + "00".repeat(32) },
             });
+        }
+        if (method === "GET" && path === "/block") {
+            this.count("block");
+            if (this.failBlockReads > 0) {
+                this.failBlockReads -= 1;
+                return this.respond({ status: 503, body: { message: "Service Unavailable" } });
+            }
+            return this.respond({ status: 200, body: this.block() });
         }
         if (method === "POST" && path === "/view") {
             this.count("view");
@@ -129,18 +226,50 @@ export class MockNode {
         }
         if (method === "POST" && (path === "/transactions/simulate" || path === "/transactions/submit")) {
             const body = String(init?.body);
-            const raw = (JSON.parse(body) as { Move: { raw_txn: { sender: string; sequence_number: number } } }).Move
-                .raw_txn;
+            const raw = (
+                JSON.parse(body) as {
+                    Move: { raw_txn: { sender: string; sequence_number: number; expiration_timestamp_secs: number } };
+                }
+            ).Move.raw_txn;
             const sequenceNumber = Number(raw.sequence_number);
             return path === "/transactions/simulate"
                 ? this.simulate(sequenceNumber, body)
-                : this.submit(sequenceNumber, raw.sender);
+                : this.submit(sequenceNumber, Number(raw.expiration_timestamp_secs), body);
         }
         if (method === "GET" && path.startsWith("/transactions/")) {
             return this.read(path.slice("/transactions/".length));
         }
         return this.respond({ status: 500, body: { message: `unexpected ${method} ${path}` } });
     }) as typeof fetch;
+
+    private block(): unknown {
+        return {
+            header: {
+                author: "0x" + "00".repeat(32),
+                hash: "0x" + "00".repeat(32),
+                height: this.committed.size + 1,
+                parent: "0x" + "00".repeat(32),
+                timestamp: {
+                    microseconds_since_unix_epoch: Math.floor(this.blockMs()) * 1000,
+                    utc_date_time: new Date(this.blockMs()).toISOString(),
+                },
+                view: { epoch_id: { chain_id: 255, epoch: 1 }, round: 1 },
+            },
+            execution_statistics: null,
+        };
+    }
+
+    /** Drops the pooled transactions whose expiration time the latest block's timestamp has reached. */
+    private expire(): void {
+        const now = this.blockSeconds();
+        for (const [sequenceNumber, pooled] of [...this.pool]) {
+            if (pooled.expiration <= now) {
+                this.pool.delete(sequenceNumber);
+                this.dropped.set(pooled.hash, "404");
+                this.log.push(`EXPIRE ${sequenceNumber}`);
+            }
+        }
+    }
 
     private simulate(sequenceNumber: number, body: string): Promise<Response> {
         this.count("simulate");
@@ -163,7 +292,7 @@ export class MockNode {
         return this.respond(answer);
     }
 
-    private submit(sequenceNumber: number, sender: string): Promise<Response> {
+    private submit(sequenceNumber: number, expiration: number, body: string): Promise<Response> {
         this.count("submit");
         this.submitted.push(sequenceNumber);
         const refusal = this.refuseNext.get(sequenceNumber);
@@ -175,34 +304,41 @@ export class MockNode {
             } else {
                 this.refuseNext.delete(sequenceNumber);
             }
+            if (refusal.pool === true) {
+                this.accept(sequenceNumber, expiration);
+            }
             answer = { status: refusal.status, body: { message: refusal.message } };
         } else if (sequenceNumber < this.chain) {
-            answer = {
-                status: 400,
-                body: {
-                    message: `General err: MoveTransactionValidationFailed(${sender}, ${sequenceNumber}, SEQUENCE_NUMBER_TOO_OLD)`,
-                },
-            };
+            answer = refused(
+                `sequence number ${sequenceNumber} is below the account's next sequence number ${this.chain}`,
+            );
         } else if (this.pool.has(sequenceNumber)) {
-            answer = {
-                status: 400,
-                body: {
-                    message: `a transaction with sequence number ${sequenceNumber} is already pending for this account`,
-                },
-            };
+            answer = refused(
+                `a transaction with sequence number ${sequenceNumber} is already pending for this account at gas ` +
+                    "unit price 100000; a replacement must offer a higher gas unit price than that, and this one " +
+                    "offers 100000",
+            );
         } else if (sequenceNumber >= this.chain + this.window) {
-            answer = {
-                status: 400,
-                body: { message: `sequence number ${sequenceNumber} is above the highest this node can queue` },
-            };
+            answer = refused(
+                `sequence number ${sequenceNumber} is above ${this.chain + this.window - 1}, the highest sequence ` +
+                    "number this node can queue for the account",
+            );
+        } else if (expiration <= this.blockSeconds()) {
+            answer = refused(`the transaction expired at ${expiration}`);
         } else {
-            this.hashes += 1;
-            const hash = "0x" + this.hashes.toString(16).padStart(64, "0");
-            this.pool.set(sequenceNumber, { hash, sequenceNumber });
-            answer = { status: 200, body: hash };
+            answer = { status: 200, body: this.accept(sequenceNumber, expiration) };
         }
+        this.submissions.push({ sequenceNumber, expiration, body, status: answer.status });
         this.log.push(`SUBMIT ${sequenceNumber} (chain ${this.chain}) -> ${answer.status}`);
         return this.respond(answer);
+    }
+
+    private accept(sequenceNumber: number, expiration: number): string {
+        this.hashes += 1;
+        const hash = "0x" + this.hashes.toString(16).padStart(64, "0");
+        this.pool.set(sequenceNumber, { hash, sequenceNumber, expiration });
+        this.accepted.set(sequenceNumber, hash);
+        return hash;
     }
 
     private read(hash: string): Promise<Response> {
@@ -211,11 +347,11 @@ export class MockNode {
         if (this.committed.has(hash)) {
             answer = transaction(hash, "Success", "Executed successfully", 1_000);
         } else if ([...this.pool.values()].some((pooled) => pooled.hash === hash)) {
-            answer = transaction(hash, "Pending", "", 0);
+            answer = this.pendingVisible ? transaction(hash, "Pending", "", 0) : notFound();
         } else if (this.dropped.get(hash) === "Invalid") {
             answer = transaction(hash, "Invalid", "Status Code: SEQUENCE_NUMBER_TOO_OLD, Type Validation", 0);
         } else {
-            answer = { status: 404, body: { message: "Not Found" } };
+            answer = notFound();
         }
         this.log.push(`READ ${hash.slice(-4)} -> ${answer.status === 200 ? statusOf(answer) : answer.status}`);
         return this.respond(answer);
@@ -248,6 +384,14 @@ export class MockNode {
             ),
         );
     }
+}
+
+function refused(reason: string): Answer {
+    return { status: 400, body: { message: `Transaction validation failed: ${reason}` } };
+}
+
+function notFound(): Answer {
+    return { status: 404, body: { message: "Not Found" } };
 }
 
 function transaction(hash: string, status: string, vmStatus: string, gasUsed: number): Answer {

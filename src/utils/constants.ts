@@ -25,7 +25,17 @@ export const MIN_ESTIMATED_MAX_GAS_UNITS = BigInt(1_500);
 export const MAX_GAS_UNITS_PER_TRANSACTION = BigInt(2_000_000_000);
 /** Gas unit price, in quants, when neither the call nor the client sets one: the node's `txn.min_price_per_gas_unit`. */
 export const DEFAULT_GAS_PRICE = BigInt(100_000);
-export const DEFAULT_TX_EXPIRATION_DURATION = 300; // 5 Minutes
+/**
+ * Seconds from the client's estimate of the chain's time to the expiration time of a transaction built without
+ * `txExpiryTime`, when `SupraConfig.txExpirySecs` sets none. The estimate is the client's clock shifted by the
+ * difference between the timestamp of the latest block the client has read and the client's clock when it read it.
+ */
+export const DEFAULT_TX_EXPIRATION_DURATION = 60;
+/**
+ * The largest `SupraConfig.txExpirySecs`: nodes from v12 onwards refuse a transaction whose expiration time is more
+ * than 600 seconds after their clock.
+ */
+export const MAX_TX_EXPIRATION_DURATION = 600;
 export const MILLISECONDS_PER_SECOND = 1000;
 export const SUPRA_FRAMEWORK_ADDRESS =
     "0x0000000000000000000000000000000000000000000000000000000000000001";

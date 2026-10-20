@@ -1,16 +1,16 @@
 import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import { SupraSimulationFailedError, SupraTransactionFailedError } from "../../errors/transactionError";
 import { standardizeAddress } from "../../helper/account";
-import { simulateBehindPendingInternal } from "./behindPending";
-import { TransactionStatus, type WaitForTransactionOptions } from "../../types/transaction";
+import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
+import type { WaitForTransactionOptions } from "../../types/transaction";
 import {
     bindReservation,
     reservationOf,
     sequenceNumberTrackerOf,
-    settleRefusedSubmission,
+    settleFailedSubmissionInternal,
+    settleUnsubmittedSequenceNumberInternal,
     withSequenceNumberInternal,
-    type SequenceNumberReservation,
+    type ReservationBinding,
 } from "../sequenceNumber";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, OptionalTransactionArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
@@ -19,7 +19,7 @@ import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../..
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateTxnInternal } from "./txnSimulate";
-import { buildWithResolvedMaxGasInternal, getRawTxnJSONInternal, rawTxnObjectInternal, sendTxnPayloadInternal } from "./txnBuild";
+import { buildWithResolvedMaxGasInternal, getRawTxnJSONInternal, rawTxnObjectInternal, sendTxnPayloadInternal, withSequenceNumber } from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
 
@@ -35,44 +35,54 @@ export function validateSubmitOptions(options: EnableTransactionWaitAndSimulatio
 
 /**
  * Simulates a payload before its submission and throws the `SupraSimulationFailedError` of a status other than
- * `Success`.
+ * `Success`. Returns the payload to submit: `payload`, or the transaction signed again with a lower number.
  *
- * When the simulation reports `SEQUENCE_NUMBER_TOO_NEW`, the transaction is simulated with the sender's sequence number
- * on the chain if every number from the chain's up to the transaction's belongs to a transaction that the node accepted
- * from this client and that is still pending (`simulateBehindPendingInternal`); the
- * submission keeps its own number. Otherwise the `SEQUENCE_NUMBER_TOO_NEW` failure is thrown, which reports a stale
- * number; with `reservation`, the client's counter resumes at the lowest number that has no pending transaction of
- * this client. The simulation at the chain's number throws its own failures and request errors.
+ * When the simulation reports `SEQUENCE_NUMBER_TOO_NEW`, `resolveSequenceNumberTooNewInternal` reads the account and
+ * the latest block, as the max gas estimate does. When every number from the chain's up to the transaction's has a
+ * record of a submission of this client, the transaction is simulated with the chain's number and the submission keeps
+ * its own number. Otherwise, with `binding` (a number from the client's counter), the transaction is signed again with
+ * the lowest number without a record (`binding.resign`) and simulated again, at most twice; without `binding` the
+ * `SEQUENCE_NUMBER_TOO_NEW` failure is thrown. A failed read of the account is thrown. The simulation at the chain's
+ * number throws its own failures and request errors.
  */
 async function simulateBeforeSubmission(
     payload: SendTxnPayload,
-    reservation: SequenceNumberReservation | undefined,
+    binding: ReservationBinding | undefined,
     config: NetworkConfig,
-): Promise<void> {
-    try {
-        await simulateTxnInternal({ sendTxPayload: payload }, config);
-        return;
-    } catch (error) {
-        if (!(error instanceof SupraSimulationFailedError) || error.major_status !== "SEQUENCE_NUMBER_TOO_NEW") {
-            throw error;
-        }
-        const rawTxn = payload.Move.raw_txn;
-        let address: string;
+): Promise<SendTxnPayload> {
+    let current = payload;
+    for (let checks = 0; ; checks += 1) {
         try {
-            address = standardizeAddress(rawTxn.sender);
-        } catch {
-            throw error;
-        }
-        const outcome = await simulateBehindPendingInternal({
-            address,
-            sequenceNumber: BigInt(rawTxn.sequence_number),
-            reservation,
-            simulateAt: (chainSequenceNumber) => simulateTxnInternal({
-                sendTxPayload: { ...payload, Move: { ...payload.Move, raw_txn: { ...rawTxn, sequence_number: chainSequenceNumber } } },
-            }, config),
-        }, config);
-        if (outcome.kind !== "simulated") {
-            throw error;
+            await simulateTxnInternal({ sendTxPayload: current }, config);
+            return current;
+        } catch (error) {
+            if (!isSequenceNumberTooNew(error) || checks >= MAX_TOO_NEW_CHECKS) {
+                throw error;
+            }
+            const signed = current;
+            const rawTxn = signed.Move.raw_txn;
+            let address: string;
+            try {
+                address = standardizeAddress(rawTxn.sender);
+            } catch {
+                throw error;
+            }
+            const outcome = await resolveSequenceNumberTooNewInternal({
+                address,
+                sequenceNumber: BigInt(rawTxn.sequence_number),
+                reservation: binding?.reservation,
+                tooNew: error,
+                simulateAt: (chainSequenceNumber) => simulateTxnInternal({
+                    sendTxPayload: { ...signed, Move: { ...signed.Move, raw_txn: { ...rawTxn, sequence_number: chainSequenceNumber } } },
+                }, config),
+            }, config);
+            if (outcome.kind === "simulated") {
+                return current;
+            }
+            if (binding === undefined) {
+                throw error;
+            }
+            current = await binding.resign(outcome.sequenceNumber);
         }
     }
 }
@@ -89,59 +99,47 @@ export async function submitTxnInternal(
 
     // A sequence number taken from the client's counter is settled by the node's answer to the submission, which
     // releases the account's lock before the wait for the final status.
-    const reservation = reservationOf(args.sendTxJsonPayload);
+    const binding = reservationOf(args.sendTxJsonPayload);
+    const reservation = binding?.reservation;
+    const tracker = sequenceNumberTrackerOf(config);
 
+    let payload = args.sendTxJsonPayload;
+    // A failed simulation throws, so the transaction is not submitted.
+    if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
+        try {
+            payload = await simulateBeforeSubmission(payload, binding, config);
+        } catch (error) {
+            if (reservation !== undefined) {
+                settleUnsubmittedSequenceNumberInternal(reservation, error, config);
+            }
+            throw error;
+        }
+    }
+
+    const rawTxn = payload.Move.raw_txn;
     let txHash: string;
     try {
-        // A failed simulation throws, so the transaction is not submitted.
-        if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
-            await simulateBeforeSubmission(args.sendTxJsonPayload, reservation, config);
-        }
-
         txHash = await post<SendTxnPayload, string>({
             path: "/transactions/submit",
-            data: args.sendTxJsonPayload,
+            data: payload,
         }, config);
     } catch (error) {
-        if (reservation !== undefined) {
-            settleRefusedSubmission(reservation, error, config);
-        }
-        throw error;
+        throw settleFailedSubmissionInternal({ rawTxn, reservation }, error, config);
     }
-    // The record of the accepted number lets a later transaction of the sender be estimated behind this one.
-    const rawTxn = args.sendTxJsonPayload.Move.raw_txn;
-    const tracker = sequenceNumberTrackerOf(config);
-    tracker.recordAccepted(rawTxn.sender, rawTxn.sequence_number, txHash);
+    // The record keeps the number from the counter until the transaction has committed or can no longer commit.
+    tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, txHash);
     if (reservation !== undefined) {
-        tracker.accepted(reservation);
+        tracker.release(reservation);
     }
 
     // From here on the node has accepted the transaction: the errors of the wait carry `txHash`, and a failed read
-    // returns it.
+    // returns it. A read that returns `Invalid` drops the record (`getTransactionByHashInternal`).
     if ((options.enableWaitForTransaction ?? DEFAULT_WAIT_FOR_TX_COMPLETION) === true) {
         const waitOptions: WaitForTransactionOptions = { checkSuccess: options.checkSuccess ?? true };
         if (options.waitTimeoutMs !== undefined) {
             waitOptions.timeoutMs = options.waitTimeoutMs;
         }
-        // A discarded transaction does not use its sequence number, so the counter may be ahead of the chain. The
-        // outcome is `Invalid` whether the wait returns the transaction (`checkSuccess: false`) or throws.
-        const invalidated = () => {
-            if (reservation !== undefined) {
-                sequenceNumberTrackerOf(config).invalidate(reservation.address);
-            }
-        };
-        try {
-            const transaction = await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
-            if (transaction.status === TransactionStatus.Invalid) {
-                invalidated();
-            }
-            return transaction;
-        } catch (error) {
-            if (error instanceof SupraTransactionFailedError && error.status === TransactionStatus.Invalid) {
-                invalidated();
-            }
-            throw error;
-        }
+        return await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
     }
 
     try {
@@ -160,8 +158,10 @@ export async function submitTxnInternal(
  * (`withSequenceNumberInternal`). A number from the counter is taken under the account's lock, which is held while the
  * transaction is built, its max gas estimated, signed, simulated (with `enableTransactionSimulation`) and submitted,
  * and released when the node answers the submission or one of those steps throws. The max gas estimate simulates the
- * transaction with that number, and the submission uses it. When building, estimating or signing throws, the number
- * is handed out next, or the counter is read from the chain again when the error reports a stale number.
+ * transaction with that number, and the submission uses it, unless the estimate or the simulation before submission
+ * gave the reservation a lower number that has no submission of this client (the transaction is then built and signed
+ * again with it). When building, estimating or signing throws, the number is handed out next, or the chain is read
+ * before the next number when the error reports a stale number.
  */
 export async function buildAndSubmitEntryFunctionInternal(
     args: {
@@ -192,7 +192,12 @@ export async function buildAndSubmitEntryFunctionInternal(
             }, config);
             const sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
             if (reservation !== undefined) {
-                bindReservation(sendTxPayload, reservation);
+                bindReservation(sendTxPayload, reservation, (sequenceNumber) =>
+                    sendTxnPayloadInternal(
+                        { senderAccount: args.senderAccount, rawTxn: withSequenceNumber(rawTxn, sequenceNumber) },
+                        config,
+                    ),
+                );
             }
             return await submitTxnInternal({
                 sendTxJsonPayload: sendTxPayload,

@@ -3,7 +3,6 @@ import { SupraClient } from "../../../api/supraClient";
 import { SupraServiceUnavailableError } from "../../../errors/apiError";
 import { SupraSimulationFailedError } from "../../../errors/transactionError";
 import { TransactionStatus } from "../../../types/transaction";
-import { DEFAULT_MAX_GAS_UNITS } from "../../../utils/constants";
 import { isStaleSequenceNumberError } from "../../sequenceNumber";
 
 /**
@@ -203,8 +202,8 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         });
         expect(submissions[1]?.maxGas).toBe(3_000);
         expect(submissions[1]?.expiration).toBe(first.expiration);
-        // The estimate read transaction 3 to check that it is pending: one read besides the two read-backs.
-        expect(transactionReads.filter((hash) => hash === submittedHashes[0])).toHaveLength(2);
+        // The estimate relies on the record of transaction 3 and reads no transaction: the reads are the read-backs.
+        expect(transactionReads).toEqual(submittedHashes);
     });
 
     it("makes one simulation when the numbers are equal", async () => {
@@ -293,19 +292,21 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         expect(submissions.at(-1)).toMatchObject({ sequenceNumber: 4, maxGas: 6_000 });
     });
 
-    it("falls back to DEFAULT_MAX_GAS_UNITS when the chain's number is above the transaction's", async () => {
+    it("builds the transaction with the chain's number when the chain has passed the transaction's", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
         await transfer(supra, sender);
         simulations = [];
         submissions = [];
-        simulate = () => tooNew();
-        chainSequenceNumbers = [5];
+        // The counter hands out 4; until the estimate reads the account, the node's number is still 3. Another sender
+        // of the account then moved it to 5.
+        chainSequenceNumbers = [3, 5];
 
         await transfer(supra, sender);
 
-        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4]);
-        expect(submissions.at(-1)).toMatchObject({ sequenceNumber: 4, maxGas: Number(DEFAULT_MAX_GAS_UNITS) });
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 5]);
+        expect(submissions).toEqual([expect.objectContaining({ sequenceNumber: 5, maxGas: 3_000 })]);
+        expect(accountReads).toBe(2);
     });
 
     it("simulates with what the new balance pays for when an earlier transaction committed after the balance was read", async () => {
@@ -350,7 +351,7 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         expect(submissions).toHaveLength(0);
     });
 
-    it("falls back to DEFAULT_MAX_GAS_UNITS when the number is stale in both simulations", async () => {
+    it("throws the stale failure when the simulation at the chain's number is stale twice, after one retry", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
         await transfer(supra, sender);
@@ -358,30 +359,36 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         submissions = [];
         simulate = () => tooNew();
 
-        await transfer(supra, sender);
+        const error: unknown = await transfer(supra, sender).catch((caught: unknown) => caught);
 
-        expect(simulations).toHaveLength(3);
-        expect(submissions).toHaveLength(1);
-        expect(submissions[0]).toMatchObject({ sequenceNumber: 4, maxGas: Number(DEFAULT_MAX_GAS_UNITS) });
+        expect(error).toBeInstanceOf(SupraSimulationFailedError);
+        expect(isStaleSequenceNumberError(error)).toBe(true);
+        // Each run: the simulation at 4, then at the chain's number in two rounds. The helper runs the call twice.
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 3, 3, 4, 3, 3]);
+        expect(submissions).toHaveLength(0);
     });
 
-    it("falls back to DEFAULT_MAX_GAS_UNITS when the chain's number cannot be read", async () => {
+    it("throws the error of a failed read of the chain's number, submits nothing and hands the number out next", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
         await transfer(supra, sender);
         submissions = [];
         const read = global.fetch;
+        let failures = 1;
         global.fetch = jest.fn((input: string | URL | Request, init?: RequestInit) => {
             const path = new URL(String(input)).pathname;
-            if ((init?.method ?? "GET") === "GET" && /\/accounts\/0x[0-9a-f]+$/.test(path)) {
+            if ((init?.method ?? "GET") === "GET" && /\/accounts\/0x[0-9a-f]+$/.test(path) && failures > 0) {
+                failures -= 1;
                 return respond(json({ message: "unavailable" }, 503));
             }
             return (read as typeof fetch)(input, init);
         }) as typeof fetch;
 
+        await expect(transfer(supra, sender)).rejects.toBeInstanceOf(SupraServiceUnavailableError);
+        expect(submissions).toHaveLength(0);
         await transfer(supra, sender);
 
-        expect(submissions[0]).toMatchObject({ sequenceNumber: 4, maxGas: Number(DEFAULT_MAX_GAS_UNITS) });
+        expect(submissions).toEqual([expect.objectContaining({ sequenceNumber: 4, maxGas: 3_000 })]);
     });
 
     it("numbers concurrent transfers consecutively and estimates each behind the earlier ones", async () => {
@@ -425,27 +432,38 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         expect(accountReads).toBe(1);
     });
 
-    it.each([
-        ["Invalid", () => json(moveTxn(TransactionStatus.Invalid, "SEQUENCE_NUMBER_TOO_OLD", 0))],
-        ["HTTP 404", () => json({ message: "not found" }, 404)],
-    ])(
-        "sends the transfer again with the chain's number when the earlier transaction reads %s",
-        async (_name, answer) => {
-            const supra = newClient();
-            const sender = new SupraAccount();
-            await transfer(supra, sender);
-            simulations = [];
-            submissions = [];
-            // Transaction 3 was accepted and then discarded; the chain stays at 3.
-            readTransaction = (hash) =>
-                hash === submittedHashes[0] ? answer() : json(moveTxn(TransactionStatus.Pending, "", 0));
+    it("gives the number of an earlier transaction that a read shows Invalid to the next transfer", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        simulations = [];
+        submissions = [];
+        // Transaction 3 was accepted and then discarded; the chain stays at 3.
+        readTransaction = () => json(moveTxn(TransactionStatus.Invalid, "SEQUENCE_NUMBER_TOO_OLD", 0));
+        await supra.getTransactionByHash({ transactionHash: submittedHashes[0] as string });
+        readTransaction = () => json(moveTxn(TransactionStatus.Pending, "", 0));
 
-            await transfer(supra, sender);
+        await transfer(supra, sender);
 
-            expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 3]);
-            expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
-        },
-    );
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([3]);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
+    });
+
+    it("estimates behind an earlier transaction of this client that reads HTTP 404", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        simulations = [];
+        submissions = [];
+        // Another RPC node behind the same URL does not hold transaction 3.
+        readTransaction = () => json({ message: "not found" }, 404);
+        await expect(supra.getTransactionByHash({ transactionHash: submittedHashes[0] as string })).rejects.toThrow();
+
+        await transfer(supra, sender);
+
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 3]);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([4]);
+    });
 
     it("throws SEQUENCE_NUMBER_TOO_NEW for an explicit number with no pending transaction before it", async () => {
         const supra = newClient();
@@ -501,7 +519,7 @@ describe("a read of a transaction this client submitted", () => {
             (supra: SupraClient, hash: string) =>
                 supra.waitForTransaction({ transactionHash: hash, options: { checkSuccess: false, timeoutMs: 1_000 } }),
         ],
-    ])("makes the counter read the chain again when %s reads Invalid", async (_name, read) => {
+    ])("gives the transaction's number to the next transfer when %s reads Invalid", async (_name, read) => {
         const supra = newClient();
         const sender = new SupraAccount();
         await transfer(supra, sender);
@@ -512,7 +530,8 @@ describe("a read of a transaction this client submitted", () => {
 
         await transfer(supra, sender);
 
-        expect(accountReads).toBe(readsBefore + 1);
+        // Only the record of the discarded transaction is dropped; the chain is not read again.
+        expect(accountReads).toBe(readsBefore);
         expect(submissions.map((s) => s.sequenceNumber)).toEqual([3, 3]);
     });
 
@@ -568,21 +587,19 @@ describe("the simulation before a submission (enableTransactionSimulation)", () 
         }
     });
 
-    it("sends the transfer again with the chain's number when the earlier transaction was discarded", async () => {
+    it("signs the transfer again with the chain's number when the chain has passed it", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
         await simulatedTransfer(supra, sender, 5_000n);
         simulations = [];
         submissions = [];
-        readTransaction = (hash) =>
-            hash === submittedHashes[0]
-                ? json(moveTxn(TransactionStatus.Invalid, "SEQUENCE_NUMBER_TOO_OLD", 0))
-                : json(moveTxn(TransactionStatus.Pending, "", 0));
+        // The counter hands out 4; another sender of the account then moved the chain to 6.
+        chainSequenceNumbers = [3, 6];
 
         await simulatedTransfer(supra, sender, 5_000n);
 
-        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 3]);
-        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 6]);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([6]);
     });
 
     it("throws the failure of the simulation at the chain's number and submits nothing", async () => {

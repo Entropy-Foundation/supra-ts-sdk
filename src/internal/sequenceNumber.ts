@@ -1,11 +1,13 @@
 import { standardizeAddress } from "../helper/account";
-import { SupraAPIError } from "../errors/apiError";
+import { SupraAccountQueueFullError, SupraAPIError } from "../errors/apiError";
 import { SupraSimulationFailedError, SupraTransactionFailedError } from "../errors/transactionError";
 import type { AccountAddressInput } from "../types/account";
 import { TransactionStatus } from "../types/transaction";
-import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
+import type { RawTxnJSON, SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { getAccountInfoInternal } from "./account";
+import { getLatestBlockInternal } from "./block";
+import { ChainClock, chainClockOf } from "./chainTime";
 
 const MAX_U64 = 18_446_744_073_709_551_615n;
 
@@ -16,36 +18,66 @@ const STALE_SEQUENCE_NUMBER_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * A sequence number handed out by the counter. The reservation holds the lock of its account until it is settled
- * (`accepted`, `release`, `resynchronise` or `resume`); settling it a second time does nothing.
- */
-export interface SequenceNumberReservation {
-    readonly address: string;
-    readonly sequenceNumber: bigint;
-}
-
-/**
- * Messages of a refusal that carries no VM status and concerns the account's sequence number: a number outside the
- * window the node accepts (`sequence number 30 is above ...`), and a number that already has a pending transaction
- * (`Already scheduled digest=..., sequence_number=N` on v11.7.0; `a transaction with sequence number N is already
- * pending for this account` and `transaction ... is already pending` on v12).
+ * Messages of a refusal that carries no VM status and concerns the account's sequence number: a number below the
+ * account's (`sequence number 3 is below the account's next sequence number 7` on v12, `has sequence number 3 but the
+ * expected sequence number is 7` on v11.7.0), and a number that already has a pending transaction (`Already scheduled
+ * digest=..., sequence_number=N` on v11.7.0; `a transaction with sequence number N is already pending for this
+ * account` and `transaction ... is already pending` on v12).
  */
 const SEQUENCE_NUMBER_MESSAGE = /\bsequence[ _]number\b|\balready (?:pending|scheduled)\b/i;
 
 /**
- * The number of accepted transactions the tracker records per account. When a record is added beyond it, the record
- * with the lowest number is dropped.
+ * Messages of the nodes' refusal of a number beyond the numbers they queue for the account ahead of its sequence
+ * number on the chain: v12 names the highest number it queues (`sequence number 30 is above 25, the highest sequence
+ * number this node can queue for the account`); v11.7.0 names the account's next number (`has sequence number 30 but
+ * the expected sequence number is 5`), the message it also gives for a number below the account's.
  */
-export const MAX_ACCEPTED_RECORDS_PER_ACCOUNT = 256;
+const QUEUE_FULL_MESSAGE = /\bsequence number \d+ is above \d+, the highest sequence number this node can queue\b/i;
+const EXPECTED_SEQUENCE_NUMBER_MESSAGE = /\bhas sequence number (\d+) but the expected sequence number is (\d+)/i;
+
+/**
+ * The number of submissions the tracker records per account. When a record is added beyond it, the record with the
+ * lowest number is dropped.
+ */
+export const MAX_SUBMISSION_RECORDS_PER_ACCOUNT = 256;
+
+/**
+ * Seconds by which the estimated chain time passes the expiration time of a record before the next number is taken
+ * after a read of the chain. The estimate follows the timestamp of the latest block, which trails the time at which it
+ * is read by up to a block interval.
+ */
+const EXPIRED_RECORD_READ_DELAY_SECONDS = 2n;
+
+/**
+ * A sequence number handed out by the counter. The reservation holds the lock of its account until it is settled
+ * (`release` or `resynchronise`); settling it a second time does nothing.
+ */
+export interface SequenceNumberReservation {
+    readonly address: string;
+    /**
+     * The number the transaction is built with. `SequenceNumberTracker.move` changes it while the reservation holds the
+     * lock.
+     */
+    sequenceNumber: bigint;
+}
+
+/** A transaction of the account that this client submitted and that may still commit. */
+export interface SubmissionRecord {
+    /** The transaction's expiration time, in seconds since the Unix epoch. */
+    readonly expiration: bigint;
+    /** The transaction's hash, when the node returned it. */
+    readonly hash: string | undefined;
+}
 
 interface AccountState {
-    /** The next number to hand out, or `undefined` when it has to be read from the chain. */
-    next: bigint | undefined;
-    /**
-     * The hash of each transaction of the account that the node accepted from this client, by sequence number, for
-     * the numbers not yet known to be committed.
-     */
-    accepted: Map<bigint, string>;
+    /** The highest sequence number of the account read from the chain, or `undefined` before the first read. */
+    chain: bigint | undefined;
+    /** Whether the next number is taken after a read of the chain. */
+    readChain: boolean;
+    /** The estimated chain time, in seconds, when the chain was last read. */
+    estimatedAtRead: bigint | undefined;
+    /** The submissions of this client that may still commit, by sequence number. */
+    submissions: Map<bigint, SubmissionRecord>;
     /** The reservation that holds the account's lock, and the function that releases the lock. */
     holder: { reservation: SequenceNumberReservation; unlock: () => void } | undefined;
     /** Resolves when the call that asked for the lock last has released it. */
@@ -53,32 +85,36 @@ interface AccountState {
 }
 
 /**
- * The next sequence number of each account, kept per client, and a lock per account.
+ * The sequence numbers of each account, kept per client, and a lock per account.
  *
- * A helper takes a number from the counter (`reserve`) after it has acquired the account's lock, and holds the lock
- * while it builds, estimates, signs and submits the transaction. The reservation is settled, and the lock released,
- * when the node answers the submission: accepted (`accepted`: the number is used), refused (`release`: the number is
- * handed out next), stale or unknown (`resynchronise`: the counter is read from the chain on the next use). A
- * transaction that throws before its submission settles its reservation the same way. Only one reservation per
- * account is held at a time, so a number handed back is always the next number and the counter leaves no number
- * unused below the numbers of the transactions the node accepted from this client.
+ * The tracker records every transaction of an account that this client submitted and that the node accepted or may
+ * have accepted (the submission request failed without an answer), with its expiration time. A transaction that the
+ * node accepted either commits or can no longer commit once the chain's time (the timestamp of its latest block) has
+ * reached its expiration time. A record is dropped when the account's sequence number on the chain passes its number,
+ * when the timestamp of a block read from the node has reached its expiration time, or when a read of the transaction
+ * by hash returns `Invalid`; until then its number is not handed out. A refused submission is not recorded.
  *
- * The tracker also records the sequence number and hash of every transaction that the node accepted from this client
- * (`recordAccepted`), until the counter is invalidated or a read shows the number committed. The counter skips the
- * numbers it records, which have a pending transaction of this client.
+ * A helper takes a number (`reserve`) after it has acquired the account's lock, and holds the lock while it builds,
+ * estimates, signs and submits the transaction. The number handed out is the lowest number, at or above the account's
+ * sequence number on the chain, that has no record. The chain is read (the account and the latest block) on the first
+ * use of an account, after a refusal that reports a stale number or a full queue (`resynchronise`), and once the
+ * estimated chain time has passed the expiration time of a record by two seconds since the last read. A read of the
+ * chain drops the records it shows dead and keeps the others.
  *
- * Every address is standardized (`standardizeAddress`); `recordAccepted` standardizes its own.
+ * Every address is standardized (`standardizeAddress`); `record` standardizes its own.
  */
 export class SequenceNumberTracker {
     private readonly accounts = new Map<string, AccountState>();
 
+    constructor(private readonly clock: ChainClock = new ChainClock()) {}
+
     /**
      * Waits until no other reservation of `address` holds the account's lock, then hands out the next sequence number
-     * of `address` with the lock held. Callers acquire the lock in the order of their calls. The first use of an
-     * account, and the first use after `invalidate`, reads the number from the chain with `fetchChain`; when that read
-     * throws, the lock is released and the error is thrown.
+     * of `address` with the lock held. Callers acquire the lock in the order of their calls. When the chain has to be
+     * read first, `readChain` returns the account's sequence number on the chain; when it throws, the lock is released
+     * and the error is thrown.
      */
-    async reserve(address: string, fetchChain: () => Promise<bigint>): Promise<SequenceNumberReservation> {
+    async reserve(address: string, readChain: () => Promise<bigint>): Promise<SequenceNumberReservation> {
         const state = this.stateOf(address);
         const previous = state.tail;
         let unlock: () => void = () => undefined;
@@ -88,7 +124,7 @@ export class SequenceNumberTracker {
         await previous;
         let sequenceNumber: bigint;
         try {
-            sequenceNumber = await this.take(state, address, fetchChain);
+            sequenceNumber = await this.take(state, readChain);
         } catch (error) {
             unlock();
             throw error;
@@ -98,112 +134,119 @@ export class SequenceNumberTracker {
         return reservation;
     }
 
-    /** The node accepted the transaction of this reservation. The lock is released. */
-    accepted(reservation: SequenceNumberReservation): void {
+    /**
+     * Releases the lock of `reservation`. Its number stays taken when its submission was recorded (`record`); otherwise
+     * the next call can take it.
+     */
+    release(reservation: SequenceNumberReservation): void {
         this.settle(reservation, () => undefined);
     }
 
-    /** The node did not take the number of this reservation, so it is handed out next. The lock is released. */
-    release(reservation: SequenceNumberReservation): void {
-        this.settle(reservation, (state) => {
-            if (state.next === reservation.sequenceNumber + 1n) {
-                state.next = reservation.sequenceNumber;
-            }
-        });
-    }
-
     /**
-     * The number of this reservation is stale, or the node may have taken it: the counter of its account is
-     * invalidated. The lock is released.
+     * Releases the lock of `reservation`; the next number is taken after a read of the chain. For a number the node
+     * refused as stale, or a refusal because the account's queue on the node is full.
      */
     resynchronise(reservation: SequenceNumberReservation): void {
-        this.settle(reservation, () => this.invalidate(reservation.address));
-    }
-
-    /**
-     * The transaction of this reservation was not submitted because a number from `chainSequenceNumber` up to its own
-     * (exclusive) has no pending transaction of this client. `pending` holds the numbers in that range whose
-     * transactions of this client read `Pending` or `PendingAfterExecution`, with their hashes. The records of the
-     * other numbers in that range and below `chainSequenceNumber` are dropped, those in `pending` are kept, and the
-     * counter resumes at the lowest number from `chainSequenceNumber` that is not in `pending`. The lock is released.
-     */
-    resume(
-        reservation: SequenceNumberReservation,
-        chainSequenceNumber: bigint,
-        pending: ReadonlyMap<bigint, string>,
-    ): void {
         this.settle(reservation, (state) => {
-            for (const recorded of [...state.accepted.keys()]) {
-                if (recorded < chainSequenceNumber) {
-                    state.accepted.delete(recorded);
-                } else if (recorded < reservation.sequenceNumber && !pending.has(recorded)) {
-                    state.accepted.delete(recorded);
-                }
-            }
-            for (const [sequenceNumber, hash] of pending) {
-                this.record(state, sequenceNumber, hash);
-            }
-            let next = chainSequenceNumber;
-            while (pending.has(next)) {
-                next += 1n;
-            }
-            state.next = next;
+            state.readChain = true;
         });
     }
 
     /**
-     * Records that the node accepted the transaction `hash` of `address` with `sequenceNumber` from this client,
-     * whether or not its number came from the counter. Nothing is recorded when the address, the number or the hash
-     * cannot be read.
+     * Gives `reservation`, which holds the lock, the number `sequenceNumber` instead of its own. Its own number has no
+     * record, so the next call can take it. Does nothing for a reservation that does not hold the lock.
      */
-    recordAccepted(address: AccountAddressInput, sequenceNumber: bigint | number, hash: string): void {
+    move(reservation: SequenceNumberReservation, sequenceNumber: bigint): void {
+        if (this.accounts.get(reservation.address)?.holder?.reservation === reservation) {
+            reservation.sequenceNumber = sequenceNumber;
+        }
+    }
+
+    /**
+     * Records the transaction of `address` with `sequenceNumber` and `expiration` (seconds since the Unix epoch) that
+     * this client submitted and that the node accepted (with its `hash`) or may have accepted (without a hash), whether
+     * or not its number came from the counter. Nothing is recorded when the address, the number or the expiration time
+     * cannot be read; a hash that cannot be read is not kept.
+     */
+    record(
+        address: AccountAddressInput,
+        sequenceNumber: bigint | number,
+        expiration: bigint | number,
+        hash?: string | undefined,
+    ): void {
         let account: string;
-        let normalised: string;
         let number: bigint;
+        let expires: bigint;
         try {
             account = standardizeAddress(address);
-            normalised = standardizeAddress(hash);
             number = BigInt(sequenceNumber);
+            expires = BigInt(expiration);
         } catch {
             return;
         }
-        this.record(this.stateOf(account), number, normalised);
-    }
-
-    /**
-     * The hashes of the transactions of `address` that the node accepted from this client, by sequence number, for the
-     * recorded numbers from `from` up to `to` (exclusive).
-     */
-    acceptedBetween(address: string, from: bigint, to: bigint): Map<bigint, string> {
-        const between = new Map<bigint, string>();
-        for (const [sequenceNumber, hash] of this.accounts.get(address)?.accepted ?? []) {
-            if (sequenceNumber >= from && sequenceNumber < to) {
-                between.set(sequenceNumber, hash);
-            }
+        let normalised: string | undefined;
+        try {
+            normalised = hash === undefined ? undefined : standardizeAddress(hash);
+        } catch {
+            normalised = undefined;
         }
-        return between;
+        const { submissions } = this.stateOf(account);
+        submissions.set(number, { expiration: expires, hash: normalised });
+        if (submissions.size > MAX_SUBMISSION_RECORDS_PER_ACCOUNT) {
+            submissions.delete(minimum(submissions.keys()) as bigint);
+        }
+    }
+
+    /** The records of `address` that the chain read so far does not show dead, by sequence number. */
+    recorded(address: string): ReadonlyMap<bigint, SubmissionRecord> {
+        const state = this.accounts.get(address);
+        if (state === undefined) {
+            return new Map();
+        }
+        this.prune(state);
+        return new Map(state.submissions);
     }
 
     /**
-     * The account's sequence number on the chain is at least `chainSequenceNumber`: the transactions recorded with a
-     * lower number have committed, and their records are dropped.
+     * The account's sequence number on the chain is at least `chainSequenceNumber`: the records with a lower number are
+     * dropped.
      */
     observeChainSequenceNumber(address: string, chainSequenceNumber: bigint): void {
-        const accepted = this.accounts.get(address)?.accepted;
-        if (accepted === undefined) {
-            return;
+        const state = this.stateOf(address);
+        if (state.chain === undefined || chainSequenceNumber > state.chain) {
+            state.chain = chainSequenceNumber;
         }
-        for (const recorded of [...accepted.keys()]) {
-            if (recorded < chainSequenceNumber) {
-                accepted.delete(recorded);
-            }
-        }
+        this.prune(state);
     }
 
     /**
-     * A read of the transaction `hash` returned `status`. For a transaction recorded as accepted: `Invalid` (the
-     * transaction was discarded and did not use its number) invalidates the counter of its account; `Success` or
-     * `Fail` (the transaction committed) drops the records up to its number.
+     * The lowest number of `address`, at or above the account's sequence number on the chain, that has no record, or
+     * `undefined` when the chain has not been read for the account.
+     */
+    nextFree(address: string): bigint | undefined {
+        const state = this.accounts.get(address);
+        return state === undefined || state.chain === undefined ? undefined : this.firstFree(state);
+    }
+
+    /** Whether every number of `address` from `from` up to `to` (exclusive) has a record. */
+    everyNumberRecorded(address: string, from: bigint, to: bigint): boolean {
+        const state = this.accounts.get(address);
+        if (state === undefined) {
+            return from >= to;
+        }
+        this.prune(state);
+        for (let number = from; number < to; number += 1n) {
+            if (!state.submissions.has(number)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * A read of the transaction `hash` returned `status`. For a recorded transaction: `Invalid` (the transaction was
+     * discarded and did not use its number) drops its record; `Success` or `Fail` (the transaction committed) shows the
+     * account's sequence number on the chain above its number.
      */
     observeTransaction(hash: string, status: TransactionStatus): void {
         if (
@@ -220,12 +263,12 @@ export class SequenceNumberTracker {
             return;
         }
         for (const [address, state] of this.accounts) {
-            for (const [sequenceNumber, recorded] of state.accepted) {
-                if (recorded !== normalised) {
+            for (const [sequenceNumber, record] of state.submissions) {
+                if (record.hash !== normalised) {
                     continue;
                 }
                 if (status === TransactionStatus.Invalid) {
-                    this.invalidate(address);
+                    state.submissions.delete(sequenceNumber);
                 } else {
                     this.observeChainSequenceNumber(address, sequenceNumber + 1n);
                 }
@@ -235,16 +278,18 @@ export class SequenceNumberTracker {
     }
 
     /**
-     * Forgets the counter of `address` and its records of accepted transactions; the next use reads the number from
-     * the chain. A reservation that holds the account's lock keeps it.
+     * Forgets the account's sequence number on the chain and the records of `address`; the next number is taken after
+     * a read of the chain. A reservation that holds the account's lock keeps it.
      */
-    invalidate(address: string): void {
+    reset(address: string): void {
         const state = this.accounts.get(address);
         if (state === undefined) {
             return;
         }
-        state.next = undefined;
-        state.accepted.clear();
+        state.chain = undefined;
+        state.readChain = false;
+        state.estimatedAtRead = undefined;
+        state.submissions.clear();
     }
 
     /**
@@ -265,44 +310,90 @@ export class SequenceNumberTracker {
         }
     }
 
-    /** Records `hash` for `sequenceNumber`, and drops the lowest record beyond `MAX_ACCEPTED_RECORDS_PER_ACCOUNT`. */
-    private record(state: AccountState, sequenceNumber: bigint, hash: string): void {
-        const { accepted } = state;
-        accepted.set(sequenceNumber, hash);
-        if (accepted.size > MAX_ACCEPTED_RECORDS_PER_ACCOUNT) {
-            let lowest = sequenceNumber;
-            for (const recorded of accepted.keys()) {
-                if (recorded < lowest) {
-                    lowest = recorded;
-                }
-            }
-            accepted.delete(lowest);
-        }
-    }
-
     private stateOf(address: string): AccountState {
         let state = this.accounts.get(address);
         if (state === undefined) {
-            state = { next: undefined, accepted: new Map(), holder: undefined, tail: Promise.resolve() };
+            state = {
+                chain: undefined,
+                readChain: false,
+                estimatedAtRead: undefined,
+                submissions: new Map(),
+                holder: undefined,
+                tail: Promise.resolve(),
+            };
             this.accounts.set(address, state);
         }
         return state;
     }
 
-    /** The next number of the counter, from the chain when it is unknown, skipping the numbers recorded as accepted. */
-    private async take(state: AccountState, address: string, fetchChain: () => Promise<bigint>): Promise<bigint> {
-        if (state.next === undefined) {
-            const fromChain = await fetchChain();
-            this.observeChainSequenceNumber(address, fromChain);
-            state.next = fromChain;
+    /** Drops the records below the chain's number and those whose expiration time the latest block has reached. */
+    private prune(state: AccountState): void {
+        const latestBlock = this.clock.latestBlockSeconds();
+        for (const [sequenceNumber, record] of [...state.submissions]) {
+            if (
+                (state.chain !== undefined && sequenceNumber < state.chain) ||
+                (latestBlock !== undefined && record.expiration <= latestBlock)
+            ) {
+                state.submissions.delete(sequenceNumber);
+            }
         }
-        let sequenceNumber = state.next;
-        while (state.accepted.has(sequenceNumber)) {
+    }
+
+    private firstFree(state: AccountState): bigint {
+        this.prune(state);
+        let sequenceNumber = state.chain ?? 0n;
+        while (state.submissions.has(sequenceNumber)) {
             sequenceNumber += 1n;
         }
-        state.next = sequenceNumber + 1n;
         return sequenceNumber;
     }
+
+    /**
+     * Whether the next number is taken after a read of the chain: the chain was never read, a refusal asked for a read,
+     * or the estimated chain time has passed the expiration time of a record by `EXPIRED_RECORD_READ_DELAY_SECONDS`
+     * since the chain was last read.
+     */
+    private needsChainRead(state: AccountState): boolean {
+        if (state.chain === undefined || state.readChain) {
+            return true;
+        }
+        const earliest = minimum([...state.submissions.values()].map((record) => record.expiration));
+        if (earliest === undefined) {
+            return false;
+        }
+        const due = earliest + EXPIRED_RECORD_READ_DELAY_SECONDS;
+        return (
+            due <= this.estimatedNowSeconds() && (state.estimatedAtRead === undefined || state.estimatedAtRead < due)
+        );
+    }
+
+    /** The estimated chain time in whole seconds, rounded down. */
+    private estimatedNowSeconds(): bigint {
+        return BigInt(Math.floor(this.clock.estimatedNowMs() / 1_000));
+    }
+
+    /** The next number of the account, after a read of the chain when one is needed. */
+    private async take(state: AccountState, readChain: () => Promise<bigint>): Promise<bigint> {
+        if (this.needsChainRead(state)) {
+            const chain = await readChain();
+            state.readChain = false;
+            state.estimatedAtRead = this.estimatedNowSeconds();
+            if (state.chain === undefined || chain > state.chain) {
+                state.chain = chain;
+            }
+        }
+        return this.firstFree(state);
+    }
+}
+
+function minimum(values: Iterable<bigint>): bigint | undefined {
+    let lowest: bigint | undefined;
+    for (const value of values) {
+        if (lowest === undefined || value < lowest) {
+            lowest = value;
+        }
+    }
+    return lowest;
 }
 
 const trackers = new WeakMap<NetworkConfig, SequenceNumberTracker>();
@@ -311,16 +402,29 @@ const trackers = new WeakMap<NetworkConfig, SequenceNumberTracker>();
 export function sequenceNumberTrackerOf(config: NetworkConfig): SequenceNumberTracker {
     let tracker = trackers.get(config);
     if (tracker === undefined) {
-        tracker = new SequenceNumberTracker();
+        tracker = new SequenceNumberTracker(chainClockOf(config));
         trackers.set(config, tracker);
     }
     return tracker;
 }
 
 /**
+ * Reads the account's sequence number on the chain and, in parallel, the latest block, whose timestamp updates the
+ * client's chain time (`chainClockOf`). A failed account read is thrown; a failed block read is ignored, and the chain
+ * time keeps its previous value.
+ */
+export async function readChainInternal(address: string, config: NetworkConfig): Promise<bigint> {
+    const [account] = await Promise.all([
+        getAccountInfoInternal({ accountAddress: address }, config),
+        getLatestBlockInternal(config).catch(() => undefined),
+    ]);
+    return BigInt(account.sequence_number);
+}
+
+/**
  * Runs `send` with the sequence number of a transaction of `address`.
  *
- * With `sequenceNumber`, `send` gets that number and no reservation: the counter is not used or changed and the
+ * With `sequenceNumber`, `send` gets that number and no reservation: the counter does not hand it out and the
  * account's lock is not taken. Otherwise `send` runs with the next number of the client's counter and its reservation,
  * which holds the account's lock. `send` passes the reservation to the submission (`bindReservation`), which settles it
  * when the node answers. When `send` throws before then, the reservation is settled as a transaction that was not
@@ -337,9 +441,7 @@ export async function withSequenceNumberInternal<T>(
     }
     const address = standardizeAddress(args.address);
     const tracker = sequenceNumberTrackerOf(config);
-    const reservation = await tracker.reserve(address, async () =>
-        BigInt((await getAccountInfoInternal({ accountAddress: address }, config)).sequence_number),
-    );
+    const reservation = await tracker.reserve(address, () => readChainInternal(address, config));
     try {
         return await send(reservation.sequenceNumber, reservation);
     } catch (error) {
@@ -352,9 +454,9 @@ export async function withSequenceNumberInternal<T>(
 
 /**
  * Settles a reservation whose transaction threw before it was submitted, while it was built, its max gas
- * estimated or it was signed. An error that reports a stale number (for example the estimating simulation's
- * `SEQUENCE_NUMBER_TOO_OLD`) means the counter is wrong, so it is read from the chain again; after any other error the
- * number is handed out next. A reservation already settled is left as it is.
+ * estimated, signed or simulated. After an error that reports a stale number (for example the estimating simulation's
+ * `SEQUENCE_NUMBER_TOO_OLD`) the next number is taken after a read of the chain; after any other error the number is
+ * handed out next. A reservation already settled is left as it is.
  */
 export function settleUnsubmittedSequenceNumberInternal(
     reservation: SequenceNumberReservation,
@@ -369,9 +471,62 @@ export function settleUnsubmittedSequenceNumberInternal(
     }
 }
 
-/** Forgets the counter of `address`; the next transaction reads its sequence number from the chain. */
+/**
+ * Settles a submission of `rawTxn` whose request threw, and returns the error to throw.
+ *
+ * - A refusal because the account's queue on the node is full: `SupraAccountQueueFullError` is returned; with
+ *   `reservation`, the next number is taken after a read of the chain.
+ * - A stale number: with `reservation`, the next number is taken after a read of the chain.
+ * - Another answer with an error status of the client, and a 503: the node did not take the number; with
+ *   `reservation`, the number is handed out next.
+ * - Any other error (a timeout, a connection failure, a 5xx other than 503): the node may have accepted the
+ *   transaction, so it is recorded without a hash, whether or not its number came from the counter.
+ *
+ * A reservation is released in every case.
+ */
+export function settleFailedSubmissionInternal(
+    args: { rawTxn: RawTxnJSON; reservation: SequenceNumberReservation | undefined },
+    error: unknown,
+    config: NetworkConfig,
+): unknown {
+    const tracker = sequenceNumberTrackerOf(config);
+    const { rawTxn, reservation } = args;
+    const settle = (resynchronise: boolean) => {
+        if (reservation !== undefined) {
+            if (resynchronise) {
+                tracker.resynchronise(reservation);
+            } else {
+                tracker.release(reservation);
+            }
+        }
+    };
+    if (isAccountQueueFullRefusal(error)) {
+        settle(true);
+        return new SupraAccountQueueFullError({
+            status: error.status,
+            statusText: error.statusText,
+            url: error.url,
+            data: error.data,
+            sequenceNumber: BigInt(rawTxn.sequence_number),
+        });
+    }
+    if (isStaleSequenceNumberError(error)) {
+        settle(true);
+    } else if (error instanceof SupraAPIError && (error.status < 500 || error.status === 503)) {
+        settle(false);
+    } else {
+        tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs);
+        settle(false);
+    }
+    return error;
+}
+
+/**
+ * Forgets the account's sequence number and the records of the client's submissions of `address`; the next
+ * transaction reads its sequence number from the chain.
+ */
 export function resetSequenceNumberInternal(args: { address: AccountAddressInput }, config: NetworkConfig): void {
-    sequenceNumberTrackerOf(config).invalidate(standardizeAddress(args.address));
+    sequenceNumberTrackerOf(config).reset(standardizeAddress(args.address));
 }
 
 function validateSequenceNumber(value: bigint | number): bigint {
@@ -386,14 +541,35 @@ function validateSequenceNumber(value: bigint | number): bigint {
 }
 
 /**
+ * Whether `error` is the node's refusal of a submission whose sequence number is beyond the numbers the node queues
+ * for the account: a `SupraAccountQueueFullError`, or a status 400 with one of the messages the nodes give for it. A
+ * refusal of a number below the account's is not.
+ */
+export function isAccountQueueFullRefusal(error: unknown): error is SupraAPIError {
+    if (error instanceof SupraAccountQueueFullError) {
+        return true;
+    }
+    if (!(error instanceof SupraAPIError) || error.status !== 400 || error.major_status !== undefined) {
+        return false;
+    }
+    if (QUEUE_FULL_MESSAGE.test(error.message)) {
+        return true;
+    }
+    const expected = EXPECTED_SEQUENCE_NUMBER_MESSAGE.exec(error.message);
+    return expected !== null && BigInt(expected[1] as string) > BigInt(expected[2] as string);
+}
+
+/**
  * Whether the error reports a sequence number that does not match the account's, from the node's refusal of a
  * submission, a simulation or a discarded transaction. That is a Move VM status of `SEQUENCE_NUMBER_TOO_OLD` or
- * `SEQUENCE_NUMBER_TOO_NEW`, or a status 400 whose message names the sequence number: the nodes refuse a number
- * beyond what they queue for the account, or below the account's next number, or a number that already has a pending
- * transaction, with a message of that form and no VM status. In every case the counter is wrong and is read from the
- * chain again.
+ * `SEQUENCE_NUMBER_TOO_NEW`, or a status 400 whose message names the sequence number: the nodes refuse a number below
+ * the account's next number, or a number that already has a pending transaction, with a message of that form and no VM
+ * status. A refusal because the account's queue on the node is full (`isAccountQueueFullRefusal`) is not a stale number.
  */
 export function isStaleSequenceNumberError(error: unknown): boolean {
+    if (isAccountQueueFullRefusal(error)) {
+        return false;
+    }
     if (error instanceof SupraAPIError && error.major_status === undefined) {
         return error.status === 400 && SEQUENCE_NUMBER_MESSAGE.test(error.message);
     }
@@ -409,9 +585,9 @@ export function isStaleSequenceNumberError(error: unknown): boolean {
 
 /**
  * Runs `send`, a helper that takes its sequence number from the client's counter, and runs it once more when the
- * node reports a stale number. By then the first run has released the account's lock and the counter has been read
- * from the chain again, or resumed below the number (`SequenceNumberTracker.resume`), so the second run takes the lock
- * again and builds the transaction with a fresh number. A call that passes `sequenceNumber` is run once.
+ * node reports a stale number. By then the first run has released the account's lock and asked for a read of the chain
+ * before the next number, so the second run takes the lock again and builds the transaction with the lowest number
+ * that has no record. A call that passes `sequenceNumber` is run once.
  */
 export async function retryWithFreshSequenceNumber<T>(
     sequenceNumber: bigint | number | undefined,
@@ -430,45 +606,34 @@ export async function retryWithFreshSequenceNumber<T>(
     }
 }
 
-const reservations = new WeakMap<SendTxnPayload, SequenceNumberReservation>();
+/**
+ * The reservation of a payload built with a number from the client's counter, and the function that builds and signs
+ * the same transaction with another number.
+ */
+export interface ReservationBinding {
+    readonly reservation: SequenceNumberReservation;
+    readonly resign: (sequenceNumber: bigint) => Promise<SendTxnPayload>;
+}
 
-/** Marks `payload`, built with the number of `reservation`, so that its submission settles the reservation. */
-export function bindReservation(payload: SendTxnPayload, reservation: SequenceNumberReservation): void {
-    reservations.set(payload, reservation);
+const bindings = new WeakMap<SendTxnPayload, ReservationBinding>();
+
+/**
+ * Marks `payload`, built with the number of `reservation`, so that its submission settles the reservation. `resign`
+ * builds and signs the same transaction with another number, for the simulation before submission
+ * (`enableTransactionSimulation`) when it gives the transaction a lower number.
+ */
+export function bindReservation(
+    payload: SendTxnPayload,
+    reservation: SequenceNumberReservation,
+    resign: (sequenceNumber: bigint) => Promise<SendTxnPayload>,
+): void {
+    bindings.set(payload, { reservation, resign });
 }
 
 /**
  * The reservation of a submission, when its payload was built with a number from the client's counter. A payload
  * built with an explicit number has none.
  */
-export function reservationOf(payload: SendTxnPayload): SequenceNumberReservation | undefined {
-    return reservations.get(payload);
-}
-
-/**
- * Settles the number of a submission that threw before the node accepted it, and so releases the account's lock.
- *
- * - A stale number, an answer with an error status of the client, a 503 and a failed simulation: the node did not
- *   take the number. A stale number means the counter is wrong, so it is read from the chain again; the other
- *   refusals hand the number out next.
- * - Any other error (a timeout, a connection failure, a 5xx other than 503): the node may have accepted the
- *   transaction, so the counter is read from the chain again.
- *
- * A reservation already settled is left as it is.
- */
-export function settleRefusedSubmission(
-    reservation: SequenceNumberReservation,
-    error: unknown,
-    config: NetworkConfig,
-): void {
-    const tracker = sequenceNumberTrackerOf(config);
-    if (isStaleSequenceNumberError(error)) {
-        tracker.resynchronise(reservation);
-    } else if (error instanceof SupraSimulationFailedError) {
-        tracker.release(reservation);
-    } else if (error instanceof SupraAPIError && (error.status < 500 || error.status === 503)) {
-        tracker.release(reservation);
-    } else {
-        tracker.resynchronise(reservation);
-    }
+export function reservationOf(payload: SendTxnPayload): ReservationBinding | undefined {
+    return bindings.get(payload);
 }

@@ -1,14 +1,17 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import { SupraClient } from "../../api/supraClient";
-import { SupraAPIError } from "../../errors/apiError";
+import { SupraAccountQueueFullError, SupraAPIError } from "../../errors/apiError";
 import { SupraTransactionFailedError } from "../../errors/transactionError";
 import { TransactionStatus } from "../../types/transaction";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
+import { ChainClock } from "../chainTime";
 import {
-    MAX_ACCEPTED_RECORDS_PER_ACCOUNT,
+    MAX_SUBMISSION_RECORDS_PER_ACCOUNT,
     SequenceNumberTracker,
     bindReservation,
+    isAccountQueueFullRefusal,
+    isStaleSequenceNumberError,
     reservationOf,
     sequenceNumberTrackerOf,
     settleUnsubmittedSequenceNumberInternal,
@@ -20,6 +23,8 @@ const RPC_URL = "http://node.test";
 const HASH = "0x" + "5e".repeat(32);
 const GAS = { maxGas: 5_000n, gasUnitPrice: 100n };
 const RECEIVER = "0x" + "ab".repeat(32);
+/** An expiration time far in the future, in seconds. */
+const FAR = 10n ** 12n;
 
 type Answer = { status: number; body: unknown };
 
@@ -67,6 +72,10 @@ function respond(answer: Answer): Promise<Response> {
     );
 }
 
+function apiError(status: number, message: string): SupraAPIError {
+    return new SupraAPIError({ status, statusText: "Bad Request", url: RPC_URL, data: { message } });
+}
+
 beforeEach(() => {
     chainSequenceNumbers = [7];
     submitAnswers = [];
@@ -74,6 +83,7 @@ beforeEach(() => {
     accountReads = 0;
     submitted = [];
     failingChainIdReads = 0;
+    // The node of these tests serves no blocks; the counter's reads of the latest block fail and are ignored.
     global.fetch = jest.fn((input: string | URL | Request, init?: RequestInit) => {
         const path = new URL(String(input)).pathname.replace(/^\/rpc\/v3/, "");
         const method = init?.method ?? "GET";
@@ -124,10 +134,19 @@ function transfer(supra: SupraClient, sender: SupraAccount, sequenceNumber?: big
     });
 }
 
+const ADDRESS = "0x" + "0".repeat(63) + "1";
+const hashOf = (n: number | bigint) => "0x" + n.toString(16).padStart(64, "0");
+
+/** The node accepted the transaction of `reservation`: its submission is recorded and the lock released. */
+function accept(tracker: SequenceNumberTracker, reservation: SequenceNumberReservation, expiration = FAR): void {
+    tracker.record(reservation.address, reservation.sequenceNumber, expiration, hashOf(reservation.sequenceNumber));
+    tracker.release(reservation);
+}
+
 describe("SequenceNumberTracker", () => {
     const fetchSeven = async () => 7n;
-    const next = async (tracker: SequenceNumberTracker, address: string, fetchChain: () => Promise<bigint>) =>
-        (await tracker.reserve(address, fetchChain)).sequenceNumber;
+    const next = async (tracker: SequenceNumberTracker, fetchChain: () => Promise<bigint>) =>
+        (await tracker.reserve(ADDRESS, fetchChain)).sequenceNumber;
 
     /** Resolves to the value of `promise`, or to "waiting" when it has not settled after the pending callbacks ran. */
     async function settledNow<T>(promise: Promise<T>): Promise<T | "waiting"> {
@@ -138,11 +157,11 @@ describe("SequenceNumberTracker", () => {
         const tracker = new SequenceNumberTracker();
         const fetchChain = jest.fn(fetchSeven);
 
-        const first = await tracker.reserve("0x1", fetchChain);
-        const second = tracker.reserve("0x1", fetchChain);
+        const first = await tracker.reserve(ADDRESS, fetchChain);
+        const second = tracker.reserve(ADDRESS, fetchChain);
         expect(await settledNow(second)).toBe("waiting");
 
-        tracker.accepted(first);
+        accept(tracker, first);
         expect((await second).sequenceNumber).toBe(8n);
         expect(first.sequenceNumber).toBe(7n);
         expect(fetchChain).toHaveBeenCalledTimes(1);
@@ -150,16 +169,16 @@ describe("SequenceNumberTracker", () => {
 
     it("hands the lock to waiting callers in the order of their calls", async () => {
         const tracker = new SequenceNumberTracker();
-        const first = await tracker.reserve("0x1", fetchSeven);
+        const first = await tracker.reserve(ADDRESS, fetchSeven);
         const order: bigint[] = [];
 
         const waiting = Array.from({ length: 3 }, () =>
-            tracker.reserve("0x1", fetchSeven).then((reservation) => {
+            tracker.reserve(ADDRESS, fetchSeven).then((reservation) => {
                 order.push(reservation.sequenceNumber);
-                tracker.accepted(reservation);
+                accept(tracker, reservation);
             }),
         );
-        tracker.accepted(first);
+        accept(tracker, first);
         await Promise.all(waiting);
 
         expect(order).toEqual([8n, 9n, 10n]);
@@ -167,216 +186,298 @@ describe("SequenceNumberTracker", () => {
 
     it("keeps the counters and locks of accounts apart", async () => {
         const tracker = new SequenceNumberTracker();
+        const other = "0x" + "0".repeat(63) + "2";
 
-        const one = await tracker.reserve("0x1", async () => 3n);
-        // The lock of 0x1 is held; 0x2 has a lock of its own.
-        const two = await tracker.reserve("0x2", async () => 40n);
+        const one = await tracker.reserve(ADDRESS, async () => 3n);
+        // The lock of ADDRESS is held; `other` has a lock of its own.
+        const two = await tracker.reserve(other, async () => 40n);
         expect(two.sequenceNumber).toBe(40n);
-        tracker.accepted(one);
-        tracker.accepted(two);
+        accept(tracker, one);
+        accept(tracker, two);
 
-        expect(await next(tracker, "0x1", async () => 99n)).toBe(4n);
+        expect(await next(tracker, async () => 99n)).toBe(4n);
     });
 
-    it("hands a released number out next", async () => {
+    it("hands a released number without a record out next", async () => {
         const tracker = new SequenceNumberTracker();
-        tracker.accepted(await tracker.reserve("0x1", fetchSeven));
-        const second = await tracker.reserve("0x1", fetchSeven);
+        accept(tracker, await tracker.reserve(ADDRESS, fetchSeven));
+        const second = await tracker.reserve(ADDRESS, fetchSeven);
 
         tracker.release(second);
 
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(second.sequenceNumber);
+        expect(await next(tracker, fetchSeven)).toBe(second.sequenceNumber);
     });
 
-    it("skips the numbers recorded as accepted from this client", async () => {
+    it("skips the numbers of recorded submissions", async () => {
         const tracker = new SequenceNumberTracker();
-        const address = "0x" + "0".repeat(63) + "1";
-        tracker.recordAccepted(address, 7n, "0x" + "07".repeat(32));
-        tracker.recordAccepted(address, 8n, "0x" + "08".repeat(32));
+        tracker.record(ADDRESS, 7n, FAR, hashOf(7));
+        tracker.record(ADDRESS, 8n, FAR);
 
-        expect(await next(tracker, address, fetchSeven)).toBe(9n);
+        expect(await next(tracker, fetchSeven)).toBe(9n);
     });
 
     it("ignores a settlement of a reservation that does not hold the lock", async () => {
         const tracker = new SequenceNumberTracker();
-        const first = await tracker.reserve("0x1", fetchSeven);
+        const first = await tracker.reserve(ADDRESS, fetchSeven);
         tracker.release(first);
-        const second = await tracker.reserve("0x1", fetchSeven);
+        const second = await tracker.reserve(ADDRESS, fetchSeven);
         expect(second.sequenceNumber).toBe(7n);
 
-        // `first` is settled, and these were never handed out.
+        // `first` is settled, and this one was never handed out.
         tracker.release(first);
-        tracker.accepted(first);
         tracker.resynchronise(first);
-        tracker.release({ address: "0x1", sequenceNumber: 7n });
-        tracker.accepted({ address: "0x1", sequenceNumber: 7n });
-        const third = tracker.reserve("0x1", fetchSeven);
+        tracker.move(first, 30n);
+        tracker.release({ address: ADDRESS, sequenceNumber: 7n });
+        const third = tracker.reserve(ADDRESS, fetchSeven);
         expect(await settledNow(third)).toBe("waiting");
 
-        tracker.accepted(second);
+        accept(tracker, second);
         expect((await third).sequenceNumber).toBe(8n);
     });
 
-    it("reads the chain again after invalidate, while the reservation that holds the lock keeps it", async () => {
+    it("reads the chain again after reset, while the reservation that holds the lock keeps it", async () => {
         const tracker = new SequenceNumberTracker();
-        const held = await tracker.reserve("0x1", fetchSeven);
+        tracker.record(ADDRESS, 8n, FAR);
+        const held = await tracker.reserve(ADDRESS, fetchSeven);
 
-        tracker.invalidate("0x1");
-        const after = tracker.reserve("0x1", async () => 20n);
+        tracker.reset(ADDRESS);
+        const after = tracker.reserve(ADDRESS, async () => 7n);
         expect(await settledNow(after)).toBe("waiting");
-        // A release after the invalidation leaves the counter to be read from the chain.
         tracker.release(held);
 
-        expect((await after).sequenceNumber).toBe(20n);
+        // The record of 8 is forgotten too.
+        expect((await after).sequenceNumber).toBe(7n);
+        expect(tracker.recorded(ADDRESS).size).toBe(0);
     });
 
-    it("reads the chain again after resynchronise and releases the lock", async () => {
+    it("reads the chain again after resynchronise and keeps the records the chain does not show dead", async () => {
         const tracker = new SequenceNumberTracker();
+        accept(tracker, await tracker.reserve(ADDRESS, fetchSeven));
+        accept(tracker, await tracker.reserve(ADDRESS, fetchSeven));
+        const fetchChain = jest.fn(fetchSeven);
 
-        tracker.resynchronise(await tracker.reserve("0x1", fetchSeven));
+        tracker.resynchronise(await tracker.reserve(ADDRESS, fetchSeven));
 
-        expect(await next(tracker, "0x1", async () => 30n)).toBe(30n);
+        // 7 and 8 are pending: the next number is 9, read after the chain.
+        expect(await next(tracker, fetchChain)).toBe(9n);
+        expect(fetchChain).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops the records below the chain's number read after resynchronise", async () => {
+        const tracker = new SequenceNumberTracker();
+        accept(tracker, await tracker.reserve(ADDRESS, fetchSeven));
+        accept(tracker, await tracker.reserve(ADDRESS, fetchSeven));
+
+        tracker.resynchronise(await tracker.reserve(ADDRESS, fetchSeven));
+
+        expect(await next(tracker, async () => 8n)).toBe(9n);
+        expect([...tracker.recorded(ADDRESS).keys()]).toEqual([8n]);
+    });
+
+    it("keeps the highest number the chain was read at", async () => {
+        const tracker = new SequenceNumberTracker();
+        tracker.resynchronise(await tracker.reserve(ADDRESS, async () => 9n));
+
+        // A read from a node that is behind does not move the counter back.
+        expect(await next(tracker, async () => 4n)).toBe(9n);
     });
 
     it("releases the lock and keeps serving callers after a failed read of the chain", async () => {
         const tracker = new SequenceNumberTracker();
 
-        await expect(tracker.reserve("0x1", async () => Promise.reject(new Error("offline")))).rejects.toThrow("offline");
+        await expect(tracker.reserve(ADDRESS, async () => Promise.reject(new Error("offline")))).rejects.toThrow("offline");
 
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(7n);
+        expect(await next(tracker, fetchSeven)).toBe(7n);
+    });
+
+    it("moves a reservation to another number and frees its own", async () => {
+        const tracker = new SequenceNumberTracker();
+        tracker.record(ADDRESS, 7n, FAR);
+        const reservation = await tracker.reserve(ADDRESS, fetchSeven);
+        expect(reservation.sequenceNumber).toBe(8n);
+
+        tracker.move(reservation, 12n);
+        expect(reservation.sequenceNumber).toBe(12n);
+        accept(tracker, reservation);
+
+        expect(await next(tracker, fetchSeven)).toBe(8n);
     });
 });
 
-describe("SequenceNumberTracker.resume", () => {
-    const ADDRESS = "0x" + "0".repeat(63) + "1";
-    const hashOf = (n: number) => "0x" + n.toString(16).padStart(64, "0");
+describe("SequenceNumberTracker records and chain time", () => {
+    /** Every record of `ADDRESS`, by number, with its expiration time. */
+    const expirations = (tracker: SequenceNumberTracker) =>
+        new Map([...tracker.recorded(ADDRESS)].map(([number, record]) => [number, record.expiration]));
+    const blockAt = (seconds: bigint) => Number(seconds) * 1_000_000;
 
-    it("resumes at the lowest number without a pending transaction and keeps the records of the pending ones", async () => {
+    it("records a submission with the address and hash standardized", () => {
         const tracker = new SequenceNumberTracker();
-        // Transactions 5, 6 and 7 were accepted; 6 is no longer pending.
-        for (const n of [5, 6, 7]) {
-            const reservation = await tracker.reserve(ADDRESS, async () => 5n);
-            tracker.recordAccepted(ADDRESS, reservation.sequenceNumber, hashOf(n));
-            tracker.accepted(reservation);
-        }
-        const eight = await tracker.reserve(ADDRESS, async () => 5n);
-        expect(eight.sequenceNumber).toBe(8n);
 
-        tracker.resume(
-            eight,
-            5n,
+        tracker.record("0x1", 7, 100, "0X" + "AB".repeat(32));
+
+        expect(tracker.recorded(ADDRESS)).toEqual(new Map([[7n, { expiration: 100n, hash: "0x" + "ab".repeat(32) }]]));
+    });
+
+    it("records a submission without a hash, and drops a hash that is not hex", () => {
+        const tracker = new SequenceNumberTracker();
+
+        tracker.record(ADDRESS, 7n, 100n);
+        tracker.record(ADDRESS, 8n, 100n, "not a hash");
+
+        expect(tracker.recorded(ADDRESS)).toEqual(
             new Map([
-                [5n, hashOf(5)],
-                [7n, hashOf(7)],
+                [7n, { expiration: 100n, hash: undefined }],
+                [8n, { expiration: 100n, hash: undefined }],
             ]),
         );
-
-        expect([...tracker.acceptedBetween(ADDRESS, 0n, 100n).keys()]).toEqual([5n, 7n]);
-        // 6 is handed out, then 8: 7 has a pending transaction.
-        const six = await tracker.reserve(ADDRESS, async () => 99n);
-        expect(six.sequenceNumber).toBe(6n);
-        tracker.accepted(six);
-        expect(await (async () => (await tracker.reserve(ADDRESS, async () => 99n)).sequenceNumber)()).toBe(8n);
     });
 
-    it("drops the records below the chain's number and resumes at it when nothing is pending", async () => {
-        const tracker = new SequenceNumberTracker();
-        tracker.recordAccepted(ADDRESS, 3n, hashOf(3));
-        tracker.recordAccepted(ADDRESS, 4n, hashOf(4));
-        const reservation = await tracker.reserve(ADDRESS, async () => 3n);
-        expect(reservation.sequenceNumber).toBe(5n);
-
-        tracker.resume(reservation, 4n, new Map());
-
-        expect(tracker.acceptedBetween(ADDRESS, 0n, 100n).size).toBe(0);
-        expect((await tracker.reserve(ADDRESS, async () => 99n)).sequenceNumber).toBe(4n);
-    });
-});
-
-describe("SequenceNumberTracker records of accepted transactions", () => {
-    const ADDRESS = "0x" + "0".repeat(63) + "1";
-    const hashOf = (n: number) => "0x" + n.toString(16).padStart(64, "0");
-    /** Every record of `ADDRESS`. */
-    const recorded = (tracker: SequenceNumberTracker) => tracker.acceptedBetween(ADDRESS, 0n, 2n ** 64n);
-
-    it("records the hash of an accepted number, with the address and hash standardized", () => {
+    it(`keeps at most ${MAX_SUBMISSION_RECORDS_PER_ACCOUNT} records per account and drops the lowest number`, () => {
         const tracker = new SequenceNumberTracker();
 
-        tracker.recordAccepted("0x1", 7, "0X" + "AB".repeat(32));
-
-        expect(recorded(tracker)).toEqual(new Map([[7n, "0x" + "ab".repeat(32)]]));
-    });
-
-    it("records nothing for a hash that is not hex", () => {
-        const tracker = new SequenceNumberTracker();
-
-        tracker.recordAccepted(ADDRESS, 7n, "not a hash");
-
-        expect(recorded(tracker).size).toBe(0);
-    });
-
-    it(`keeps at most ${MAX_ACCEPTED_RECORDS_PER_ACCOUNT} records per account and drops the lowest number`, () => {
-        const tracker = new SequenceNumberTracker();
-
-        for (let n = 0; n <= MAX_ACCEPTED_RECORDS_PER_ACCOUNT; n += 1) {
-            tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n + 1));
+        for (let n = 0; n <= MAX_SUBMISSION_RECORDS_PER_ACCOUNT; n += 1) {
+            tracker.record(ADDRESS, BigInt(n), FAR, hashOf(n + 1));
         }
 
-        expect(recorded(tracker).size).toBe(MAX_ACCEPTED_RECORDS_PER_ACCOUNT);
-        expect(recorded(tracker).get(0n)).toBeUndefined();
-        expect(recorded(tracker).get(BigInt(MAX_ACCEPTED_RECORDS_PER_ACCOUNT))).toBeDefined();
-    });
-
-    it("returns the records from one number up to another (exclusive)", () => {
-        const tracker = new SequenceNumberTracker();
-        [3, 4, 5, 6].forEach((n) => tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n)));
-
-        expect([...tracker.acceptedBetween(ADDRESS, 4n, 6n).keys()]).toEqual([4n, 5n]);
-        expect(tracker.acceptedBetween("0x" + "0".repeat(63) + "2", 0n, 10n).size).toBe(0);
+        expect(tracker.recorded(ADDRESS).size).toBe(MAX_SUBMISSION_RECORDS_PER_ACCOUNT);
+        expect(tracker.recorded(ADDRESS).get(0n)).toBeUndefined();
+        expect(tracker.recorded(ADDRESS).get(BigInt(MAX_SUBMISSION_RECORDS_PER_ACCOUNT))).toBeDefined();
     });
 
     it("drops the records below the chain's number", () => {
         const tracker = new SequenceNumberTracker();
-        [3, 4, 5].forEach((n) => tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n)));
+        [3, 4, 5].forEach((n) => tracker.record(ADDRESS, BigInt(n), FAR, hashOf(n)));
 
         tracker.observeChainSequenceNumber(ADDRESS, 5n);
 
-        expect(recorded(tracker)).toEqual(new Map([[5n, hashOf(5)]]));
+        expect([...tracker.recorded(ADDRESS).keys()]).toEqual([5n]);
+    });
+
+    it("drops a record once a block read from the node has reached its expiration time, not before", () => {
+        const clock = new ChainClock();
+        const tracker = new SequenceNumberTracker(clock);
+        tracker.record(ADDRESS, 3n, 1_000n);
+        tracker.record(ADDRESS, 4n, 1_060n);
+
+        clock.observeBlock(blockAt(999n) + 999_999);
+        expect(expirations(tracker)).toEqual(
+            new Map([
+                [3n, 1_000n],
+                [4n, 1_060n],
+            ]),
+        );
+        clock.observeBlock(blockAt(1_000n));
+        expect(expirations(tracker)).toEqual(new Map([[4n, 1_060n]]));
+    });
+
+    it("keeps a record whatever the client's clock while no block has reached its expiration time", () => {
+        const clock = new ChainClock();
+        const tracker = new SequenceNumberTracker(clock);
+        clock.observeBlock(blockAt(1_000n), 0);
+        tracker.record(ADDRESS, 3n, 1_060n);
+
+        // The client's clock is an hour past the expiration time; the chain has produced no block since.
+        jest.spyOn(Date, "now").mockReturnValue(1_060_000 + 3_600_000);
+        try {
+            expect(tracker.everyNumberRecorded(ADDRESS, 3n, 4n)).toBe(true);
+        } finally {
+            jest.restoreAllMocks();
+        }
+    });
+
+    it("drops only the record of a transaction that reads Invalid", () => {
+        const tracker = new SequenceNumberTracker();
+        [3, 4, 5].forEach((n) => tracker.record(ADDRESS, BigInt(n), FAR, hashOf(n)));
+
+        tracker.observeTransaction(hashOf(4), TransactionStatus.Invalid);
+
+        expect([...tracker.recorded(ADDRESS).keys()]).toEqual([3n, 5n]);
     });
 
     it("drops the records up to a transaction that reads Success or Fail", () => {
         const tracker = new SequenceNumberTracker();
-        [3, 4, 5].forEach((n) => tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n)));
+        [3, 4, 5].forEach((n) => tracker.record(ADDRESS, BigInt(n), FAR, hashOf(n)));
 
         tracker.observeTransaction(hashOf(4), TransactionStatus.Fail);
 
-        expect(recorded(tracker)).toEqual(new Map([[5n, hashOf(5)]]));
-    });
-
-    it("invalidates the counter and its records when a recorded transaction reads Invalid", async () => {
-        const tracker = new SequenceNumberTracker();
-        tracker.accepted(await tracker.reserve(ADDRESS, async () => 3n));
-        tracker.recordAccepted(ADDRESS, 3n, hashOf(3));
-        const fetchChain = jest.fn(async () => 3n);
-
-        tracker.observeTransaction(hashOf(3), TransactionStatus.Invalid);
-
-        expect(recorded(tracker).size).toBe(0);
-        expect((await tracker.reserve(ADDRESS, fetchChain)).sequenceNumber).toBe(3n);
-        expect(fetchChain).toHaveBeenCalledTimes(1);
+        expect([...tracker.recorded(ADDRESS).keys()]).toEqual([5n]);
     });
 
     it.each([TransactionStatus.Pending, TransactionStatus.PendingAfterExecution])(
         "keeps the records when a recorded transaction reads %s",
         (status) => {
             const tracker = new SequenceNumberTracker();
-            tracker.recordAccepted(ADDRESS, 3n, hashOf(3));
+            tracker.record(ADDRESS, 3n, FAR, hashOf(3));
 
             tracker.observeTransaction(hashOf(3), status);
 
-            expect(recorded(tracker).get(3n)).toBe(hashOf(3));
+            expect(tracker.recorded(ADDRESS).get(3n)?.hash).toBe(hashOf(3));
         },
     );
+
+    it("reports the lowest number without a record and whether a range is recorded", () => {
+        const tracker = new SequenceNumberTracker();
+        expect(tracker.nextFree(ADDRESS)).toBeUndefined();
+        [5, 6, 8].forEach((n) => tracker.record(ADDRESS, BigInt(n), FAR));
+        tracker.observeChainSequenceNumber(ADDRESS, 5n);
+
+        expect(tracker.nextFree(ADDRESS)).toBe(7n);
+        expect(tracker.everyNumberRecorded(ADDRESS, 5n, 7n)).toBe(true);
+        expect(tracker.everyNumberRecorded(ADDRESS, 5n, 8n)).toBe(false);
+        expect(tracker.everyNumberRecorded(ADDRESS, 5n, 5n)).toBe(true);
+    });
+
+    it("reads the chain before the next number once the estimated chain time passes a record's expiration time by 2 s", async () => {
+        const clock = new ChainClock();
+        const tracker = new SequenceNumberTracker(clock);
+        const fetchChain = jest.fn(async () => 7n);
+        clock.observeBlock(blockAt(1_000n), 1_000_000);
+        const now = jest.spyOn(Date, "now").mockReturnValue(1_000_000);
+        try {
+            const first = await tracker.reserve(ADDRESS, fetchChain);
+            accept(tracker, first, 1_060n);
+            accept(tracker, await tracker.reserve(ADDRESS, fetchChain), 1_070n);
+            expect(fetchChain).toHaveBeenCalledTimes(1);
+
+            // One second after 7's expiration time the chain is not read.
+            now.mockReturnValue(1_061_000);
+            tracker.release(await tracker.reserve(ADDRESS, fetchChain));
+            expect(fetchChain).toHaveBeenCalledTimes(1);
+
+            // Two seconds after it the chain is read; it finds no newer block, so 7 is kept.
+            now.mockReturnValue(1_062_000);
+            const third = await tracker.reserve(ADDRESS, fetchChain);
+            expect(third.sequenceNumber).toBe(9n);
+            expect(fetchChain).toHaveBeenCalledTimes(2);
+            tracker.release(third);
+
+            // No second read for the same expiration time.
+            tracker.release(await tracker.reserve(ADDRESS, fetchChain));
+            expect(fetchChain).toHaveBeenCalledTimes(2);
+
+            // A block read after 7's expiration time (here by another read of the client) drops it, and 7 is handed
+            // out.
+            clock.observeBlock(blockAt(1_065n), 1_065_000);
+            now.mockReturnValue(1_066_000);
+            expect((await tracker.reserve(ADDRESS, fetchChain)).sequenceNumber).toBe(7n);
+        } finally {
+            now.mockRestore();
+        }
+    });
+});
+
+describe("refusals concerning the sequence number", () => {
+    it.each([
+        ["v12 number above the queue", "Transaction validation failed: sequence number 30 is above 25, the highest sequence number this node can queue for the account", true],
+        ["v11.7.0 number above the expected one", "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 30 but the expected sequence number is 1.", true],
+        ["v11.7.0 number below the expected one", "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 3 but the expected sequence number is 7.", false],
+        ["v12 number below the account's", "Transaction validation failed: sequence number 3 is below the account's next sequence number 7", false],
+    ])("classifies the %s", (_name, message, full) => {
+        const error = apiError(400, message);
+
+        expect(isAccountQueueFullRefusal(error)).toBe(full);
+        expect(isStaleSequenceNumberError(error)).toBe(!full);
+    });
 });
 
 describe("sequence numbers of the transfer helpers", () => {
@@ -404,16 +505,20 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(accountReads).toBe(2);
     });
 
-    it("uses an explicit sequence number as given and leaves the counter alone", async () => {
+    it("uses an explicit sequence number as given and does not hand it out", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
+        // The transactions stay pending.
+        finalStatus = TransactionStatus.Pending;
 
         await transfer(supra, sender, 42n);
-        await transfer(supra, sender, 43);
+        await transfer(supra, sender, 8);
         expect(accountReads).toBe(0);
         await transfer(supra, sender);
+        // 8 has a pending transaction of this client.
+        await transfer(supra, sender);
 
-        expect(submitted).toEqual([42, 43, 7]);
+        expect(submitted).toEqual([42, 8, 7, 9]);
     });
 
     it("rejects an explicit sequence number that is not a u64", async () => {
@@ -443,7 +548,7 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(accountReads).toBe(1);
     });
 
-    it("resynchronises and retries when the node refuses a number that is too new", async () => {
+    it("reads the chain again and retries when the node refuses a number that is too new", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
         chainSequenceNumbers = [7, 3];
@@ -451,21 +556,20 @@ describe("sequence numbers of the transfer helpers", () => {
 
         await transfer(supra, sender);
 
-        expect(submitted).toEqual([7, 3]);
+        // The account's sequence number on the chain never decreases: the read of 3 comes from a node that is
+        // behind, and the counter keeps 7.
+        expect(submitted).toEqual([7, 7]);
+        expect(accountReads).toBe(2);
     });
 
     it.each([
-        [
-            "a number above what the node queues",
-            "Transaction validation failed: sequence number 30 is above 25, the highest sequence number this node can queue for the account",
-        ],
         [
             "a number below the account's next",
             "Transaction validation failed: sequence number 3 is below the account's next sequence number 7",
         ],
         [
-            "a number the node did not expect",
-            "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 30 but the expected sequence number is 1.",
+            "a number below the expected one (v11.7.0)",
+            "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 3 but the expected sequence number is 9.",
         ],
         [
             "a number already scheduled (v11.7.0)",
@@ -486,6 +590,35 @@ describe("sequence numbers of the transfer helpers", () => {
 
         expect(submitted).toEqual([7, 9]);
     });
+
+    it.each([
+        [
+            "v12",
+            "Transaction validation failed: sequence number 7 is above 6, the highest sequence number this node can queue for the account",
+        ],
+        [
+            "v11.7.0",
+            "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 7 but the expected sequence number is 1.",
+        ],
+    ])(
+        "throws SupraAccountQueueFullError for the %s refusal of a full queue, and reads the chain before the next number",
+        async (_name, message) => {
+            const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
+            const sender = new SupraAccount();
+            submitAnswers = [() => json({ message }, 400)];
+
+            const error = await transfer(supra, sender).catch((caught: unknown) => caught);
+
+            expect(error).toBeInstanceOf(SupraAccountQueueFullError);
+            expect(error).toBeInstanceOf(SupraAPIError);
+            expect((error as SupraAccountQueueFullError).sequenceNumber).toBe(7n);
+            expect((error as SupraAccountQueueFullError).message).toBe(message);
+            expect(submitted).toEqual([7]);
+            await transfer(supra, sender);
+            expect(submitted).toEqual([7, 7]);
+            expect(accountReads).toBe(2);
+        },
+    );
 
     it("does not treat other refusals as a stale number", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
@@ -529,20 +662,23 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(accountReads).toBe(1);
     });
 
-    it("reads the chain again after a refusal whose effect on the node is unknown", async () => {
+    it.each([
+        ["an explicit number", 7],
+        ["a number from the counter", undefined],
+    ])("keeps the number of a submission whose outcome is unknown, with %s", async (_name, sequenceNumber) => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
         submitAnswers = [() => json({ message: "Internal error" }, 500)];
 
-        await expect(transfer(supra, sender)).rejects.toBeInstanceOf(SupraAPIError);
-        chainSequenceNumbers = [8];
+        await expect(transfer(supra, sender, sequenceNumber)).rejects.toBeInstanceOf(SupraAPIError);
         await transfer(supra, sender);
 
+        // The node may have accepted 7: the counter does not hand it out until the chain shows it dead.
         expect(submitted).toEqual([7, 8]);
-        expect(accountReads).toBe(2);
+        expect(accountReads).toBe(1);
     });
 
-    it("reads the chain again after a discarded transaction", async () => {
+    it("gives the number of a transaction whose wait reads Invalid to the next transfer", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
         finalStatus = TransactionStatus.Invalid;
@@ -552,10 +688,10 @@ describe("sequence numbers of the transfer helpers", () => {
         await transfer(supra, sender);
 
         expect(submitted).toEqual([7, 7]);
-        expect(accountReads).toBe(2);
+        expect(accountReads).toBe(1);
     });
 
-    it("reads the chain again after a discarded transaction that checkSuccess false returns", async () => {
+    it("gives the number of a discarded transaction that checkSuccess false returns to the next transfer", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
         finalStatus = TransactionStatus.Invalid;
@@ -574,7 +710,7 @@ describe("sequence numbers of the transfer helpers", () => {
         await transfer(supra, sender);
 
         expect(submitted).toEqual([7, 7]);
-        expect(accountReads).toBe(2);
+        expect(accountReads).toBe(1);
     });
 
     it("does not use a number for a call whose waitTimeoutMs is invalid", async () => {
@@ -622,16 +758,16 @@ describe("sequence numbers of the transfer helpers", () => {
         expect(submitted).toEqual([7, 30]);
     });
 
-    it("reads the chain again after resetSequenceNumber", async () => {
+    it("forgets the records of the account's submissions on resetSequenceNumber", async () => {
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         const sender = new SupraAccount();
         await transfer(supra, sender);
 
-        chainSequenceNumbers = [30];
         supra.resetSequenceNumber(sender.address());
         await transfer(supra, sender);
 
-        expect(submitted).toEqual([7, 30]);
+        // The chain still reads 7, and the record of the pending 7 is forgotten.
+        expect(submitted).toEqual([7, 7]);
     });
 
     it("hands the number out again when signing throws before the submission", async () => {
@@ -683,12 +819,7 @@ describe("a number whose transaction threw before submission", () => {
         const config = newConfig();
         const tracker = sequenceNumberTrackerOf(config);
         const reservation = await tracker.reserve(address, async () => 7n);
-        const stale = new SupraAPIError({
-            status: 400,
-            statusText: "Bad Request",
-            url: RPC_URL,
-            data: { message: "General err: MoveTransactionValidationFailed(0x1, 0, SEQUENCE_NUMBER_TOO_OLD)" },
-        });
+        const stale = apiError(400, "General err: MoveTransactionValidationFailed(0x1, 0, SEQUENCE_NUMBER_TOO_OLD)");
 
         settleUnsubmittedSequenceNumberInternal(reservation, stale, config);
 
@@ -708,10 +839,7 @@ describe("withSequenceNumberInternal", () => {
                 throw new Error("build failed");
             }),
         ).rejects.toThrow("build failed");
-        const taken = await withSequenceNumberInternal({ address }, config, async (sequenceNumber, reservation) => {
-            sequenceNumberTrackerOf(config).accepted(reservation as SequenceNumberReservation);
-            return sequenceNumber;
-        });
+        const taken = await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber);
 
         expect(taken).toBe(7n);
         expect(accountReads).toBe(1);
@@ -719,12 +847,7 @@ describe("withSequenceNumberInternal", () => {
 
     it("makes the counter read the chain again when the run throws a stale number", async () => {
         const config = newConfig();
-        const stale = new SupraAPIError({
-            status: 400,
-            statusText: "Bad Request",
-            url: RPC_URL,
-            data: { message: "General err: MoveTransactionValidationFailed(0x1, 0, SEQUENCE_NUMBER_TOO_OLD)" },
-        });
+        const stale = apiError(400, "General err: MoveTransactionValidationFailed(0x1, 0, SEQUENCE_NUMBER_TOO_OLD)");
 
         await expect(
             withSequenceNumberInternal({ address }, config, async () => {
@@ -746,13 +869,13 @@ describe("withSequenceNumberInternal", () => {
         expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(7n);
     });
 
-    it("keeps a settlement made by the run, and releases the lock after an error thrown later", async () => {
+    it("keeps a record made by the run, and releases the lock after an error thrown later", async () => {
         const config = newConfig();
 
         await expect(
-            withSequenceNumberInternal({ address }, config, async (_sequenceNumber, reservation) => {
+            withSequenceNumberInternal({ address }, config, async (sequenceNumber) => {
                 // The node accepted the transaction; the wait for its final status then fails.
-                sequenceNumberTrackerOf(config).accepted(reservation as SequenceNumberReservation);
+                sequenceNumberTrackerOf(config).record(address, sequenceNumber, FAR, HASH);
                 throw new Error("wait failed");
             }),
         ).rejects.toThrow("wait failed");
@@ -770,7 +893,7 @@ describe("withSequenceNumberInternal", () => {
         }));
 
         await expect(run).resolves.toEqual({ sequenceNumber: 42n, reservation: undefined });
-        sequenceNumberTrackerOf(config).accepted(held);
+        sequenceNumberTrackerOf(config).release(held);
     });
 });
 
@@ -782,9 +905,10 @@ describe("the reservation of a submission", () => {
         const tracker = new SequenceNumberTracker();
         const reservation = await tracker.reserve("0x" + "cd".repeat(32), async () => 7n);
         const bound = payload();
-        bindReservation(bound, reservation);
+        const resign = jest.fn(async () => payload());
+        bindReservation(bound, reservation, resign);
 
-        expect(reservationOf(bound)).toBe(reservation);
+        expect(reservationOf(bound)).toEqual({ reservation, resign });
         // The same sender and number without the binding, as with an explicit sequence number.
         expect(reservationOf(payload())).toBeUndefined();
     });

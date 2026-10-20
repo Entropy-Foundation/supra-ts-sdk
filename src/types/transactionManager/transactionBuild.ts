@@ -7,8 +7,10 @@ import type { MoveInnerAuthenticator } from "../move";
  * - `maxGas`: max gas of the transaction, in gas units. When absent, the client's `maxGas` applies; when that is absent
  *   too, the max gas is estimated (see `estimateMaxGas`).
  * - `gasUnitPrice`: gas unit price, in quants. Default the client's `minGasUnitPrice`, else `DEFAULT_GAS_PRICE`.
- * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch. Default 300 seconds after the
- *   transaction is built.
+ * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
+ *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's estimate of the
+ *   chain's time when the transaction is built: the client's clock shifted by the difference to the timestamp of the
+ *   latest block the client has read, or the client's clock before it has read a block.
  * - `estimateMaxGas`: when no `maxGas` is set, estimate it (`true`) or use `DEFAULT_MAX_GAS_UNITS` (`false`). Default
  *   the client's `estimateMaxGas`, else `true`.
  *
@@ -27,12 +29,13 @@ import type { MoveInnerAuthenticator } from "../move";
  *   balance pays for when that is known.
  *
  * The simulation runs against committed state. When an earlier transaction of the sender has not committed, the
- * simulation reports the sequence number as too new. When every number from the sender's sequence number on the chain
- * up to the transaction's belongs to a transaction that the node accepted from this client and that is still pending
- * (each is read), the transaction is simulated with the chain's number and submitted with its own. Otherwise the
- * transaction's number is stale: a helper that took it from the client's counter continues the counter from the lowest
- * of those numbers that has no pending transaction of this client and sends the transaction once more with it, and a
- * call with an explicit `sequenceNumber` throws the `SupraSimulationFailedError`. A transaction that depends on an
+ * simulation reports the sequence number as too new, and the account and the latest block are read. When every number
+ * from the sender's sequence number on the chain up to the transaction's has a record of a transaction this client
+ * submitted that can still commit (see `SupraConfig`), the transaction is simulated with the chain's number and
+ * submitted with its own. Otherwise a helper that took the number from the client's counter builds and signs the
+ * transaction again with the lowest number that has no record, without giving up its place in the order of the
+ * calls, and a call with an explicit `sequenceNumber` throws the `SupraSimulationFailedError`. A failed read of the
+ * account is thrown and nothing is submitted. A transaction that depends on an
  * earlier one that has not committed (for example one that uses a resource the earlier one creates) fails its estimate
  * and throws `SupraSimulationFailedError`; set `maxGas` for such a transaction.
  *
@@ -56,9 +59,10 @@ export interface OptionalTransactionPayloadArgs {
      * The sequence number of the transaction. Used by the helpers that build and submit the transaction
      * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
      * `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI`). When it is set,
-     * the helper uses it as given and does not use or change the client's counter. When it is absent, the helper takes
-     * the next number of the client's counter. The builders of `transaction.build` take `senderSequenceNumber` and
-     * ignore this field.
+     * the helper uses it as given and does not wait for the other calls of the account; the client's counter records
+     * the submitted transaction like its own and does not hand out its number while the transaction can commit. When
+     * it is absent, the helper takes the next number of the client's counter. The builders of `transaction.build`
+     * take `senderSequenceNumber` and ignore this field.
      */
     sequenceNumber?: bigint | number;
 }

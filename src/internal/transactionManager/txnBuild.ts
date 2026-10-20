@@ -1,7 +1,8 @@
 import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { OptionalTransactionPayloadArgs, RawTxnJSON, SendTxnPayload, TransactionPayloadJSON } from "../../types/transactionManager/transactionBuild";
-import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
+import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MAX_TX_EXPIRATION_DURATION, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
+import { chainClockOf } from "../chainTime";
 import type { AccountAddressInput } from "../../types/account";
 import { addressToBytes } from "../../helper/account";
 import type { MoveFunctionId, MoveInnerAuthenticator, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
@@ -121,14 +122,51 @@ export async function buildWithResolvedMaxGasInternal(
     config: NetworkConfig
 ): Promise<TxnBuilderTypes.RawTransaction> {
     const options = args.optionalTransactionPayloadArgs ?? {};
-    const maxGas = await resolveMaxGasInternal({
+    const resolved = await resolveMaxGasInternal({
         senderAddress: args.senderAddress,
         senderAccount: args.senderAccount,
         reservation: args.reservation,
         optionalTransactionPayloadArgs: options,
         buildRawTxn: (candidate) => args.buildRawTxn({ ...options, maxGas: candidate }),
     }, config);
-    return args.buildRawTxn({ ...options, maxGas });
+    const rawTxn = args.buildRawTxn({ ...options, maxGas: resolved.maxGas });
+    // The estimate gave the reservation a lower number that has no submission of this client.
+    return resolved.sequenceNumber === undefined ? rawTxn : withSequenceNumber(rawTxn, resolved.sequenceNumber);
+}
+
+/** `rawTxn` with another sequence number and the same sender, payload, max gas, gas unit price, expiry and chain ID. */
+export function withSequenceNumber(
+    rawTxn: TxnBuilderTypes.RawTransaction,
+    sequenceNumber: bigint,
+): TxnBuilderTypes.RawTransaction {
+    return new TxnBuilderTypes.RawTransaction(
+        rawTxn.sender,
+        sequenceNumber,
+        rawTxn.payload,
+        rawTxn.max_gas_amount,
+        rawTxn.gas_unit_price,
+        rawTxn.expiration_timestamp_secs,
+        rawTxn.chain_id,
+    );
+}
+
+/** Returns `value` when it is an integer from 1 to `MAX_TX_EXPIRATION_DURATION`, and throws a `RangeError` otherwise. */
+export function validateTxExpirySecs(value: number): number {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > MAX_TX_EXPIRATION_DURATION) {
+        throw new RangeError(
+            `txExpirySecs must be an integer from 1 to ${MAX_TX_EXPIRATION_DURATION}, got ${String(value)}`,
+        );
+    }
+    return value;
+}
+
+/**
+ * The expiration time of a transaction built without `txExpiryTime`: `SupraConfig.txExpirySecs` (default
+ * `DEFAULT_TX_EXPIRATION_DURATION`) seconds after the client's estimate of the chain's time (`ChainClock`), which is
+ * the client's clock until the client has read a block.
+ */
+export function defaultTxExpiryTime(config: NetworkConfig): bigint {
+    return chainClockOf(config).estimatedNowSeconds() + BigInt(config.txExpirySecs ?? DEFAULT_TX_EXPIRATION_DURATION);
 }
 
 export function rawTxnObjectInnerInternal(
@@ -149,11 +187,7 @@ export function rawTxnObjectInnerInternal(
         // Without a `gasUnitPrice` on the call, the price is `SupraConfig.minGasUnitPrice` (`DEFAULT_GAS_PRICE` when
         // the client sets none); the node's current minimum is not read.
         args.optionalTransactionPayloadArgs?.gasUnitPrice ?? config.minGasUnitPrice ?? DEFAULT_GAS_PRICE,
-        args.optionalTransactionPayloadArgs?.txExpiryTime ??
-        BigInt(
-            Math.ceil(Date.now() / MILLISECONDS_PER_SECOND) +
-            DEFAULT_TX_EXPIRATION_DURATION,
-        ),
+        args.optionalTransactionPayloadArgs?.txExpiryTime ?? defaultTxExpiryTime(config),
         new TxnBuilderTypes.ChainId(config.chainId),
     );
 }

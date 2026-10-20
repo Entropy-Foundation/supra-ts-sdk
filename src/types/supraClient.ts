@@ -34,6 +34,21 @@ export interface RetryConfig {
  * faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A call with an explicit
  * `sequenceNumber` does not take part in this order.
  *
+ * The counter records every transaction of the account that the client submitted (accepted, or whose submission
+ * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time, and hands out the
+ * lowest number at or above the account's sequence number on the chain that has no record. A record is dropped when
+ * the chain's number passes it, when a block the client reads has reached its expiration time, or when a read of the
+ * transaction returns `Invalid`; an HTTP 404 does not drop it. The first use of an account reads the account and the
+ * latest block; so does the next call after a refusal for a stale number or a full queue
+ * (`SupraAccountQueueFullError`), and once the estimated chain time has passed the expiration time of a record by two
+ * seconds.
+ *
+ * `txExpirySecs` sets the expiration time of every transaction built without `txExpiryTime`: that many seconds after
+ * the client's estimate of the chain's time (the client's clock shifted by the difference to the timestamp of the
+ * latest block it has read; the client's clock before it has read a block). An integer from 1 to
+ * `MAX_TX_EXPIRATION_DURATION` (600); default `DEFAULT_TX_EXPIRATION_DURATION` (60). The constructor throws a
+ * `RangeError` otherwise.
+ *
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`. `retry` turns on retries of GET requests; it is off by default.
  * `waitTimeoutMs` sets how long a wait for a transaction's final status lasts (`waitForTransaction` and submissions
@@ -41,8 +56,8 @@ export interface RetryConfig {
  * `SupraTransactionTimeoutError`.
  *
  * Every setting belongs to the client it is passed to: `network`, `rpcUrl`, `chainId`, `maxGas`,
- * `minGasUnitPrice`, `estimateMaxGas`, `maxGasEstimateMultiplier`, `timeoutMs`, `retry`, `waitTimeoutMs` and
- * `verifyChainId`. The client copies the configuration, so later changes
+ * `minGasUnitPrice`, `estimateMaxGas`, `maxGasEstimateMultiplier`, `timeoutMs`, `retry`, `waitTimeoutMs`,
+ * `txExpirySecs` and `verifyChainId`. The client copies the configuration, so later changes
  * to the object passed in do not reach it, and two clients never share settings, including two clients of the same
  * predefined network. `rpcUrl` must be an absolute `http:` or `https:` URL, with or without trailing slashes and with
  * or without a path prefix; the constructor throws a `TypeError` otherwise. `chainId` must be an integer from 0 to
@@ -67,6 +82,7 @@ export type SupraConfig =
         timeoutMs?: number;
         retry?: RetryConfig;
         waitTimeoutMs?: number;
+        txExpirySecs?: number;
         /** `false` signs with the network's chain ID without reading the node's. Default `true`. */
         verifyChainId?: boolean;
     }
@@ -81,6 +97,7 @@ export type SupraConfig =
         timeoutMs?: number;
         retry?: RetryConfig;
         waitTimeoutMs?: number;
+        txExpirySecs?: number;
         /** `false` signs with `chainId` without reading the node's chain ID. Default `true`. */
         verifyChainId?: boolean;
     };

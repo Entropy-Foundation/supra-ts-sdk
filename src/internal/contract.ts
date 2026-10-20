@@ -1,6 +1,6 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import { sendTxnPayloadInternal, simpleInternal } from "./transactionManager/txnBuild";
+import { sendTxnPayloadInternal, simpleInternal, withSequenceNumber } from "./transactionManager/txnBuild";
 import { bindReservation, withSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
@@ -63,7 +63,9 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
         }, config);
         const sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: simpleRawTxn }, config);
         if (reservation !== undefined) {
-            bindReservation(sendTxPayload, reservation);
+            bindReservation(sendTxPayload, reservation, (sequenceNumber) =>
+                sendTxnPayloadInternal({ senderAccount, rawTxn: withSequenceNumber(simpleRawTxn, sequenceNumber) }, config),
+            );
         }
         return await submitTxnInternal({
             sendTxJsonPayload: sendTxPayload,
