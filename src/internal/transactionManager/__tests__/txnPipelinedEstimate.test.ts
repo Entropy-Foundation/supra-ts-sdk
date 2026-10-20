@@ -412,6 +412,25 @@ describe("the max gas estimate", () => {
         expect(submissions).toEqual([expect.objectContaining({ sequenceNumber: 4, maxGas: 3_000 })]);
     });
 
+    it("limits the fallback to the lowest balance read when a later simulation request fails", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        // The first read pays for 1,000,000 units, the second for 15,000, below DEFAULT_MAX_GAS_UNITS.
+        balances = ["100000000000", "1500000000"];
+        let calls = 0;
+        simulate = () => {
+            calls += 1;
+            return calls === 1
+                ? json(moveTxn(TransactionStatus.Invalid, "INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE", 0))
+                : json({ message: "internal error" }, 500);
+        };
+
+        await transfer(supra, sender);
+
+        expect(simulations.map((s) => s.maxGas)).toEqual([1_000_000, 15_000]);
+        expect(submissions).toEqual([expect.objectContaining({ sequenceNumber: 3, maxGas: 15_000 })]);
+    });
+
     it("throws a first simulation's insufficient balance that a new balance read does not explain", async () => {
         const supra = newClient();
         const sender = new SupraAccount();

@@ -95,7 +95,8 @@ export async function affordableGasUnitsInternal(
  * is requested. When there
  * is no `senderAccount`, or the balance read fails, or the simulation fails for a reason that is not a simulation
  * result (a request error, a response without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most
- * `affordable` when that is known and not zero.
+ * `affordable` when that is known and not zero. After a balance read made again during the estimate, `affordable` is
+ * the lowest number of units a read paid for.
  */
 export async function resolveMaxGasInternal(
     args: {
@@ -124,13 +125,8 @@ export async function resolveMaxGasInternal(
     } catch {
         return DEFAULT_MAX_GAS_UNITS;
     }
-    // With no balance the node rejects the transaction whatever its max gas; the default lets it say why.
-    if (affordable === 0n) {
-        return DEFAULT_MAX_GAS_UNITS;
-    }
-    const fallback = minBigInt(DEFAULT_MAX_GAS_UNITS, affordable);
-    if (args.senderAccount === undefined) {
-        return fallback;
+    if (affordable === 0n || args.senderAccount === undefined) {
+        return fallbackMaxGas(affordable);
     }
 
     const simulations = new EstimateSimulations(
@@ -147,13 +143,10 @@ export async function resolveMaxGasInternal(
         }
         simulated = await simulateAtChainSequenceNumber(simulations, config);
     }
-    if (simulated === undefined) {
-        return fallback;
-    }
-
-    const gasUsed = gasUsedOf(simulated);
+    // A simulation may have lowered `affordable` after a new balance read; the fallback uses the lowest value.
+    const gasUsed = simulated === undefined ? undefined : gasUsedOf(simulated);
     if (gasUsed === undefined) {
-        return fallback;
+        return fallbackMaxGas(simulations.affordable);
     }
     const multiplier = config.maxGasEstimateMultiplier ?? DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER;
     const estimate = BigInt(Math.ceil(gasUsed * multiplier));
@@ -161,6 +154,15 @@ export async function resolveMaxGasInternal(
         estimate > MIN_ESTIMATED_MAX_GAS_UNITS ? estimate : MIN_ESTIMATED_MAX_GAS_UNITS,
         simulations.affordable,
     );
+}
+
+/**
+ * The max gas of an estimate that has no simulation result: `DEFAULT_MAX_GAS_UNITS`, at most `affordable`. With no
+ * balance the node rejects the transaction whatever its max gas, so a zero `affordable` gives `DEFAULT_MAX_GAS_UNITS`
+ * and the node reports the reason.
+ */
+function fallbackMaxGas(affordable: bigint): bigint {
+    return affordable === 0n ? DEFAULT_MAX_GAS_UNITS : minBigInt(DEFAULT_MAX_GAS_UNITS, affordable);
 }
 
 function isSequenceNumberTooNew(error: SupraSimulationFailedError): boolean {
@@ -236,10 +238,10 @@ class EstimateSimulations {
                 if (affordable >= BigInt(rawTxn.max_gas_amount)) {
                     throw error;
                 }
+                this.affordable = affordable;
                 if (affordable === 0n) {
                     return undefined;
                 }
-                this.affordable = affordable;
                 this.rawTxn = this.args.buildRawTxn(affordable);
             }
         }
