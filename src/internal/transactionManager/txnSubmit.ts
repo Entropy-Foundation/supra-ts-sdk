@@ -1,6 +1,8 @@
 import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import type { WaitForTransactionOptions } from "../../types/transaction";
+import { SupraTransactionFailedError } from "../../errors/transactionError";
+import { TransactionStatus, type WaitForTransactionOptions } from "../../types/transaction";
+import { reservationOf, sequenceNumberTrackerOf, settleRefusedSubmission } from "../sequenceNumber";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
@@ -12,6 +14,16 @@ import { getRawTxnJSONInternal, sendTxnPayloadInternal } from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
 
+/**
+ * Validates the options of a submission. The helpers that reserve a sequence number call it before reserving, so
+ * that an invalid option does not use a number.
+ */
+export function validateSubmitOptions(options: EnableTransactionWaitAndSimulationArgs): void {
+    if (options.waitTimeoutMs !== undefined) {
+        validateWaitTimeoutMs(options.waitTimeoutMs, "waitTimeoutMs");
+    }
+}
+
 export async function submitTxnInternal(
     args: {
         sendTxJsonPayload: SendTxnPayload,
@@ -20,19 +32,31 @@ export async function submitTxnInternal(
     config: NetworkConfig
 ): Promise<SubmitTransactionResponse> {
     const options = args.enableTransactionWaitAndSimulationArgs ?? {};
-    if (options.waitTimeoutMs !== undefined) {
-        validateWaitTimeoutMs(options.waitTimeoutMs, "waitTimeoutMs");
-    }
+    validateSubmitOptions(options);
 
-    // A failed simulation throws, so the transaction is not submitted.
-    if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
-        await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
-    }
+    // A sequence number taken from the client's counter is settled by the outcome of the submission.
+    const reservation = reservationOf(args.sendTxJsonPayload);
 
-    const txHash = await post<SendTxnPayload, string>({
-        path: "/transactions/submit",
-        data: args.sendTxJsonPayload,
-    }, config);
+    let txHash: string;
+    try {
+        // A failed simulation throws, so the transaction is not submitted.
+        if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
+            await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
+        }
+
+        txHash = await post<SendTxnPayload, string>({
+            path: "/transactions/submit",
+            data: args.sendTxJsonPayload,
+        }, config);
+    } catch (error) {
+        if (reservation !== undefined) {
+            settleRefusedSubmission(reservation, error, config);
+        }
+        throw error;
+    }
+    if (reservation !== undefined) {
+        sequenceNumberTrackerOf(config).accepted(reservation);
+    }
 
     // From here on the node has accepted the transaction: the errors of the wait carry `txHash`, and a failed read
     // returns it.
@@ -41,7 +65,25 @@ export async function submitTxnInternal(
         if (options.waitTimeoutMs !== undefined) {
             waitOptions.timeoutMs = options.waitTimeoutMs;
         }
-        return await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
+        // A discarded transaction does not use its sequence number, so the counter may be ahead of the chain. The
+        // outcome is `Invalid` whether the wait returns the transaction (`checkSuccess: false`) or throws.
+        const invalidated = () => {
+            if (reservation !== undefined) {
+                sequenceNumberTrackerOf(config).invalidate(reservation.address);
+            }
+        };
+        try {
+            const transaction = await waitForTransactionInternal({ transactionHash: txHash, options: waitOptions }, config);
+            if (transaction.status === TransactionStatus.Invalid) {
+                invalidated();
+            }
+            return transaction;
+        } catch (error) {
+            if (error instanceof SupraTransactionFailedError && error.status === TransactionStatus.Invalid) {
+                invalidated();
+            }
+            throw error;
+        }
     }
 
     try {

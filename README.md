@@ -266,6 +266,45 @@ try {
 }
 ```
 
+### Sequence numbers
+
+A transaction carries the sender's sequence number, and the node executes a transaction only when its number is the
+account's next number. `transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
+`publishPackage` and the entry functions of `Contract.fromABI` take the number from a counter that the `SupraClient`
+keeps for each account:
+
+- The first use reads the account's sequence number from the chain. Each transaction the node accepts advances the
+  counter, so transactions sent without waiting for the previous one to commit get consecutive numbers, also when they
+  are sent concurrently (`Promise.all`).
+- A transaction the node refuses for another reason (for example an insufficient balance) gives its number back.
+- When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or a refusal of a
+  number beyond what it queues for the account, or a number that already has a pending transaction), the client reads the number from the chain again and the helper sends
+  the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
+- `supra.resetSequenceNumber(address)` forgets the counter of an account. Call it after the account has sent
+  transactions by other means, or after a `SupraTransactionTimeoutError` for a transaction that will not commit.
+- `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given, without using or
+  changing the counter. The builders of `supra.transaction.build` always take the number as `senderSequenceNumber`.
+
+The counter lives in one `SupraClient`. Two clients, or two processes, that send from the same account each keep their
+own counter and recover from each other's transactions through the refusal and re-read described above.
+
+A node accepts a transaction whose number is ahead of the account's next number and holds it until the numbers before
+it have been sent. The node holds at most 25 numbers per account by default (the refusal message names the highest
+number the node accepts), so at most about 25 transactions of one account can be in flight; wait for commits
+(`enableWaitForTransaction: true`) when sending more than that. A transaction expires at `txExpiryTime`, which defaults
+to five minutes after the transaction was built.
+
+```ts
+const supra = new SupraClient({ network: Network.TESTNET });
+
+// Ten transfers from one account, all accepted without waiting for each other.
+const responses = await Promise.all(
+  Array.from({ length: 10 }, () =>
+    supra.coin.transferSupraCoin({ senderAccount: sender, receiverAccountAddress: "0x1234", amount: 100n }),
+  ),
+);
+```
+
 ## 📚 More Examples
 
 - [Account](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/account.ts)

@@ -20,6 +20,7 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     fungibleAsset: true,
     validateChainId: true,
     getChainId: true,
+    resetSequenceNumber: true,
     getGasPrice: true,
     getMinGasUnitPrice: true,
     isAccountExists: true,

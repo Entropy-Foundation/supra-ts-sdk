@@ -19,6 +19,8 @@ import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../utils/constants";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
 import { validateRpcUrl } from "../client/url";
 import { validateWaitTimeoutMs } from "../internal/transaction";
+import { resetSequenceNumberInternal } from "../internal/sequenceNumber";
+import type { AccountAddressInput } from "../types/account";
 
 
 /**
@@ -280,6 +282,29 @@ export class SupraClient {
      */
     async getMinGasUnitPrice(): Promise<bigint> {
         return getMinGasUnitPriceInternal(this.networkInformation);
+    }
+
+    /**
+     * Forgets the client's sequence-number counter of `address`. The next transaction of that account that a helper
+     * builds reads the sequence number from the chain again.
+     *
+     * The client keeps, per account, the next sequence number of the transactions that its helpers
+     * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `publishPackage` and
+     * the entry functions of `Contract.fromABI`) send. The counter is reset automatically when the node reports a stale
+     * number; call this method after the account has sent transactions by other means (another client or process, a
+     * wallet, or the builders of `transaction.build` with an explicit number).
+     * @param address - The account whose counter is reset.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     * supra.resetSequenceNumber("0x1234");
+     * ```
+     * @group SupraClient
+     */
+    resetSequenceNumber(address: AccountAddressInput): void {
+        resetSequenceNumberInternal({ address }, this.networkInformation);
     }
 
 }

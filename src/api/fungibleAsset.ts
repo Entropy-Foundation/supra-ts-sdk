@@ -4,6 +4,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { CoinInfo } from "../types/coin";
 import { getFungibleAssetMetadataInternal, transferFungibleAssetInternal } from "../internal/fungibleAsset";
+import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
 import { validateAddress, validateAmount } from "../helper/validation";
 
 /**
@@ -95,10 +96,13 @@ export class FungibleAsset {
     ): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
-        return transferFungibleAssetInternal({
-            ...args,
-            assetAddress: "0x000000000000000000000000000000000000000000000000000000000000000a",
-        }, this.networkInformation);
+        return retryWithFreshSequenceNumber(
+            args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
+            () => transferFungibleAssetInternal({
+                ...args,
+                assetAddress: "0x000000000000000000000000000000000000000000000000000000000000000a",
+            }, this.networkInformation),
+        );
     }
 
     /**
@@ -140,6 +144,9 @@ export class FungibleAsset {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
         validateAddress(args.assetAddress, "assetAddress");
-        return transferFungibleAssetInternal(args, this.networkInformation);
+        return retryWithFreshSequenceNumber(
+            args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
+            () => transferFungibleAssetInternal(args, this.networkInformation),
+        );
     }
 }

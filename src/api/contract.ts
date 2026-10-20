@@ -3,6 +3,7 @@ import type { DeepReadonly, ContractsFromABI } from "../types/contract";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { callContractInternal } from "../internal/contract";
+import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
 import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs } from "../types/transactionManager/transactionSubmit";
 import { validateFunctionId } from "../helper/validation";
@@ -112,11 +113,14 @@ export class Contract {
                                     const functionId = `${target.address}::${target.name}::${prop}` as MoveFunctionId;
                                     validateFunctionId(functionId, "function");
 
-                                    return await callContractInternal({
-                                        ...args,
-                                        function: functionId,
-                                        abi: abi as MoveModule
-                                    }, this.networkInformation);
+                                    return await retryWithFreshSequenceNumber(
+                                        args.optionalTransactionPayloadArgs?.sequenceNumber,
+                                        () => callContractInternal({
+                                            ...args,
+                                            function: functionId,
+                                            abi: abi as MoveModule
+                                        }, this.networkInformation),
+                                    );
 
                                 };
 

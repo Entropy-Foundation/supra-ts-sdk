@@ -3,10 +3,12 @@ import type { AccountAddressInput } from "../types/account";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
-import { getAccountInfoInternal, getAccountResourceInternal, isAccountExistsInternal } from "./account";
+import { getAccountResourceInternal, isAccountExistsInternal } from "./account";
+import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId } from "../types/move";
+import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
-import { submitTxnInternal } from "./transactionManager/txnSubmit";
+import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { CoinInfo } from "../types/coin";
 
 export async function transferCoinInternal(
@@ -37,18 +39,33 @@ export async function transferCoinInternal(
 
     }
 
+    const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
+    validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
+    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({ address: args.senderAccount.address(), sequenceNumber: explicitSequenceNumber }, config);
+
     // Coin Transfer Payload
     let supraTransferPayload = {
         senderAddress: args.senderAccount.address(),
-        senderSequenceNumber: (await getAccountInfoInternal({ accountAddress: args.senderAccount.address() }, config)).sequence_number,
+        senderSequenceNumber,
         function: `${SUPRA_FRAMEWORK_ADDRESS}::supra_account::transfer_coins` as MoveFunctionId,
         functionTypeArgs: [new TypeTagParser(args.coinType).parseTypeTag()],
         functionArgs: [receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]
     }
 
-    let raw_txn = rawTxnObjectInternal(supraTransferPayload, config);
-
-    let sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn }, config);
+    let sendTxPayload: SendTxnPayload;
+    try {
+        let raw_txn = rawTxnObjectInternal(supraTransferPayload, config);
+        sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: raw_txn }, config);
+    } catch (error) {
+        // The transaction was not submitted, so a number from the counter is not used.
+        if (reservation !== undefined) {
+            releaseSequenceNumberInternal(reservation, config);
+        }
+        throw error;
+    }
+    if (reservation !== undefined) {
+        bindReservation(sendTxPayload, reservation);
+    }
 
     return await submitTxnInternal({
         sendTxJsonPayload: sendTxPayload,

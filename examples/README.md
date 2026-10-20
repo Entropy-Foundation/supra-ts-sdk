@@ -64,6 +64,25 @@ To run them for real:
 > variables. `account.setup.ts` ships with generated keys precisely so nothing secret
 > lives in the repo.
 
+## Running `buildTransaction.ts` and `submitTransaction.ts` against a localnet
+
+Both examples create their client with [`client.setup.ts`](./client.setup.ts). Set the node's RPC URL and chain ID,
+and let the example fund its generated accounts from the node's faucet (the first RPC node of a localnet serves it):
+
+```bash
+pnpm build
+SUPRA_RPC_URL=http://localhost:27001 SUPRA_CHAIN_ID=255 SUPRA_EXAMPLES_FUND=1 npx tsx examples/buildTransaction.ts
+SUPRA_RPC_URL=http://localhost:27001 SUPRA_CHAIN_ID=255 SUPRA_EXAMPLES_FUND=1 npx tsx examples/submitTransaction.ts
+```
+
+Without `SUPRA_RPC_URL` they use Testnet. Two steps depend on accounts and modules that exist on Testnet and are
+skipped on another node unless the environment names a replacement:
+
+- `SUPRA_EXAMPLES_MULTISIG_ADDRESS`: a multisig account whose owner is the example's account
+  (`buildTransaction.ts`, multisig steps).
+- `SUPRA_EXAMPLES_TWO_SIGNERS_FUNCTION`: an entry function without arguments that takes two signers
+  (`submitTransaction.ts`, multi-agent step).
+
 ## ABIs
 
 `contract.ts` uses [`abi.ts`](./abi.ts), a hand-written minimal ABI for `0x1::coin`.

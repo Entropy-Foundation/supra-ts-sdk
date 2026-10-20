@@ -52,6 +52,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `transactionChainId`) before signing when the configured chain ID or the transaction's chain ID is not the node's.
 - **`SupraConfig.verifyChainId`**: `false` turns the check off for offline signing. The client signs with its
   configured chain ID and sends no request to do so.
+- **Per-account sequence-number counter.** Each `SupraClient` keeps the next sequence number of every account that its
+  helpers send from. The first use reads the number from the chain; each transaction the node accepts advances it. A
+  refusal for a stale number (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or the nodes' refusal of a number
+  beyond what they queue for the account, or a number that already has a pending transaction) reads the number from
+  the chain again, and the helper sends the transaction once more with the fresh number. A transaction the node refused for another reason gives its number back.
+  Concurrent sends from one account in a process get distinct consecutive numbers.
+- **`SupraClient.resetSequenceNumber(address)`** forgets the counter of an account; the next transaction reads its
+  number from the chain.
+- **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
+  `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
+  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI`.
+  The helper uses it as given and does not use or change the counter.
+- The transaction examples read `SUPRA_RPC_URL` and `SUPRA_CHAIN_ID` to run against another node, and
+  `SUPRA_EXAMPLES_FUND=1` to fund their accounts from that node's faucet.
 
 ### Changed
 
@@ -128,6 +142,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `isPendingTransaction` returns true for `PendingAfterExecution` as well as `Pending`.
 - **Breaking:** `getTransactionByHash`, `waitForTransaction` and `isPendingTransaction` require a transaction hash of
   `0x` followed by exactly 64 hex digits. A longer or shorter value is rejected before any request.
+- **Breaking:** `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
+  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI` take
+  the sequence number from the client's counter instead of reading it from the chain on every call. Transactions sent
+  by other means from the same account (another client or process, a wallet, a transaction built with an explicit
+  number) make the counter stale; the next helper call then costs one refused submission and a read of the chain, and
+  succeeds. After a `SupraTransactionTimeoutError` for a transaction that will not commit, call
+  `resetSequenceNumber`. A transaction the node discarded after accepting it (`Invalid` final status) also resets the
+  counter.
+- The examples `buildTransaction.ts` and `submitTransaction.ts` read a fresh sequence number for each transaction
+  (they reused the number of the first one), use the client's RPC URL for the raw HTTP request, and take the
+  automation gas price cap from the network's minimum gas unit price.
 
 ### Fixed
 

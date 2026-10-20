@@ -3,6 +3,7 @@ import type { AccountAddressInput } from "../types/account";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { getCoinInfoInternal, transferCoinInternal } from "../internal/coin";
+import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
 import type { MoveFunctionId } from "../types/move";
 import type { CoinInfo } from "../types/coin";
 import { validateAddress, validateAmount, validateStructId } from "../helper/validation";
@@ -96,10 +97,10 @@ export class Coin {
     ): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
-        return transferCoinInternal({
+        return retryWithFreshSequenceNumber(args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber, () => transferCoinInternal({
             ...args,
             coinType: "0x1::supra_coin::SupraCoin",
-        }, this.networkInformation);
+        }, this.networkInformation));
     }
 
     /**
@@ -141,6 +142,9 @@ export class Coin {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
         validateStructId(args.coinType, "coinType");
-        return transferCoinInternal(args, this.networkInformation);
+        return retryWithFreshSequenceNumber(
+            args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
+            () => transferCoinInternal(args, this.networkInformation),
+        );
     }
 }
