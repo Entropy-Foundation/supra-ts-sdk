@@ -77,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction that depends on an earlier uncommitted one fails its estimate and needs `maxGas`.
 - **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
   without a request.
+- **`parseTypeArgument`** is exported. It parses a Move type string into a `TypeTag` with the grammar of the node's type
+  parser, as the SDK does for type argument strings: `0x1::object::Object<T>` stays the struct `Object<T>`, and names
+  that contain `T` followed by digits are accepted. Use it for the `TypeTag`s of `transaction.build.rawTxnObject` and
+  the other builders that take `TypeTag`s, where `TypeTagParser` turns `Object<T>` into `address`.
 - **`stringifyWithBigInt`** is exported. It serializes a value whose `bigint` fields (for example the result of
   `transaction.build.sendTxnPayload`) `JSON.stringify` rejects, writing them as exact JSON numbers.
 - **`fungibleAsset.migrateCoinToFungibleStore({ senderAccount, coinType?, optionalTransactionArgs? })`** submits
@@ -248,6 +252,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `getFungibleAssetMetadata` is declared to return `FungibleAssetMetadata` (`name`, `symbol`, `decimals`,
   `icon_uri`, `project_uri`), which is what it returns. It was declared `CoinInfo`.
 
+- **Breaking (types):** `FunctionTypeArgs`, the type of an entry in `ty_args` of a transaction payload
+  in JSON form, is a union of the primitive type names, `{ vector }` and `{ struct }` instead of an
+  interface that only describes `{ struct }`. Code that reads `ty_args[i].struct` directly must narrow
+  the value first.
+- **Breaking:** type arguments given as strings are parsed by the SDK with the grammar of the node's type
+  parser, in entry functions (`transaction.build.simple` and the entry functions of `Contract.fromABI`), the
+  `coinType` of `coin.transferCoin` and of `fungibleAsset.migrateCoinToFungibleStore`, and `methods.view`. A
+  string that is not exactly one concrete type throws
+  before any request: text after the type (`"u64 junk"`, `"0x1::supra_coin::SupraCoin, u8"`), a generic type
+  parameter (`"T0"`), and `"string"`, which was read as `0x1::string::String` and which nodes refuse. Entry
+  functions used the first type of such a string, and views sent it to the node unchecked.
+
 ### Fixed
 
 - `supra.constructor` is `SupraClient`; it was the constructor of the last mixed-in class.
@@ -262,6 +278,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The JSDoc of `events.getEventsByType` describes events and calls `getEventsByType`.
 - `getAccountInfo` returns `sequence_number` as a `bigint`, the declared type. It returned the number the node
   sends, so `info.sequence_number + 1n` threw a `TypeError`.
+- Type arguments of every `TypeTag` variant (`bool`, `u8` to `u256`, `address`, `signer`, `vector` and
+  `struct` with type parameters, nested to any depth) are written correctly in transaction payloads.
+  Building, simulating or submitting an entry function, script, automation registration or multisig
+  transaction with a non-struct type argument previously threw a `TypeError`.
+- `methods.view` writes a `TypeTag` type argument as its full Move type string, including the type
+  parameters of a struct, and accepts non-struct `TypeTag` values. A `TypeTag` and its string form
+  produce the same request.
+- A type argument string `0x1::object::Object<T>` is the struct type `Object<T>` in an entry function
+  payload, alone and inside `vector<…>` or another struct; it was signed as `address`. A view function and an
+  entry function given the same type argument string instantiate the same type.
+- Type argument strings whose module or struct names contain `T` followed by digits, such as
+  `0xabc::usdt0::USDT0` or `0xabc::m::T1`, are accepted in entry functions and as the `coinType` of
+  `coin.transferCoin` and `fungibleAsset.migrateCoinToFungibleStore`; they threw
+  `TypeTagParserError: Invalid type tag.`
+- Script arguments of type `u16` are accepted by `parseScriptArgs`; previously they threw
+  `Invalid script argument variant`. `u32` and `u256` script arguments are covered by tests.
 
 ### Removed
 

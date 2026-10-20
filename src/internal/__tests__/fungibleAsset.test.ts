@@ -346,6 +346,18 @@ describe("SUPRA balances and fungible asset transfers", () => {
             expect(JSON.stringify(submittedEntryFunction().ty_args)).toContain("Token");
         });
 
+        it("submits a coin type whose module and struct names contain T followed by digits", async () => {
+            await newClient().fungibleAsset.migrateCoinToFungibleStore({
+                senderAccount: new SupraAccount(),
+                coinType: "0xabc::usdt0::USDT0",
+                optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n } },
+            });
+
+            const tyArgs = JSON.stringify(submittedEntryFunction().ty_args);
+            expect(tyArgs).toContain('"usdt0"');
+            expect(tyArgs).toContain('"USDT0"');
+        });
+
         it("rejects a coin type that is not a struct id before any request", async () => {
             await expect(
                 newClient().fungibleAsset.migrateCoinToFungibleStore({

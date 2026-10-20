@@ -37,7 +37,8 @@ export class Methods {
      *  Queries for a Move view function
      * @template T - The type of the MoveValue array to be returned.
      * @param args.function - The name of the function to query.
-     * @param args.typeArguments - An array of type arguments for the function.
+     * @param args.typeArguments - An array of type arguments for the function. A string must be one concrete Move type
+     *   (see `TypeArgument`); it is sent as written.
      * @param args.functionArguments - An array of arguments for the function.
      * @returns A Promise that resolves to an array of MoveValue objects.
      * @example

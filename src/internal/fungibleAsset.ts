@@ -1,6 +1,7 @@
-import { BCS, HexString, TypeTagParser, type SupraAccount } from "supra-l1-sdk-core";
+import { BCS, HexString, type SupraAccount } from "supra-l1-sdk-core";
 import { SupraInsufficientFungibleAssetBalanceError } from "../errors/fungibleAssetError";
 import { standardizeAddress } from "../helper/account";
+import { parseTypeArgument } from "../helper/typeTag";
 import type { AccountAddressInput } from "../types/account";
 import type { FungibleAssetMetadata } from "../types/fungibleAsset";
 import type { NetworkConfig } from "../utils/apiEndpoints";
@@ -38,7 +39,7 @@ export async function transferFungibleAssetInternal(
     // Fungible Asset Transfer Payload
     let supraTransferPayload = {
         function: `${SUPRA_FRAMEWORK_ADDRESS}::primary_fungible_store::transfer` as MoveFunctionId,
-        functionTypeArgs: [new TypeTagParser("0x1::fungible_asset::Metadata").parseTypeTag()],
+        functionTypeArgs: [parseTypeArgument("0x1::fungible_asset::Metadata")],
         functionArgs: [assetAddress.toUint8Array(), receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]
     }
 
@@ -64,7 +65,7 @@ export async function migrateCoinToFungibleStoreInternal(
 
     let migrationPayload = {
         function: `${SUPRA_FRAMEWORK_ADDRESS}::coin::migrate_to_fungible_store` as MoveFunctionId,
-        functionTypeArgs: [new TypeTagParser(args.coinType ?? SUPRA_COIN_TYPE).parseTypeTag()],
+        functionTypeArgs: [parseTypeArgument(args.coinType ?? SUPRA_COIN_TYPE)],
         functionArgs: []
     }
 
