@@ -46,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `new SupraClient` throws a `TypeError` when `rpcUrl` is not an absolute `http:` or `https:` URL.
+- **Breaking:** `SupraClient.config` is a copy of the configuration object passed to the constructor, no longer that
+  object.
+- **Breaking:** the `SupraClient` type no longer declares `build`, `simulate` and `submit`, which were `undefined` at
+  runtime. Use `supra.transaction.build`, `supra.transaction.simulate` and `supra.transaction.submit`.
+- `rpcUrl` may end in slashes and may carry a path prefix (`https://host/prefix/`); every request goes to the same
+  URL whichever form is configured.
+- `SupraConfig` documents which settings belong to a client: all of them.
 - **Breaking:** `SupraAPIError.message` is the node's `message` when the error body has one (for example
   `General err: MoveTransactionValidationFailed(0x…, 0, SEQUENCE_NUMBER_TOO_OLD)`), otherwise the HTTP status text.
   It was always the status text. `statusText` and `data` are unchanged.
@@ -101,6 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `supra.constructor` is `SupraClient`; it was the constructor of the last mixed-in class.
 - `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
   signatures were replaced with zeros when the simulation request failed.
 

@@ -22,6 +22,12 @@ export interface RetryConfig {
  * `waitTimeoutMs` sets how long a wait for a transaction's final status lasts (`waitForTransaction` and submissions
  * with `enableWaitForTransaction`) when the call sets no timeout (default 60000 ms); a wait that exceeds it throws
  * `SupraTransactionTimeoutError`.
+ *
+ * Every setting belongs to the client it is passed to: `network`, `rpcUrl`, `chainId`, `maxGas`,
+ * `minGasUnitPrice`, `timeoutMs`, `retry` and `waitTimeoutMs`. The client copies the configuration, so later changes
+ * to the object passed in do not reach it, and two clients never share settings, including two clients of the same
+ * predefined network. `rpcUrl` must be an absolute `http:` or `https:` URL, with or without trailing slashes and with
+ * or without a path prefix; the constructor throws a `TypeError` otherwise.
  */
 export type SupraConfig =
     {

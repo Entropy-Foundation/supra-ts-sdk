@@ -157,10 +157,11 @@ describe("SupraClient", () => {
             expect(client.fungibleAsset).toBeInstanceOf(FungibleAsset);
         });
 
-        it("should store the original config", () => {
+        it("should store a copy of the config", () => {
             const config = { network: Network.TESTNET as const };
             const client = new SupraClient(config);
-            expect(client.config).toBe(config);
+            expect(client.config).toEqual(config);
+            expect(client.config).not.toBe(config);
         });
     });
 
