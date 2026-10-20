@@ -396,7 +396,7 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         expect(simulations.filter((s) => s.sequenceNumber === 3)).toHaveLength(3);
     });
 
-    it("sends the transfer again with the chain's number when a concurrent call's estimate failed and its number was freed", async () => {
+    it("gives a concurrent call the number of a call whose estimate failed", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
         // The transfer of 0x0102030405 aborts in its simulation (its amount serialises as these bytes).
@@ -419,9 +419,10 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
 
         expect(first.status).toBe("rejected");
         expect(second.status).toBe("fulfilled");
-        // The second call had 4; nothing holds 3, so 4 would not commit. It is sent with 3, read from the chain.
+        // The first call held 3 until its estimate failed and handed 3 back; the second call then took 3.
         expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
-        expect(accountReads).toBe(3);
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([3, 3]);
+        expect(accountReads).toBe(1);
     });
 
     it.each([

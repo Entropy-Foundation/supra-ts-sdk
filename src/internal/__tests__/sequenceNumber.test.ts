@@ -12,6 +12,8 @@ import {
     reservationOf,
     sequenceNumberTrackerOf,
     settleUnsubmittedSequenceNumberInternal,
+    withSequenceNumberInternal,
+    type SequenceNumberReservation,
 } from "../sequenceNumber";
 
 const RPC_URL = "http://node.test";
@@ -127,27 +129,58 @@ describe("SequenceNumberTracker", () => {
     const next = async (tracker: SequenceNumberTracker, address: string, fetchChain: () => Promise<bigint>) =>
         (await tracker.reserve(address, fetchChain)).sequenceNumber;
 
-    it("hands out distinct consecutive numbers to concurrent callers with one read of the chain", async () => {
+    /** Resolves to the value of `promise`, or to "waiting" when it has not settled after the pending callbacks ran. */
+    async function settledNow<T>(promise: Promise<T>): Promise<T | "waiting"> {
+        return Promise.race([promise, new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 20))]);
+    }
+
+    it("hands out consecutive numbers with one read of the chain, one reservation at a time", async () => {
         const tracker = new SequenceNumberTracker();
         const fetchChain = jest.fn(fetchSeven);
 
-        const reservations = await Promise.all(Array.from({ length: 5 }, () => tracker.reserve("0x1", fetchChain)));
+        const first = await tracker.reserve("0x1", fetchChain);
+        const second = tracker.reserve("0x1", fetchChain);
+        expect(await settledNow(second)).toBe("waiting");
 
-        expect(reservations.map((reservation) => reservation.sequenceNumber)).toEqual([7n, 8n, 9n, 10n, 11n]);
+        tracker.accepted(first);
+        expect((await second).sequenceNumber).toBe(8n);
+        expect(first.sequenceNumber).toBe(7n);
         expect(fetchChain).toHaveBeenCalledTimes(1);
     });
 
-    it("keeps the counters of accounts apart", async () => {
+    it("hands the lock to waiting callers in the order of their calls", async () => {
+        const tracker = new SequenceNumberTracker();
+        const first = await tracker.reserve("0x1", fetchSeven);
+        const order: bigint[] = [];
+
+        const waiting = Array.from({ length: 3 }, () =>
+            tracker.reserve("0x1", fetchSeven).then((reservation) => {
+                order.push(reservation.sequenceNumber);
+                tracker.accepted(reservation);
+            }),
+        );
+        tracker.accepted(first);
+        await Promise.all(waiting);
+
+        expect(order).toEqual([8n, 9n, 10n]);
+    });
+
+    it("keeps the counters and locks of accounts apart", async () => {
         const tracker = new SequenceNumberTracker();
 
-        expect(await next(tracker, "0x1", async () => 3n)).toBe(3n);
-        expect(await next(tracker, "0x2", async () => 40n)).toBe(40n);
+        const one = await tracker.reserve("0x1", async () => 3n);
+        // The lock of 0x1 is held; 0x2 has a lock of its own.
+        const two = await tracker.reserve("0x2", async () => 40n);
+        expect(two.sequenceNumber).toBe(40n);
+        tracker.accepted(one);
+        tracker.accepted(two);
+
         expect(await next(tracker, "0x1", async () => 99n)).toBe(4n);
     });
 
-    it("hands out the latest number again when its submission is released", async () => {
+    it("hands a released number out next", async () => {
         const tracker = new SequenceNumberTracker();
-        await tracker.reserve("0x1", fetchSeven);
+        tracker.accepted(await tracker.reserve("0x1", fetchSeven));
         const second = await tracker.reserve("0x1", fetchSeven);
 
         tracker.release(second);
@@ -155,92 +188,57 @@ describe("SequenceNumberTracker", () => {
         expect(await next(tracker, "0x1", fetchSeven)).toBe(second.sequenceNumber);
     });
 
-    it("fills a gap left by a released number before it hands out a new one", async () => {
+    it("skips the numbers recorded as accepted from this client", async () => {
         const tracker = new SequenceNumberTracker();
-        const [first, second, third] = await Promise.all([
-            tracker.reserve("0x1", fetchSeven),
-            tracker.reserve("0x1", fetchSeven),
-            tracker.reserve("0x1", fetchSeven),
-        ]);
-        expect([first, second, third].map((reservation) => reservation.sequenceNumber)).toEqual([7n, 8n, 9n]);
+        const address = "0x" + "0".repeat(63) + "1";
+        tracker.recordAccepted(address, 7n, "0x" + "07".repeat(32));
+        tracker.recordAccepted(address, 8n, "0x" + "08".repeat(32));
 
-        tracker.release(second);
-
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(10n);
+        expect(await next(tracker, address, fetchSeven)).toBe(9n);
     });
 
-    it("lowers the counter past every released number at its end", async () => {
+    it("ignores a settlement of a reservation that does not hold the lock", async () => {
         const tracker = new SequenceNumberTracker();
-        const [, second, third] = await Promise.all([
-            tracker.reserve("0x1", fetchSeven),
-            tracker.reserve("0x1", fetchSeven),
-            tracker.reserve("0x1", fetchSeven),
-        ]);
+        const first = await tracker.reserve("0x1", fetchSeven);
+        tracker.release(first);
+        const second = await tracker.reserve("0x1", fetchSeven);
+        expect(second.sequenceNumber).toBe(7n);
 
-        tracker.release(second);
-        tracker.release(third);
-
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
-    });
-
-    it("ignores the release and acceptance of a reservation it did not hand out", async () => {
-        const tracker = new SequenceNumberTracker();
-        await tracker.reserve("0x1", fetchSeven);
-
-        tracker.release({ address: "0x1", sequenceNumber: 42n });
-        tracker.accepted({ address: "0x1", sequenceNumber: 43n });
-        // The number of a handed-out reservation, without the reservation itself.
+        // `first` is settled, and these were never handed out.
+        tracker.release(first);
+        tracker.accepted(first);
+        tracker.resynchronise(first);
         tracker.release({ address: "0x1", sequenceNumber: 7n });
+        tracker.accepted({ address: "0x1", sequenceNumber: 7n });
+        const third = tracker.reserve("0x1", fetchSeven);
+        expect(await settledNow(third)).toBe("waiting");
 
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
+        tracker.accepted(second);
+        expect((await third).sequenceNumber).toBe(8n);
     });
 
-    it("reads the chain again after invalidate and ignores releases of earlier reservations", async () => {
+    it("reads the chain again after invalidate, while the reservation that holds the lock keeps it", async () => {
         const tracker = new SequenceNumberTracker();
-        const stale = await tracker.reserve("0x1", fetchSeven);
+        const held = await tracker.reserve("0x1", fetchSeven);
 
         tracker.invalidate("0x1");
-        tracker.release(stale);
+        const after = tracker.reserve("0x1", async () => 20n);
+        expect(await settledNow(after)).toBe("waiting");
+        // A release after the invalidation leaves the counter to be read from the chain.
+        tracker.release(held);
 
-        expect(await next(tracker, "0x1", async () => 20n)).toBe(20n);
-        expect(await next(tracker, "0x1", async () => 99n)).toBe(21n);
+        expect((await after).sequenceNumber).toBe(20n);
     });
 
-    it("does not let an earlier reservation settle a later reservation of the same number", async () => {
+    it("reads the chain again after resynchronise and releases the lock", async () => {
         const tracker = new SequenceNumberTracker();
-        const older = await tracker.reserve("0x1", fetchSeven);
 
-        tracker.invalidate("0x1");
-        const newer = await tracker.reserve("0x1", fetchSeven);
-        expect(newer.sequenceNumber).toBe(older.sequenceNumber);
+        tracker.resynchronise(await tracker.reserve("0x1", fetchSeven));
 
-        tracker.release(older);
-        tracker.accepted(older);
-
-        // `newer` still holds the number, so it is neither handed out again nor settled twice.
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(8n);
-        tracker.release(newer);
-        expect(await next(tracker, "0x1", fetchSeven)).toBe(7n);
+        expect(await next(tracker, "0x1", async () => 30n)).toBe(30n);
     });
 
-    it("reads the chain again when invalidate happens during a read", async () => {
-        const tracker = new SequenceNumberTracker();
-        let release: (value: bigint) => void = () => undefined;
-        const slow = new Promise<bigint>((resolve) => {
-            release = resolve;
-        });
-
-        const pending = tracker.reserve("0x1", () => slow);
-        tracker.invalidate("0x1");
-        release(5n);
-
-        const result = await Promise.race([pending, new Promise<string>((resolve) => setTimeout(() => resolve("blocked"), 200))]);
-        // The first read is discarded and the number is read again; the slow read resolves for every attempt here.
-        expect(result).toMatchObject({ sequenceNumber: 5n });
-    });
-
-    it("keeps serving callers after a failed read of the chain", async () => {
+    it("releases the lock and keeps serving callers after a failed read of the chain", async () => {
         const tracker = new SequenceNumberTracker();
 
         await expect(tracker.reserve("0x1", async () => Promise.reject(new Error("offline")))).rejects.toThrow("offline");
@@ -249,17 +247,64 @@ describe("SequenceNumberTracker", () => {
     });
 });
 
+describe("SequenceNumberTracker.resume", () => {
+    const ADDRESS = "0x" + "0".repeat(63) + "1";
+    const hashOf = (n: number) => "0x" + n.toString(16).padStart(64, "0");
+
+    it("resumes at the lowest number without a pending transaction and keeps the records of the pending ones", async () => {
+        const tracker = new SequenceNumberTracker();
+        // Transactions 5, 6 and 7 were accepted; 6 is no longer pending.
+        for (const n of [5, 6, 7]) {
+            const reservation = await tracker.reserve(ADDRESS, async () => 5n);
+            tracker.recordAccepted(ADDRESS, reservation.sequenceNumber, hashOf(n));
+            tracker.accepted(reservation);
+        }
+        const eight = await tracker.reserve(ADDRESS, async () => 5n);
+        expect(eight.sequenceNumber).toBe(8n);
+
+        tracker.resume(
+            eight,
+            5n,
+            new Map([
+                [5n, hashOf(5)],
+                [7n, hashOf(7)],
+            ]),
+        );
+
+        expect([...tracker.acceptedBetween(ADDRESS, 0n, 100n).keys()]).toEqual([5n, 7n]);
+        // 6 is handed out, then 8: 7 has a pending transaction.
+        const six = await tracker.reserve(ADDRESS, async () => 99n);
+        expect(six.sequenceNumber).toBe(6n);
+        tracker.accepted(six);
+        expect(await (async () => (await tracker.reserve(ADDRESS, async () => 99n)).sequenceNumber)()).toBe(8n);
+    });
+
+    it("drops the records below the chain's number and resumes at it when nothing is pending", async () => {
+        const tracker = new SequenceNumberTracker();
+        tracker.recordAccepted(ADDRESS, 3n, hashOf(3));
+        tracker.recordAccepted(ADDRESS, 4n, hashOf(4));
+        const reservation = await tracker.reserve(ADDRESS, async () => 3n);
+        expect(reservation.sequenceNumber).toBe(5n);
+
+        tracker.resume(reservation, 4n, new Map());
+
+        expect(tracker.acceptedBetween(ADDRESS, 0n, 100n).size).toBe(0);
+        expect((await tracker.reserve(ADDRESS, async () => 99n)).sequenceNumber).toBe(4n);
+    });
+});
+
 describe("SequenceNumberTracker records of accepted transactions", () => {
     const ADDRESS = "0x" + "0".repeat(63) + "1";
     const hashOf = (n: number) => "0x" + n.toString(16).padStart(64, "0");
+    /** Every record of `ADDRESS`. */
+    const recorded = (tracker: SequenceNumberTracker) => tracker.acceptedBetween(ADDRESS, 0n, 2n ** 64n);
 
     it("records the hash of an accepted number, with the address and hash standardized", () => {
         const tracker = new SequenceNumberTracker();
 
         tracker.recordAccepted("0x1", 7, "0X" + "AB".repeat(32));
 
-        expect(tracker.acceptedHash(ADDRESS, 7n)).toBe("0x" + "ab".repeat(32));
-        expect(tracker.acceptedCount(ADDRESS)).toBe(1);
+        expect(recorded(tracker)).toEqual(new Map([[7n, "0x" + "ab".repeat(32)]]));
     });
 
     it("records nothing for a hash that is not hex", () => {
@@ -267,7 +312,7 @@ describe("SequenceNumberTracker records of accepted transactions", () => {
 
         tracker.recordAccepted(ADDRESS, 7n, "not a hash");
 
-        expect(tracker.acceptedCount(ADDRESS)).toBe(0);
+        expect(recorded(tracker).size).toBe(0);
     });
 
     it(`keeps at most ${MAX_ACCEPTED_RECORDS_PER_ACCOUNT} records per account and drops the lowest number`, () => {
@@ -277,9 +322,17 @@ describe("SequenceNumberTracker records of accepted transactions", () => {
             tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n + 1));
         }
 
-        expect(tracker.acceptedCount(ADDRESS)).toBe(MAX_ACCEPTED_RECORDS_PER_ACCOUNT);
-        expect(tracker.acceptedHash(ADDRESS, 0n)).toBeUndefined();
-        expect(tracker.acceptedHash(ADDRESS, BigInt(MAX_ACCEPTED_RECORDS_PER_ACCOUNT))).toBeDefined();
+        expect(recorded(tracker).size).toBe(MAX_ACCEPTED_RECORDS_PER_ACCOUNT);
+        expect(recorded(tracker).get(0n)).toBeUndefined();
+        expect(recorded(tracker).get(BigInt(MAX_ACCEPTED_RECORDS_PER_ACCOUNT))).toBeDefined();
+    });
+
+    it("returns the records from one number up to another (exclusive)", () => {
+        const tracker = new SequenceNumberTracker();
+        [3, 4, 5, 6].forEach((n) => tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n)));
+
+        expect([...tracker.acceptedBetween(ADDRESS, 4n, 6n).keys()]).toEqual([4n, 5n]);
+        expect(tracker.acceptedBetween("0x" + "0".repeat(63) + "2", 0n, 10n).size).toBe(0);
     });
 
     it("drops the records below the chain's number", () => {
@@ -288,8 +341,7 @@ describe("SequenceNumberTracker records of accepted transactions", () => {
 
         tracker.observeChainSequenceNumber(ADDRESS, 5n);
 
-        expect(tracker.acceptedHash(ADDRESS, 4n)).toBeUndefined();
-        expect(tracker.acceptedHash(ADDRESS, 5n)).toBe(hashOf(5));
+        expect(recorded(tracker)).toEqual(new Map([[5n, hashOf(5)]]));
     });
 
     it("drops the records up to a transaction that reads Success or Fail", () => {
@@ -298,19 +350,18 @@ describe("SequenceNumberTracker records of accepted transactions", () => {
 
         tracker.observeTransaction(hashOf(4), TransactionStatus.Fail);
 
-        expect(tracker.acceptedCount(ADDRESS)).toBe(1);
-        expect(tracker.acceptedHash(ADDRESS, 5n)).toBe(hashOf(5));
+        expect(recorded(tracker)).toEqual(new Map([[5n, hashOf(5)]]));
     });
 
     it("invalidates the counter and its records when a recorded transaction reads Invalid", async () => {
         const tracker = new SequenceNumberTracker();
-        await tracker.reserve(ADDRESS, async () => 3n);
+        tracker.accepted(await tracker.reserve(ADDRESS, async () => 3n));
         tracker.recordAccepted(ADDRESS, 3n, hashOf(3));
         const fetchChain = jest.fn(async () => 3n);
 
         tracker.observeTransaction(hashOf(3), TransactionStatus.Invalid);
 
-        expect(tracker.acceptedCount(ADDRESS)).toBe(0);
+        expect(recorded(tracker).size).toBe(0);
         expect((await tracker.reserve(ADDRESS, fetchChain)).sequenceNumber).toBe(3n);
         expect(fetchChain).toHaveBeenCalledTimes(1);
     });
@@ -323,38 +374,9 @@ describe("SequenceNumberTracker records of accepted transactions", () => {
 
             tracker.observeTransaction(hashOf(3), status);
 
-            expect(tracker.acceptedHash(ADDRESS, 3n)).toBe(hashOf(3));
+            expect(recorded(tracker).get(3n)).toBe(hashOf(3));
         },
     );
-
-    it("waits for the lower reservations to be accepted, released or dropped", async () => {
-        const tracker = new SequenceNumberTracker();
-        const [three, four, five, six] = await Promise.all(
-            Array.from({ length: 4 }, () => tracker.reserve(ADDRESS, async () => 3n)),
-        );
-        let settled = false;
-        const waiting = tracker.settledBelow(ADDRESS, six!.sequenceNumber).then(() => {
-            settled = true;
-        });
-
-        tracker.accepted(three!);
-        tracker.release(four!);
-        await Promise.resolve();
-        expect(settled).toBe(false);
-
-        tracker.invalidate(ADDRESS);
-        await waiting;
-        expect(settled).toBe(true);
-        // The reservation at 5 was dropped without a settlement of its own.
-        expect(five!.sequenceNumber).toBe(5n);
-    });
-
-    it("does not wait for reservations at or above the number", async () => {
-        const tracker = new SequenceNumberTracker();
-        const three = await tracker.reserve(ADDRESS, async () => 3n);
-
-        await expect(tracker.settledBelow(ADDRESS, three.sequenceNumber)).resolves.toBeUndefined();
-    });
 });
 
 describe("sequence numbers of the transfer helpers", () => {
@@ -671,6 +693,84 @@ describe("a number whose transaction threw before submission", () => {
         settleUnsubmittedSequenceNumberInternal(reservation, stale, config);
 
         expect((await tracker.reserve(address, async () => 12n)).sequenceNumber).toBe(12n);
+    });
+});
+
+describe("withSequenceNumberInternal", () => {
+    const address = "0x" + "cd".repeat(32);
+    const newConfig = (): NetworkConfig => ({ name: "custom", chainId: 255, rpcUrl: RPC_URL });
+
+    it("releases the lock and hands the number out next when the run throws before the submission", async () => {
+        const config = newConfig();
+
+        await expect(
+            withSequenceNumberInternal({ address }, config, async () => {
+                throw new Error("build failed");
+            }),
+        ).rejects.toThrow("build failed");
+        const taken = await withSequenceNumberInternal({ address }, config, async (sequenceNumber, reservation) => {
+            sequenceNumberTrackerOf(config).accepted(reservation as SequenceNumberReservation);
+            return sequenceNumber;
+        });
+
+        expect(taken).toBe(7n);
+        expect(accountReads).toBe(1);
+    });
+
+    it("makes the counter read the chain again when the run throws a stale number", async () => {
+        const config = newConfig();
+        const stale = new SupraAPIError({
+            status: 400,
+            statusText: "Bad Request",
+            url: RPC_URL,
+            data: { message: "General err: MoveTransactionValidationFailed(0x1, 0, SEQUENCE_NUMBER_TOO_OLD)" },
+        });
+
+        await expect(
+            withSequenceNumberInternal({ address }, config, async () => {
+                throw stale;
+            }),
+        ).rejects.toBe(stale);
+        chainSequenceNumbers = [12];
+        accountReads = 0;
+
+        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(12n);
+        expect(accountReads).toBe(1);
+    });
+
+    it("releases a reservation that the run leaves unsettled", async () => {
+        const config = newConfig();
+
+        await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber);
+
+        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(7n);
+    });
+
+    it("keeps a settlement made by the run, and releases the lock after an error thrown later", async () => {
+        const config = newConfig();
+
+        await expect(
+            withSequenceNumberInternal({ address }, config, async (_sequenceNumber, reservation) => {
+                // The node accepted the transaction; the wait for its final status then fails.
+                sequenceNumberTrackerOf(config).accepted(reservation as SequenceNumberReservation);
+                throw new Error("wait failed");
+            }),
+        ).rejects.toThrow("wait failed");
+
+        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(8n);
+    });
+
+    it("runs a call with an explicit number without the lock", async () => {
+        const config = newConfig();
+        const held = await sequenceNumberTrackerOf(config).reserve(address, async () => 7n);
+
+        const run = withSequenceNumberInternal({ address, sequenceNumber: 42 }, config, async (sequenceNumber, reservation) => ({
+            sequenceNumber,
+            reservation,
+        }));
+
+        await expect(run).resolves.toEqual({ sequenceNumber: 42n, reservation: undefined });
+        sequenceNumberTrackerOf(config).accepted(held);
     });
 });
 

@@ -7,10 +7,10 @@ import { TransactionStatus, type WaitForTransactionOptions } from "../../types/t
 import {
     bindReservation,
     reservationOf,
-    reserveSequenceNumberInternal,
     sequenceNumberTrackerOf,
     settleRefusedSubmission,
-    settleUnsubmittedSequenceNumberInternal,
+    withSequenceNumberInternal,
+    type SequenceNumberReservation,
 } from "../sequenceNumber";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, OptionalTransactionArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
@@ -41,9 +41,14 @@ export function validateSubmitOptions(options: EnableTransactionWaitAndSimulatio
  * on the chain if every number from the chain's up to the transaction's belongs to a transaction that the node accepted
  * from this client and the one at the chain's number is still pending (`simulateBehindPendingInternal`); the
  * submission keeps its own number. Otherwise the `SEQUENCE_NUMBER_TOO_NEW` failure is thrown, which reports a stale
- * number. The simulation at the chain's number throws its own failures and request errors.
+ * number; with `reservation`, the client's counter resumes at the lowest number that has no pending transaction of
+ * this client. The simulation at the chain's number throws its own failures and request errors.
  */
-async function simulateBeforeSubmission(payload: SendTxnPayload, config: NetworkConfig): Promise<void> {
+async function simulateBeforeSubmission(
+    payload: SendTxnPayload,
+    reservation: SequenceNumberReservation | undefined,
+    config: NetworkConfig,
+): Promise<void> {
     try {
         await simulateTxnInternal({ sendTxPayload: payload }, config);
         return;
@@ -61,6 +66,7 @@ async function simulateBeforeSubmission(payload: SendTxnPayload, config: Network
         const outcome = await simulateBehindPendingInternal({
             address,
             sequenceNumber: BigInt(rawTxn.sequence_number),
+            reservation,
             simulateAt: (chainSequenceNumber) => simulateTxnInternal({
                 sendTxPayload: { ...payload, Move: { ...payload.Move, raw_txn: { ...rawTxn, sequence_number: chainSequenceNumber } } },
             }, config),
@@ -81,14 +87,15 @@ export async function submitTxnInternal(
     const options = args.enableTransactionWaitAndSimulationArgs ?? {};
     validateSubmitOptions(options);
 
-    // A sequence number taken from the client's counter is settled by the outcome of the submission.
+    // A sequence number taken from the client's counter is settled by the node's answer to the submission, which
+    // releases the account's lock before the wait for the final status.
     const reservation = reservationOf(args.sendTxJsonPayload);
 
     let txHash: string;
     try {
         // A failed simulation throws, so the transaction is not submitted.
         if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
-            await simulateBeforeSubmission(args.sendTxJsonPayload, config);
+            await simulateBeforeSubmission(args.sendTxJsonPayload, reservation, config);
         }
 
         txHash = await post<SendTxnPayload, string>({
@@ -149,10 +156,12 @@ export async function submitTxnInternal(
  * Builds, signs and submits an entry function transaction of `senderAccount`, for the transfer, migration and publish
  * helpers.
  *
- * The sequence number is the call's `sequenceNumber`, else the next number of the client's counter. The max gas
- * estimate simulates the transaction with that number, and the submission uses it. When the counter assigned the
- * number and building, estimating or signing throws, the number is handed out again, or the counter is read from the
- * chain again when the error reports a stale number.
+ * The sequence number is the call's `sequenceNumber`, else the next number of the client's counter
+ * (`withSequenceNumberInternal`). A number from the counter is taken under the account's lock, which is held while the
+ * transaction is built, its max gas estimated, signed, simulated (with `enableTransactionSimulation`) and submitted,
+ * and released when the node answers the submission or one of those steps throws. The max gas estimate simulates the
+ * transaction with that number, and the submission uses it. When building, estimating or signing throws, the number
+ * is handed out next, or the counter is read from the chain again when the error reports a stale number.
  */
 export async function buildAndSubmitEntryFunctionInternal(
     args: {
@@ -164,42 +173,33 @@ export async function buildAndSubmitEntryFunctionInternal(
 ): Promise<SubmitTransactionResponse> {
     const senderAddress = args.senderAccount.address();
     const optionalTransactionPayloadArgs = args.optionalTransactionArgs?.optionalTransactionPayloadArgs;
-    const explicitSequenceNumber = optionalTransactionPayloadArgs?.sequenceNumber;
     validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
-    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal(
-        { address: senderAddress, sequenceNumber: explicitSequenceNumber },
+    return withSequenceNumberInternal(
+        { address: senderAddress, sequenceNumber: optionalTransactionPayloadArgs?.sequenceNumber },
         config,
-    );
-
-    let sendTxPayload: SendTxnPayload;
-    try {
-        const rawTxn = await buildWithResolvedMaxGasInternal({
-            senderAddress,
-            senderAccount: args.senderAccount,
-            optionalTransactionPayloadArgs,
-            buildRawTxn: (options) => rawTxnObjectInternal({
-                ...args.payload,
+        async (senderSequenceNumber, reservation) => {
+            const rawTxn = await buildWithResolvedMaxGasInternal({
                 senderAddress,
-                senderSequenceNumber,
-                optionalTransactionPayloadArgs: options,
-            }, config),
-        }, config);
-        sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
-    } catch (error) {
-        // The transaction was not submitted, so a number from the counter is not used.
-        if (reservation !== undefined) {
-            settleUnsubmittedSequenceNumberInternal(reservation, error, config);
-        }
-        throw error;
-    }
-    if (reservation !== undefined) {
-        bindReservation(sendTxPayload, reservation);
-    }
-
-    return await submitTxnInternal({
-        sendTxJsonPayload: sendTxPayload,
-        enableTransactionWaitAndSimulationArgs: args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
-    }, config);
+                senderAccount: args.senderAccount,
+                reservation,
+                optionalTransactionPayloadArgs,
+                buildRawTxn: (options) => rawTxnObjectInternal({
+                    ...args.payload,
+                    senderAddress,
+                    senderSequenceNumber,
+                    optionalTransactionPayloadArgs: options,
+                }, config),
+            }, config);
+            const sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
+            if (reservation !== undefined) {
+                bindReservation(sendTxPayload, reservation);
+            }
+            return await submitTxnInternal({
+                sendTxJsonPayload: sendTxPayload,
+                enableTransactionWaitAndSimulationArgs: args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
+            }, config);
+        },
+    );
 }
 
 

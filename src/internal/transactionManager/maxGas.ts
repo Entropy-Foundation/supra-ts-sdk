@@ -14,7 +14,7 @@ import {
 import { standardizeAddress } from "../../helper/account";
 import { SupraSimulationFailedError } from "../../errors/transactionError";
 import { viewRawInternal } from "../methods";
-import { sequenceNumberTrackerOf } from "../sequenceNumber";
+import { sequenceNumberTrackerOf, type SequenceNumberReservation } from "../sequenceNumber";
 import { simulateBehindPendingInternal } from "./behindPending";
 import { simulateTxnInternal } from "./txnSimulate";
 import { sendTxnPayloadInternal } from "./txnBuild";
@@ -86,8 +86,9 @@ export async function affordableGasUnitsInternal(
  * from the chain's up to the transaction's belongs to a transaction that the node accepted from this client, and the
  * one at the chain's number is still pending (`simulateBehindPendingInternal`), the same transaction is simulated with
  * the chain's number and that result is used. Otherwise the transaction's number is stale and the
- * `SEQUENCE_NUMBER_TOO_NEW` failure is thrown, so that the helper reads the number from the chain and sends the
- * transaction once more. If the simulation at the chain's number reports a stale sequence number, the number is read
+ * `SEQUENCE_NUMBER_TOO_NEW` failure is thrown; with `reservation` (a number from the client's counter), the counter
+ * resumes at the lowest number that has no pending transaction of this client, and the helper sends the transaction
+ * once more. If the simulation at the chain's number reports a stale sequence number, the number is read
  * and the simulation made once more; if it is stale a second time, or the account or the pending transaction cannot
  * be read, or the chain has passed the transaction's number, the max gas is `DEFAULT_MAX_GAS_UNITS`, at most
  * `affordable`. When any simulation of the estimate reports
@@ -109,6 +110,8 @@ export async function resolveMaxGasInternal(
         senderAccount?: SupraAccount | undefined;
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs | undefined;
         buildRawTxn: (maxGas: bigint) => TxnBuilderTypes.RawTransaction;
+        /** The reservation of the transaction's sequence number, when the number came from the client's counter. */
+        reservation?: SequenceNumberReservation | undefined;
     },
     config: NetworkConfig,
 ): Promise<bigint> {
@@ -153,7 +156,12 @@ export async function resolveMaxGasInternal(
             throw error;
         }
         const outcome = await simulateBehindPendingInternal(
-            { address: sender, sequenceNumber, simulateAt: (chainNumber) => simulations.simulate(chainNumber) },
+            {
+                address: sender,
+                sequenceNumber,
+                reservation: args.reservation,
+                simulateAt: (chainNumber) => simulations.simulate(chainNumber),
+            },
             config,
         );
         if (outcome.kind === "gap") {

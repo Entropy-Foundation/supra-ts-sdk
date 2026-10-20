@@ -1,10 +1,10 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal } from "./transactionManager/txnBuild";
-import { bindReservation, reserveSequenceNumberInternal, settleUnsubmittedSequenceNumberInternal } from "./sequenceNumber";
+import { bindReservation, withSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
-import type { OptionalTransactionPayloadArgs, SendTxnPayload } from "../types/transactionManager/transactionBuild";
+import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
 import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 
 export interface CallContractArgs {
@@ -42,15 +42,13 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
         throw new Error("Sender account must be SupraAccount");
     }
 
-    const explicitSequenceNumber = args.optionalTransactionPayloadArgs?.sequenceNumber;
     validateSubmitOptions(args.enableTransactionWaitAndSimulationArgs ?? {});
-    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({
+    // A number from the client's counter is taken under the account's lock, which the submission releases when the
+    // node answers it (`withSequenceNumberInternal`).
+    return withSequenceNumberInternal({
         address: senderAccount.address(),
-        sequenceNumber: explicitSequenceNumber,
-    }, config);
-
-    let sendTxPayload: SendTxnPayload;
-    try {
+        sequenceNumber: args.optionalTransactionPayloadArgs?.sequenceNumber,
+    }, config, async (senderSequenceNumber, reservation) => {
         // The max gas estimate simulates the transaction with `senderSequenceNumber`.
         const simpleRawTxn = await simpleInternal({
             senderAddress: senderAccount.address(),
@@ -61,21 +59,15 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
             optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
             abi: args.abi as MoveModule,
             senderAccount,
+            reservation,
         }, config);
-        sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: simpleRawTxn }, config);
-    } catch (error) {
-        // The transaction was not submitted, so a number from the counter is not used.
+        const sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: simpleRawTxn }, config);
         if (reservation !== undefined) {
-            settleUnsubmittedSequenceNumberInternal(reservation, error, config);
+            bindReservation(sendTxPayload, reservation);
         }
-        throw error;
-    }
-    if (reservation !== undefined) {
-        bindReservation(sendTxPayload, reservation);
-    }
-
-    return await submitTxnInternal({
-        sendTxJsonPayload: sendTxPayload,
-        enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
-    }, config);
+        return await submitTxnInternal({
+            sendTxJsonPayload: sendTxPayload,
+            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
+        }, config);
+    });
 }

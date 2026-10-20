@@ -17,6 +17,7 @@ import { submitMultiAgentTransactionInternal, submitSerializedRawTransactionAndS
 import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import sha3 from "js-sha3";
 import { resolveMaxGasInternal } from "./maxGas";
+import type { SequenceNumberReservation } from "../sequenceNumber";
 
 
 /**
@@ -78,6 +79,8 @@ export async function simpleInternal(args: {
     optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
     abi?: MoveModule,
     senderAccount?: SupraAccount,
+    /** The reservation of `senderSequenceNumber`, when the number came from the client's counter. */
+    reservation?: SequenceNumberReservation | undefined,
 }, config: NetworkConfig): Promise<TxnBuilderTypes.RawTransaction> {
     let { functionArguments, typeArguments } = await generateTransactionPayload({
         function: args.function,
@@ -89,6 +92,7 @@ export async function simpleInternal(args: {
     return await buildWithResolvedMaxGasInternal({
         senderAddress: args.senderAddress,
         senderAccount: args.senderAccount,
+        reservation: args.reservation,
         optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs,
         buildRawTxn: (optionalTransactionPayloadArgs) => rawTxnObjectInternal({
             senderAddress: args.senderAddress,
@@ -111,6 +115,8 @@ export async function buildWithResolvedMaxGasInternal(
         senderAccount?: SupraAccount | undefined,
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs | undefined,
         buildRawTxn: (optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction,
+        /** The reservation of the transaction's sequence number, when the number came from the client's counter. */
+        reservation?: SequenceNumberReservation | undefined,
     },
     config: NetworkConfig
 ): Promise<TxnBuilderTypes.RawTransaction> {
@@ -118,6 +124,7 @@ export async function buildWithResolvedMaxGasInternal(
     const maxGas = await resolveMaxGasInternal({
         senderAddress: args.senderAddress,
         senderAccount: args.senderAccount,
+        reservation: args.reservation,
         optionalTransactionPayloadArgs: options,
         buildRawTxn: (candidate) => args.buildRawTxn({ ...options, maxGas: candidate }),
     }, config);
