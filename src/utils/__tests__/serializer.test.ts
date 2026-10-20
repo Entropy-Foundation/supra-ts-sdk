@@ -303,3 +303,49 @@ describe("DynamicTransactionSerializer - addresses", () => {
         expect(() => ser("0x", "0x1::option::Option<address>")).toThrow(/Expected an address/);
     });
 });
+
+describe("DynamicTransactionSerializer - fixed-point structs", () => {
+    const FP32 = "0x1::fixed_point32::FixedPoint32";
+    const FP64 = "0x1::fixed_point64::FixedPoint64";
+    const U64_MAX = 18446744073709551615n;
+    const U128_MAX = 340282366920938463463374607431768211455n;
+
+    it("serializes a FixedPoint32 as the u64 raw value", () => {
+        expect(Array.from(ser(0n, FP32))).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+        expect(Array.from(ser(1n << 32n, FP32))).toEqual([0, 0, 0, 0, 1, 0, 0, 0]);
+        expect(Array.from(ser(U64_MAX, FP32))).toEqual(Array(8).fill(255));
+        expect(Array.from(ser("4294967296", FP32))).toEqual([0, 0, 0, 0, 1, 0, 0, 0]);
+    });
+
+    it("serializes a FixedPoint64 as the u128 raw value", () => {
+        expect(Array.from(ser(0n, FP64))).toEqual(Array(16).fill(0));
+        expect(Array.from(ser(1n << 64n, FP64))).toEqual([...Array(8).fill(0), 1, ...Array(7).fill(0)]);
+        expect(Array.from(ser(U128_MAX, FP64))).toEqual(Array(16).fill(255));
+        expect(Array.from(ser(U128_MAX.toString(), FP64))).toEqual(Array(16).fill(255));
+    });
+
+    it("rejects out-of-range and malformed raw values like u64 and u128", () => {
+        expect(() => ser(U64_MAX + 1n, FP32)).toThrow(
+            `Failed to serialize argument 0 (${FP32}): u64 value out of range`,
+        );
+        expect(() => ser(U128_MAX + 1n, FP64)).toThrow(
+            `Failed to serialize argument 0 (${FP64}): u128 value out of range`,
+        );
+        expect(() => ser(-1n, FP32)).toThrow("u64 value cannot be negative");
+        expect(() => ser(-1n, FP64)).toThrow("u128 value cannot be negative");
+        expect(() => ser("1.5", FP32)).toThrow("u64 value must be a decimal");
+        expect(() => ser("", FP64)).toThrow("u128 value must be a decimal");
+        expect(() => ser(1.5, FP32)).toThrow("u64 value must be an integer");
+        expect(() => ser(2 ** 53, FP64)).toThrow("not a safe integer");
+        expect(() => ser({ value: 1n }, FP32)).toThrow("u64 value must be a number, string or bigint");
+        expect(() => ser(null, FP64)).toThrow("u128 value must be a number, string or bigint");
+    });
+
+    it("serializes vector<FixedPoint32> and Option<FixedPoint64>", () => {
+        expect(Array.from(ser([1n, 2n], `vector<${FP32}>`))).toEqual([
+            2, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+        expect(Array.from(ser(null, `0x1::option::Option<${FP64}>`))).toEqual([0]);
+        expect(Array.from(ser(3n, `0x1::option::Option<${FP64}>`))).toEqual([1, 3, ...Array(15).fill(0)]);
+    });
+});

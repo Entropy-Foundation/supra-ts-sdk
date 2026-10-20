@@ -71,7 +71,7 @@ const local = new SupraClient({ rpcUrl: "http://localhost:27001", chainId: 255 }
 const configured = new SupraClient({
     network: Network.TESTNET,
     maxGas: 20_000n,             // without it the max gas is estimated per transaction (see Gas)
-    minGasUnitPrice: 100_000n,   // gas unit price in quants (default 100,000)
+    gasUnitPrice: 100_000n,      // gas unit price in quants, used as given (without it the node's estimate is read per transaction; see Gas)
     timeoutMs: 10_000,           // request timeout (default 30,000)
     retry: { attempts: 3, maxDelayMs: 5_000 }, // retries of GET requests that fail with 429, 503 or a connection error; off by default
     waitTimeoutMs: 30_000,       // how long a wait for a final transaction status lasts (default 60,000)
@@ -348,6 +348,8 @@ When passing **function arguments** to `view()`:
 | `vector<u8>` | `string` (hex) |
 | `vector<T>` | `T[]` |
 | `0x1::string::String` | `string` |
+| `0x1::fixed_point32::FixedPoint32` | the raw `u64` value as `bigint` or a decimal string (e.g., `1n << 32n` is 1.0) |
+| `0x1::fixed_point64::FixedPoint64` | the raw `u128` value as `bigint` or a decimal string (e.g., `1n << 64n` is 1.0) |
 | `0x1::option::Option<T>` | `T \| null` |
 | `signer` / `&signer` | `SupraAccount` (for entry functions) |
 
@@ -358,6 +360,7 @@ When **return types** come back from `view()`:
 | `u64`, `u128`, `u256` | `bigint` |
 | `bool` | `boolean` |
 | `address` | `string` |
+| `0x1::fixed_point32::FixedPoint32`, `0x1::fixed_point64::FixedPoint64` | `{ value: bigint }`, the raw value |
 | `vector<T>` | `T[]` |
 | `Option<T>` | `T \| null` |
 
@@ -447,6 +450,7 @@ const rawTxn = supra.transaction.build.rawTxnObject({
     function: "0x1::supra_account::transfer",
     functionTypeArgs: [],
     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+    optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() }, // required: no request is made
 });
 ```
 
@@ -508,10 +512,10 @@ const submittedSigned = await supra.transaction.submit.submitSerializedRawTransa
 ```
 
 Outcome of a submission (every submit helper, transfer, `publishPackage` and contract entry function):
-- With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws `SupraSimulationFailedError` and nothing is submitted. Behind pending transactions of the same client, the simulation uses the account's sequence number on the chain, as the max gas estimate does; a failed read of the account during that check is thrown.
+- With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws `SupraSimulationFailedError` and nothing is submitted; a gas unit price below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead (see Gas). Behind pending transactions of the same client, the simulation uses the account's sequence number on the chain, as the max gas estimate does; a failed read of the account during that check is thrown.
 - With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed and failed) and `Invalid` (discarded) throw `SupraTransactionFailedError` unless `checkSuccess: false` is passed. No final status within `waitTimeoutMs` throws `SupraTransactionTimeoutError`.
 - Without `enableWaitForTransaction`, the call returns the transaction as the node reports it right after the submission (usually `Pending`), or `{ hash, status: "NotReadBack", readError }` when that read fails; the node has accepted the transaction in both cases.
-- The SDK derives the transaction's hash from the signed transaction before submitting it (as `deriveTransactionHash` does). When the submission request times out, fails before the node answers, or is answered with a 5xx status other than 503 (this includes the 500 of a v11 node whose transaction pool is full), the call throws `SupraSubmissionOutcomeUnknownError` (extends `SupraError`; `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, and the `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError` of the request as `cause`): the node may have accepted the transaction, so look the hash up or wait for it before sending it again. Handle it explicitly; it is not a `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`. With `enableWaitForTransaction: true`, the call first waits for that hash: a transaction with a final status is returned (or throws `SupraTransactionFailedError`), and the error is thrown, with the wait's `SupraTransactionTimeoutError` as `waitError`, when the wait ends without a final status. A 4xx status or 503 from the node is a refusal and throws `SupraAPIError`.
+- The SDK derives the transaction's hash from the signed transaction before submitting it (as `deriveTransactionHash` does). When the submission request times out, fails before the node answers, or is answered with a 5xx status other than 503 (this includes the 500 of a v11 node whose transaction pool is full), the call throws `SupraSubmissionOutcomeUnknownError` (extends `SupraError`; `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, and the `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError` of the request as `cause`): the node may have accepted the transaction, so look the hash up or wait for it before sending it again. Handle it explicitly; it is not a `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`. With `enableWaitForTransaction: true`, the call first waits for that hash: a transaction with a final status is returned (or throws `SupraTransactionFailedError`), and the error is thrown, with the wait's `SupraTransactionTimeoutError` as `waitError`, when the wait ends without a final status. A 4xx status or 503 from the node is a refusal and throws `SupraAPIError`, or `SupraGasUnitPriceBelowMinimumError` for a gas unit price below the node's minimum.
 
 ```typescript
 import { SupraAccount, SupraSubmissionOutcomeUnknownError } from "supra-ts-sdk";
@@ -596,7 +600,9 @@ supra.resetSequenceNumber(account.address());
 
 ## Gas
 
-Each transaction has a max gas (gas units), a gas unit price (quants) and an expiration time. `optionalTransactionPayloadArgs` sets `maxGas`, `gasUnitPrice` and `txExpiryTime` per transaction on every method that builds a transaction; `SupraConfig` sets `maxGas`, `minGasUnitPrice` and `txExpirySecs` for the client. A per-call setting replaces the client's. The SDK does not modify the options object.
+Each transaction has a max gas (gas units), a gas unit price (quants) and an expiration time. `optionalTransactionPayloadArgs` sets `maxGas`, `gasUnitPrice` and `txExpiryTime` per transaction on every method that builds a transaction; `SupraConfig` sets `maxGas`, `gasUnitPrice` and `txExpirySecs` for the client. A per-call setting replaces the client's. The SDK does not modify the options object.
+
+The gas unit price of a transaction is the call's `gasUnitPrice`, else the client's `gasUnitPrice`, else the node's estimate: `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, which `getEstimatedGasUnitPrice()` returns (`getGasPrice()` returns the median, `getMinGasUnitPrice()` the minimum). The estimate is read for each transaction that needs it; in the helpers that submit the read starts when the call is made and is awaited in the call's turn for the sender's account, so calls from one account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited before the lock is requested; `transaction.build.simple` awaits the read before it builds. The max gas estimate and the transaction use that one price. A failed read throws its error, like a failed build, and nothing is submitted. A price set by the call or the client is used as given, makes no request, and is never changed: when it is below the node's minimum, the submission or the simulation throws `SupraGasUnitPriceBelowMinimumError` (`gasUnitPrice`, `minimumGasUnitPrice`; not a `SupraAPIError` or `SupraSimulationFailedError`, which is its `cause`), and the sequence number is used by the next transaction. The builders that make no request cannot read the estimate: without a price on the call or the client they throw a `RangeError`.
 
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas used. Without a `maxGas` on the call or the client:
 
@@ -604,7 +610,7 @@ The node accepts a transaction only when the sender's balance pays for `max gas 
 - `transaction.build.simple` has no key pair to simulate with: it uses `DEFAULT_MAX_GAS_UNITS`, at most what the sender's balance pays for.
 - `rawTxnObject`, `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and `multisigProposalTxRawTxnObject` make no request and use `DEFAULT_MAX_GAS_UNITS`.
 
-`DEFAULT_MAX_GAS_UNITS` is 20,000 units. At the default gas unit price of 100,000 quants the node requires the sender's SUPRA balance to cover 20,000 × 100,000 = 2,000,000,000 quants (20 SUPRA) at validation, so a sender with less must set `maxGas` on the builders that make no request. `estimateMaxGas: false`, per call or in `SupraConfig`, turns the estimate off and uses `DEFAULT_MAX_GAS_UNITS` without a request.
+`DEFAULT_MAX_GAS_UNITS` is 20,000 units. At a gas unit price of 100,000 quants the node requires the sender's SUPRA balance to cover 20,000 × 100,000 = 2,000,000,000 quants (20 SUPRA) at validation, so a sender with less must set `maxGas` on the builders that make no request. `estimateMaxGas: false`, per call or in `SupraConfig`, turns the estimate off and uses `DEFAULT_MAX_GAS_UNITS` without a request.
 
 ```typescript
 await supra.coin.transferSupraCoin({
@@ -628,6 +634,7 @@ const sponsoredTxn = supra.transaction.build.rawTxnObject({
     function: "0x1::supra_account::transfer",
     functionTypeArgs: [],
     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+    optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
 });
 
 const feePayerPayload = new TxnBuilderTypes.FeePayerRawTransaction(
@@ -766,6 +773,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`. Errors t
 | `SupraTimeoutError`, `SupraNetworkError` | a request times out, or fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet answers `"TryLater"`, or answers unexpectedly |
 | `SupraChainIdMismatchError` | before signing, the configured or the transaction's chain ID is not the node's |
+| `SupraGasUnitPriceBelowMinimumError` | the node refuses a submission or a simulation because the gas unit price is below its minimum (`gasUnitPrice`, `minimumGasUnitPrice`, `major_status`; `cause` is the `SupraAPIError` or `SupraSimulationFailedError`) |
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` |
 | `SupraTransactionFailedError` | a transaction the SDK waited for ends with `Fail` or `Invalid` |
 | `SupraTransactionTimeoutError` | a transaction the SDK waited for has no final status within the wait timeout |
@@ -911,5 +919,5 @@ export function useTransferSupra() {
 4. **`as const` for ABIs**: The ABI proxy type system requires `as const` assertion on the ABI array for TypeScript to infer the literal types.
 5. **Pagination limits**: The `count` option accepts 1-100 per page.
 6. **Transaction wait**: By default `enableWaitForTransaction` is `false`; the call returns the transaction as the node reports it right after the submission (usually `Pending`). Pass `true` to get the `Success` transaction, or a thrown `SupraTransactionFailedError` or `SupraTransactionTimeoutError`. A submission request that times out, fails before the node answers or gets a 5xx other than 503 throws `SupraSubmissionOutcomeUnknownError` with the transaction's `hash`; wait for that hash before sending the transaction again.
-7. **Gas**: see the Gas section. The default gas unit price is 100,000 quants and `DEFAULT_MAX_GAS_UNITS` is 20,000, which needs a balance of 20 SUPRA at validation; the estimate used by the transfers, `publishPackage` and contract entry functions needs only what the transaction uses times 1.5.
+7. **Gas**: see the Gas section. Without a price on the call or the client, the gas unit price is the node's estimate (`getEstimatedGasUnitPrice()`), and the builders that make no request throw without one. `DEFAULT_MAX_GAS_UNITS` is 20,000, which needs a balance of 20 SUPRA at validation at a price of 100,000 quants; the estimate used by the transfers, `publishPackage` and contract entry functions needs only what the transaction uses times 1.5.
 8. **Node versions**: a v12 node answers some conditions with a different HTTP status than a v11 node (for example an absent account is 404 on v12 and 400 on v11). `isAccountExists` returns `false` on both; branch on the error class, not on a specific `status`, where possible.

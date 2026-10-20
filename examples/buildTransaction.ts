@@ -19,6 +19,11 @@ runExample(async () => {
     const receiverAddress = new SupraAccount().address();
     const waitForCommit = { enableTransactionSimulation: true, enableWaitForTransaction: true };
 
+    // The builders that make no request cannot read the node's gas unit price estimate; the example reads it once and
+    // passes it to each of them.
+    const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
+    const gas = { gasUnitPrice };
+
     // The builders take the sequence number of the transaction. Every transaction below waits for its commit and the
     // account sends nothing else, so the account's sequence number on chain is the number of the first transaction
     // and each transaction uses the next one.
@@ -32,6 +37,7 @@ runExample(async () => {
         function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
         functionTypeArgs: [],
         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10_000n)],
+        optionalTransactionPayloadArgs: gas,
     });
 
     // ---------------------------------------------------------------------------
@@ -108,6 +114,7 @@ runExample(async () => {
             scriptCode: new HexString(moveScriptCodeHex).toUint8Array(),
             scriptTypeArgs: [],
             scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(1000n)],
+            optionalTransactionPayloadArgs: gas,
         })
         .toBytes();
 
@@ -135,6 +142,7 @@ runExample(async () => {
             automationFeeCapForEpoch: 1_000_000_000n,
             automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 60 * 60),
             automationAuxData: [],
+            optionalTransactionPayloadArgs: gas,
         })
         .toBytes();
 
@@ -186,6 +194,7 @@ runExample(async () => {
                 function: "0x1::supra_account::transfer" as MoveFunctionId,
                 functionTypeArgs: [],
                 functionArgs: [new HexString(multisigAddress).toUint8Array(), BCS.bcsSerializeUint64(100_000n)],
+                optionalTransactionPayloadArgs: gas,
             })
             .toBytes(),
         enableTransactionWaitAndSimulationArgs: waitForCommit,
@@ -205,6 +214,7 @@ runExample(async () => {
             function: "0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer",
             functionTypeArgs: [],
             functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+            optionalTransactionPayloadArgs: gas,
         })
         .toBytes();
 
@@ -229,6 +239,7 @@ runExample(async () => {
             function: "0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer",
             functionTypeArgs: [],
             functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+            optionalTransactionPayloadArgs: gas,
         })
         .toBytes();
 

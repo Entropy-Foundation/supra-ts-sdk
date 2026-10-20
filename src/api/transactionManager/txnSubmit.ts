@@ -20,12 +20,16 @@ import type { AccountAddressInput } from "../../types/account";
  * controlled by `enableTransactionWaitAndSimulationArgs`:
  *
  * 1. With `enableTransactionSimulation`, the transaction is simulated first. A simulated status other than `Success`
- *    throws `SupraSimulationFailedError` and nothing is submitted.
+ *    throws `SupraSimulationFailedError` and nothing is submitted; a simulation refused because the gas unit price is
+ *    below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead (its `cause` is the
+ *    `SupraSimulationFailedError`).
  * 2. The transaction's hash is derived from the signed transaction (as `deriveTransactionHash` does), and the
  *    transaction is submitted.
  *    - The node accepts it with a 2xx status. Its answer is the transaction's hash; an answer that is not a hash (a
  *      body that is not JSON, an empty body, or another value) is replaced by the derived hash. Steps 3 and 4 follow.
- *    - The node refuses it with a 4xx status or 503: `SupraAPIError` is thrown; the transaction was not accepted. A v12
+ *    - The node refuses it with a 4xx status or 503: `SupraAPIError` is thrown; the transaction was not accepted. A
+ *      refusal because the gas unit price is below the node's minimum (a 400) throws
+ *      `SupraGasUnitPriceBelowMinimumError`, which is not a `SupraAPIError` (its `cause` is the `SupraAPIError`). A v12
  *      node whose transaction pool is full answers 503; the transaction can be submitted again later.
  *    - The request times out, the connection fails before the node answers, or the node answers with a 5xx status
  *      other than 503: the node may have accepted the transaction, and `SupraSubmissionOutcomeUnknownError` is thrown
@@ -82,6 +86,9 @@ export class Submit {
      * @param args.rawTransaction - The raw transaction to be submitted
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
+     * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError`
+     * for that refusal).
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`);
      * carries the hash derived before the submission.
@@ -101,6 +108,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const txn = await supra.transaction.submit.submitRawTransaction({
@@ -137,6 +145,9 @@ export class Submit {
      * @param args.serializedRawTransaction - Serialized raw transaction data
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
+     * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError`
+     * for that refusal).
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`);
      * carries the hash derived before the submission.
@@ -156,6 +167,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const supraCoinTransferRawTransactionSerializer = new BCS.Serializer();
@@ -195,6 +207,9 @@ export class Submit {
      * @param args.serializedRawTransaction - Serialized raw transaction data
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
+     * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError`
+     * for that refusal).
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`);
      * carries the hash derived before the submission.
@@ -215,6 +230,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *   const supraCoinTransferSerializedRawTransaction = BCS.bcsToBytes(supraCoinTransferRawTransaction);
      *
@@ -262,6 +278,9 @@ export class Submit {
      * @param args.secondarySignersAuthenticator - An optional array of the secondary signers account authenticator
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
+     * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError`
+     * for that refusal).
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`);
      * carries the hash derived before the submission.
@@ -283,6 +302,7 @@ export class Submit {
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *
      *   const sponsorTransactionPayload = new TxnBuilderTypes.FeePayerRawTransaction(
@@ -343,6 +363,9 @@ export class Submit {
      * @param args.secondarySignersAuthenticator - List of the secondary signers account authenticator
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
      * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
+     * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or an enabled simulation
+     * because the gas unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError`
+     * for that refusal).
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`);
      * carries the hash derived before the submission.
@@ -363,7 +386,8 @@ export class Submit {
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
      *         function: "0x1234::wrapper::two_signers", // a function of a published module that takes two signers
      *         functionTypeArgs: [],
-     *         functionArgs: []
+     *         functionArgs: [],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *     });
      *
      *     // Creating Multi-Agent Transaction Payload

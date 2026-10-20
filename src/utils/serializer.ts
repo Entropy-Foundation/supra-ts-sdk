@@ -3,6 +3,7 @@ import {
     addressArgument,
     assertSafeIntegerArgument,
     boolArgument,
+    fixedPointRawType,
     isObjectType,
     vectorU8ToBytes,
 } from "../helper/general";
@@ -19,6 +20,16 @@ export class DynamicTransactionSerializer {
                 throw new Error(`Expected string for 0x1::string::String, got ${typeof value}`);
             }
             serializer.serializeStr(value);
+            return;
+        }
+
+        const fixedPointType = fixedPointRawType(type);
+        if (fixedPointType === "u64") {
+            this.serializeU64(value, serializer);
+            return;
+        }
+        if (fixedPointType === "u128") {
+            this.serializeU128(value, serializer);
             return;
         }
 

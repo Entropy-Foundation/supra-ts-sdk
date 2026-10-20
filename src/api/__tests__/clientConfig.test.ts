@@ -8,16 +8,16 @@ describe("SupraClient configuration", () => {
             const a = new SupraClient({
                 network: Network.TESTNET,
                 maxGas: 1_000n,
-                minGasUnitPrice: 7n,
+                gasUnitPrice: 7n,
                 timeoutMs: 1_000,
             });
             const b = new SupraClient({ network: Network.TESTNET, maxGas: 2_000n });
 
             expect(a.networkInformation.maxGas).toBe(1_000n);
-            expect(a.networkInformation.minGasUnitPrice).toBe(7n);
+            expect(a.networkInformation.gasUnitPrice).toBe(7n);
             expect(a.networkInformation.timeout).toBe(1_000);
             expect(b.networkInformation.maxGas).toBe(2_000n);
-            expect(b.networkInformation.minGasUnitPrice).not.toBe(7n);
+            expect(b.networkInformation.gasUnitPrice).toBeUndefined();
             expect(b.networkInformation.timeout).toBeUndefined();
             expect(a.networkInformation).not.toBe(b.networkInformation);
         });
@@ -29,7 +29,7 @@ describe("SupraClient configuration", () => {
             new SupraClient({
                 network: Network.DEVNET,
                 maxGas: 1n,
-                minGasUnitPrice: 2n,
+                gasUnitPrice: 2n,
                 timeoutMs: 3,
                 retry: { attempts: 2 },
                 waitTimeoutMs: 4,

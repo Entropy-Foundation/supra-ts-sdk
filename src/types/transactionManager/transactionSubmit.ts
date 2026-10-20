@@ -5,7 +5,8 @@ import type { OptionalTransactionPayloadArgs } from "./transactionBuild";
  * Options of a submission.
  *
  * - `enableTransactionSimulation`: simulate the transaction before it is submitted. A simulation with a status other
- *   than `Success` throws `SupraSimulationFailedError` and the transaction is not submitted. When the transaction's
+ *   than `Success` throws `SupraSimulationFailedError` (`SupraGasUnitPriceBelowMinimumError` when the gas unit price
+ *   is below the node's minimum) and the transaction is not submitted. When the transaction's
  *   number is ahead of the chain's behind transactions that this client submitted, the simulation is made with the
  *   sender's sequence number on the chain and the transaction is submitted with its own, as for the max gas estimate
  *   (see `OptionalTransactionPayloadArgs`); a failed read of the account during that check is thrown. Default false.

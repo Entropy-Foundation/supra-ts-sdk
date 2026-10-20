@@ -1,6 +1,7 @@
 import { BCS, HexString, SupraAccount } from "supra-l1-sdk-core";
 import { SupraClient } from "../../../api/supraClient";
 import { SupraAPIError } from "../../../errors/apiError";
+import { MoveVmError } from "../../../errors/moveVmErrors";
 import { SupraNetworkError, SupraTimeoutError } from "../../../errors/supraError";
 import {
     SupraSubmissionOutcomeUnknownError,
@@ -74,7 +75,10 @@ function response(read: Read): Response {
     });
 }
 
-/** A node answered from `stub`, with an account at sequence number 5. Every request is recorded in `requests`. */
+/**
+ * A node answered from `stub`, with an account at sequence number 5 and a gas unit price estimate of 100,000. Every
+ * request is recorded in `requests`.
+ */
 function stubNode(stub: Stub): Recorded[] {
     const requests: Recorded[] = [];
     let readIndex = 0;
@@ -93,6 +97,18 @@ function stubNode(stub: Stub): Recorded[] {
                 return Promise.resolve({} as Response);
             }
             return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(response(answer));
+        }
+        if (method === "GET" && path === "/transactions/estimate_gas_price") {
+            return Promise.resolve(
+                response(
+                    json({
+                        mean_gas_price: 100_000,
+                        max_gas_price: 100_000,
+                        median_gas_price: 100_000,
+                        min_configured_gas_price: 100_000,
+                    }),
+                ),
+            );
         }
         if (method === "GET" && path.startsWith("/transactions/")) {
             const read = stub.reads[Math.min(readIndex, stub.reads.length - 1)] as Read;
@@ -326,6 +342,58 @@ describe("a submission the node refuses", () => {
         expect(error).toBeInstanceOf(SupraAPIError);
         expect(error).not.toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
         expect((error as SupraAPIError).status).toBe(Number(status));
+    });
+});
+
+describe("a submission whose outcome is unknown and whose answer names GAS_UNIT_PRICE_BELOW_MIN_BOUND", () => {
+    const belowMinimum500 = (sender: SupraAccount, sequenceNumber: number) => () =>
+        json(
+            {
+                message:
+                    `General err: MoveTransactionValidationFailed(${sender.address().toString().replace(/^0x/, "")}, ` +
+                    `${sequenceNumber}, GAS_UNIT_PRICE_BELOW_MIN_BOUND)`,
+            },
+            500,
+        );
+
+    it("throws SupraSubmissionOutcomeUnknownError from a submit method, without reading the node's minimum", async () => {
+        const sender = new SupraAccount();
+        const requests = stubNode({ submit: belowMinimum500(sender, 7), reads: [json({ message: "Not Found" }, 404)] });
+
+        const error = await rejection(rawTransfer(sender).submitTransaction({ senderAccount: sender }));
+
+        expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+        expect((error as SupraSubmissionOutcomeUnknownError).cause).toBeInstanceOf(SupraAPIError);
+        expect(((error as SupraSubmissionOutcomeUnknownError).cause as SupraAPIError).status).toBe(500);
+        expect(((error as SupraSubmissionOutcomeUnknownError).cause as SupraAPIError).major_status).toBe(
+            MoveVmError.GAS_UNIT_PRICE_BELOW_MIN_BOUND,
+        );
+        expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual(["POST /transactions/submit"]);
+    });
+
+    it("throws SupraSubmissionOutcomeUnknownError from a helper that holds the account's lock", async () => {
+        const client = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false });
+        const sender = new SupraAccount();
+        const requests = stubNode({ submit: belowMinimum500(sender, 5), reads: [json({ message: "Not Found" }, 404)] });
+
+        const error = await rejection(
+            client.coin.transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: RECEIVER,
+                amount: 1_000n,
+                optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n } },
+            }),
+        );
+
+        expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+        expect(((error as SupraSubmissionOutcomeUnknownError).cause as SupraAPIError).status).toBe(500);
+        // One read of the estimate for the transaction's price, none for the node's minimum after the submission.
+        expect(requests.filter((request) => request.path === "/transactions/estimate_gas_price")).toHaveLength(1);
+        expect(
+            sequenceNumberTrackerOf(client.networkInformation)
+                .recorded(standardizeAddress(sender.address().toString()))
+                .get(5n)?.hash,
+        ).toBe((error as SupraSubmissionOutcomeUnknownError).hash);
     });
 });
 

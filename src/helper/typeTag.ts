@@ -166,7 +166,7 @@ function describeToken(token: TypeToken | undefined): string {
  *     function: "0x1::supra_account::transfer_coins",
  *     functionTypeArgs: [parseTypeArgument("0x1::supra_coin::SupraCoin")],
  *     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
- *     optionalTransactionPayloadArgs: { maxGas: 5_000n },
+ *     optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n },
  * });
  * const metadata = parseTypeArgument("0x1::object::Object<0x1::fungible_asset::Metadata>"); // a struct type tag
  * ```

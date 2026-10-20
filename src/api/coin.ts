@@ -77,6 +77,8 @@ export class Coin {
      * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
      * errors of a submission.
      * @throws {SupraSimulationFailedError} When the estimating simulation or an enabled simulation does not succeed.
+     * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or a simulation because the gas
+     * unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError` for that refusal).
      * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`).
@@ -136,6 +138,8 @@ export class Coin {
      * @returns A Promise that resolves to a `SubmitTransactionResponse`. {@link Submit} describes the statuses and
      * errors of a submission.
      * @throws {SupraSimulationFailedError} When the estimating simulation or an enabled simulation does not succeed.
+     * @throws {SupraGasUnitPriceBelowMinimumError} When the node refuses the submission or a simulation because the gas
+     * unit price is below its minimum (this replaces `SupraSimulationFailedError` and `SupraAPIError` for that refusal).
      * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`).
