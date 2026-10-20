@@ -22,6 +22,8 @@ The changes that most programs meet first:
   that times out ([Transactions](#transactions-submit-wait-and-simulate)).
 - The max gas of the transfers, `publishPackage` and contract entry functions is estimated, and the default max gas
   is 20,000 units ([Gas](#gas)).
+- The default gas unit price is read from the node, `SupraConfig.minGasUnitPrice` is renamed `gasUnitPrice`, and the
+  builders that make no request need a price ([The gas unit price comes from the node](#the-gas-unit-price-comes-from-the-node)).
 - The helpers take sequence numbers from a counter in the client ([Sequence numbers](#sequence-numbers)).
 - A transaction built without `txExpiryTime` expires 60 seconds after the client's clock, not 300 seconds
   ([Transaction expiration time](#transaction-expiration-time)).
@@ -207,7 +209,9 @@ A simulation throws `SupraSimulationFailedError` (`status`, `vm_status`, `major_
 `SEQUENCE_NUMBER_TOO_NEW`). 1.2.0 threw a `SupraAPIError` with status 400 for `Fail` only and returned the other
 statuses. With `enableTransactionSimulation: true`, a failed simulation means the transaction is not submitted. The
 max gas estimate ([Gas](#gas)) simulates too, so the transfers, `publishPackage` and contract entry functions throw
-`SupraSimulationFailedError` for a transaction that would not succeed, before submitting it.
+`SupraSimulationFailedError` for a transaction that would not succeed, before submitting it. A simulation refused for a
+gas unit price below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead
+([The gas unit price comes from the node](#the-gas-unit-price-comes-from-the-node)).
 
 1.2.0:
 
@@ -368,8 +372,8 @@ console.log(fixed.networkInformation.maxGas, unestimated.networkInformation.esti
 It was 1,000. It is the max gas of the builders that make no request (`rawTxnObject`, `scriptRawTxnObject`,
 `automationRegistrationRawTxnObject`, `multisigRawTxnObject`, `multisigProposalTxRawTxnObject`), of transactions when
 the estimate is turned off, and of an estimate whose simulation could not run to a result. The node accepts a
-transaction only when the sender's balance pays for `max gas × gas unit price`: 20 SUPRA at the default gas unit price
-of 100,000 quants. A sender with less sets `maxGas` on those builders:
+transaction only when the sender's balance pays for `max gas × gas unit price`: 20 SUPRA at a gas unit price of
+100,000 quants. A sender with less sets `maxGas` on those builders:
 
 ```typescript
 import { BCS, SupraAccount } from "supra-ts-sdk";
@@ -381,8 +385,67 @@ const transfer = supra.transaction.build.rawTxnObject({
     function: "0x1::supra_account::transfer",
     functionTypeArgs: [],
     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
-    optionalTransactionPayloadArgs: { maxGas: 2_000n },
+    optionalTransactionPayloadArgs: { maxGas: 2_000n, gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
 });
+```
+
+### The gas unit price comes from the node
+
+In 1.2.0 a transaction without a `gasUnitPrice` on the call used `SupraConfig.minGasUnitPrice`, else
+`DEFAULT_GAS_PRICE` (100,000 quants), and never read the node; a network that raised its minimum refused every client
+that relied on the default. In 2.0.0 the price of a transaction is the call's `gasUnitPrice`, else the client's
+`gasUnitPrice`, else the node's estimate: `max(median gas price, minimum gas price)` of
+`GET /rpc/v3/transactions/estimate_gas_price`, read for each transaction that needs it. A price set by the call or the client is used as given and makes no request. The changes:
+
+- **Breaking:** `SupraConfig.minGasUnitPrice` and `NetworkConfig.minGasUnitPrice` are renamed `gasUnitPrice`. There is no
+  alias. `SupraClient.networkInformation.gasUnitPrice` is `undefined` when the configuration sets none; it was
+  `DEFAULT_GAS_PRICE`.
+- **Breaking:** `DEFAULT_GAS_PRICE` is removed.
+- **Breaking:** the builders that make no request (`rawTxnObject`, `scriptRawTxnObject`,
+  `automationRegistrationRawTxnObject`, `multisigRawTxnObject`, `multisigProposalTxRawTxnObject`) cannot read the
+  estimate. Without a `gasUnitPrice` on the call or the client they throw a `RangeError` before building. Pass a price
+  (`getEstimatedGasUnitPrice()` returns the node's estimate) or set `SupraConfig.gasUnitPrice`.
+- **Breaking:** a price below the node's minimum is refused by the node. The SDK throws
+  `SupraGasUnitPriceBelowMinimumError`, a `SupraError`, with `gasUnitPrice` (the price sent), `minimumGasUnitPrice` (read
+  from the node after the refusal, `undefined` when that read fails), `major_status` and the original error as `cause`,
+  from the submission and from the simulation that precedes it (the max gas estimate and `enableTransactionSimulation`).
+  It is neither a `SupraAPIError` nor a `SupraSimulationFailedError`. In 1.2.0 the submission refusal was a
+  `SupraAPIError` with status 400, which code can have caught with `instanceof SupraAPIError`; catch
+  `SupraGasUnitPriceBelowMinimumError` as well, and read the original `SupraAPIError` from `cause`. In 1.2.0 a simulation
+  (`simulate` of a built transaction, `simulate.simple`) returned the `Invalid` response without throwing; it now
+  throws, as for every status other than `Success` ([A simulation throws for every status other than
+  `Success`](#a-simulation-throws-for-every-status-other-than-success)). The transaction is not sent again and its price
+  is not raised; the sequence number is used by the next transaction.
+- A failed read of the estimate throws that read's error, like a failed build, and nothing is submitted. In the helpers
+  that submit, the read starts when the call is made and is awaited in the call's turn for the sender's account, so calls
+  from one account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited
+  before the lock is requested. `transaction.build.simple` awaits the read before it builds.
+- `getEstimatedGasUnitPrice()` is new; `getGasPrice()` (the median) and `getMinGasUnitPrice()` (the minimum) are
+  unchanged.
+
+```typescript
+import { Network, SupraClient, SupraGasUnitPriceBelowMinimumError } from "supra-ts-sdk";
+
+// 2.0.0: no price on the call or the client; the transaction carries the node's estimate.
+await supra.coin.transferSupraCoin({ senderAccount: account, receiverAccountAddress: "0x2", amount: 100n });
+
+// A price of the client: used as given by every transaction that sets none.
+const priced = new SupraClient({ network: Network.TESTNET, gasUnitPrice: 150_000n });
+
+// A price below the node's minimum is refused.
+try {
+    await supra.coin.transferSupraCoin({
+        senderAccount: account,
+        receiverAccountAddress: "0x2",
+        amount: 100n,
+        optionalTransactionArgs: { optionalTransactionPayloadArgs: { gasUnitPrice: 1n } },
+    });
+} catch (error) {
+    if (error instanceof SupraGasUnitPriceBelowMinimumError) {
+        console.log(error.gasUnitPrice, error.minimumGasUnitPrice, error.cause);
+    }
+}
+console.log(priced.networkInformation.gasUnitPrice);
 ```
 
 ### Other gas changes

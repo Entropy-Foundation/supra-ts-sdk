@@ -121,6 +121,13 @@ function stubFetch(): void {
             response = answer(HASH);
         } else if (method === "GET" && path === "/transactions/chain_id") {
             response = answer(255);
+        } else if (method === "GET" && path === "/transactions/estimate_gas_price") {
+            response = answer({
+                mean_gas_price: 100_000,
+                max_gas_price: 100_000,
+                median_gas_price: 100_000,
+                min_configured_gas_price: 100_000,
+            });
         } else if (method === "GET" && path.startsWith("/transactions/")) {
             response = answer(moveTxn(TransactionStatus.Success));
         } else if (method === "GET" && /^\/accounts\/0x[0-9a-f]+$/.test(path)) {

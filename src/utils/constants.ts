@@ -3,8 +3,8 @@
  * turned off (`estimateMaxGas: false`), the builder has no signer to simulate with, or the estimating simulation
  * could not run to a result (a request error, a response without `gas_used`). It covers a one-module publish (about
  * 2,000 units), a multisig account creation (about 1,700) and a transfer that creates the receiver (about 1,000). The
- * node accepts a transaction only when the sender's balance covers `max gas × gas unit price`: at the default gas unit
- * price of 100,000 quants this is 20 SUPRA (2,000,000,000 quants).
+ * node accepts a transaction only when the sender's balance covers `max gas × gas unit price`: at a gas unit price of
+ * 100,000 quants this is 20 SUPRA (2,000,000,000 quants).
  */
 export const DEFAULT_MAX_GAS_UNITS = BigInt(20_000);
 /**
@@ -23,8 +23,6 @@ export const MIN_ESTIMATED_MAX_GAS_UNITS = BigInt(1_500);
  * 2,000,000,000 on Mainnet, Testnet and Devnet (node v11.7.0 and v12).
  */
 export const MAX_GAS_UNITS_PER_TRANSACTION = BigInt(2_000_000_000);
-/** Gas unit price, in quants, when neither the call nor the client sets one: the node's `txn.min_price_per_gas_unit`. */
-export const DEFAULT_GAS_PRICE = BigInt(100_000);
 /**
  * Seconds from the client's clock, in whole seconds, to the expiration time of a transaction built without
  * `txExpiryTime`, when `SupraConfig.txExpirySecs` sets none.

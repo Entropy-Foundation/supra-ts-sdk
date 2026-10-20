@@ -65,6 +65,15 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   of the account is thrown and nothing is submitted.
 - **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
   without a request.
+- **`getEstimatedGasUnitPrice()`** returns the gas unit price that a transaction carries when neither the call nor
+  `SupraConfig.gasUnitPrice` sets one: `max(median_gas_price, min_configured_gas_price)` of
+  `GET /rpc/v3/transactions/estimate_gas_price`. It throws a `SupraError` naming the field when
+  `median_gas_price` or `min_configured_gas_price` is missing or is not a non-negative integer.
+- **`SupraGasUnitPriceBelowMinimumError`** (extends `SupraError`) is thrown when the node refuses a submission or a
+  simulation with `GAS_UNIT_PRICE_BELOW_MIN_BOUND`; `gasUnitPrice` is the price sent, `minimumGasUnitPrice` the node's
+  minimum read after the refusal (`undefined` when that read fails), `major_status` the status name, and `cause` the
+  original `SupraAPIError` of the submission or `SupraSimulationFailedError` of the simulation. The transaction is not
+  sent again and its price is not raised.
 - **Per-account sequence-number counter.** Each `SupraClient` keeps, for every account that its helpers send from, the
   account's sequence number on the chain and a record of each transaction it submitted (accepted, or whose submission
   request failed without an answer, so the node may have accepted it) with that transaction's expiration time. A
@@ -219,8 +228,24 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
   none when the estimate is turned off or the estimating simulation could not run to a result (a request error, a
   response without `gas_used`), and of the builders that cannot estimate. The node requires the sender's balance to pay
-  for `max gas × gas unit price`: 20 SUPRA at the default gas unit price of 100,000 quants. A sender with less must set
+  for `max gas × gas unit price`: 20 SUPRA at a gas unit price of 100,000 quants. A sender with less must set
   `maxGas` on the builders that make no request.
+- **Breaking:** a transaction without a `gasUnitPrice` on the call or the client carries the node's estimate,
+  `max(median_gas_price, min_configured_gas_price)`, read from the node for each transaction (in the helpers that submit
+  the read starts when the call is made and is awaited in the call's turn for the sender's account, so calls from one
+  account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited before the
+  lock is requested; `transaction.build.simple` awaits it before it builds); the same price is used for the max gas estimate. It was `SupraConfig.minGasUnitPrice`, else
+  `DEFAULT_GAS_PRICE` (100,000 quants), without reading the node. A failed read of the estimate throws its error and
+  nothing is submitted. A price of the call or the client is used as given.
+- **Breaking:** `SupraConfig.minGasUnitPrice` and `NetworkConfig.minGasUnitPrice` are renamed `gasUnitPrice`, without an
+  alias. `SupraClient.networkInformation.gasUnitPrice` is `undefined` when the configuration sets none.
+- **Breaking:** the builders that make no request (`rawTxnObject`, `scriptRawTxnObject`,
+  `automationRegistrationRawTxnObject`, `multisigRawTxnObject`, `multisigProposalTxRawTxnObject`) throw a `RangeError`
+  before building when neither the call nor the client sets a `gasUnitPrice`; they cannot read the node's estimate.
+- **Breaking:** a submission or a simulation refused for a gas unit price below the node's minimum throws
+  `SupraGasUnitPriceBelowMinimumError`, which is neither a `SupraAPIError` nor a `SupraSimulationFailedError`; the
+  original error is its `cause`.
+- The JSDoc of `getGasPrice()` and `getMinGasUnitPrice()` no longer says that transactions do not use them.
 - **Breaking:** without a `maxGas` on the call or the client, a transaction's max gas is estimated by the methods listed
   under Added, and `transaction.build.simple` uses `DEFAULT_MAX_GAS_UNITS` at most what the sender's balance pays for
   (one balance read). These methods make a balance read and, except `transaction.build.simple`, a simulation request
@@ -426,6 +451,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 ### Removed
 
 - **Breaking:** `DEFAULT_TXN_TIMEOUT_SEC`; `DEFAULT_TXN_WAIT_TIMEOUT_MS` replaces it.
+- **Breaking:** `DEFAULT_GAS_PRICE`; the node's estimate is the default gas unit price.
 - **Breaking:** `DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS` and
   `DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS`; the max gas estimate replaces the transfers'
   receiver-dependent max gas.

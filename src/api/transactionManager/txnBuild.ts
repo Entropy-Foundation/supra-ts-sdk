@@ -102,8 +102,10 @@ export class Build {
      * @param args.functionArgs - Target function args
      * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
-     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
-     * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
+     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
+     * price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`. The builder
+     * cannot read the node's gas unit price estimate: without a `gasUnitPrice` on the call or the client it throws a
+     * `RangeError`; `supra.getEstimatedGasUnitPrice()` returns the estimate.
      * @returns Raw transaction object
      * @example
      * ```typescript
@@ -120,7 +122,8 @@ export class Build {
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
      *         function: "0x1::supra_account::transfer",
      *         functionTypeArgs: [],
-     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000n)]
+     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *     });
      *
      *     console.log(supraCoinTransferRawTransaction);
@@ -154,8 +157,10 @@ export class Build {
      * @param args.scriptArgs - Arguments to the move script bytecode function
      * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
-     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
-     * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
+     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
+     * price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`. The builder
+     * cannot read the node's gas unit price estimate: without a `gasUnitPrice` on the call or the client it throws a
+     * `RangeError`; `supra.getEstimatedGasUnitPrice()` returns the estimate.
      * @returns Raw script transaction object
      * @example
      * ```typescript
@@ -173,7 +178,8 @@ export class Build {
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
      *         scriptCode: new HexString(moveScriptCodeHex).toUint8Array(),
      *         scriptTypeArgs: [],
-     *         scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(BigInt(1000))]
+     *         scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(BigInt(1000))],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() }
      *     }).toBytes();
      *
      *     console.log(supraCoinTransferSerializedScriptRawTransaction);
@@ -212,8 +218,10 @@ export class Build {
      * @param args.automationAuxData - Reserved for future extensions of registration parameters.
      * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
-     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
-     * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
+     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
+     * price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`. The builder
+     * cannot read the node's gas unit price estimate: without a `gasUnitPrice` on the call or the client it throws a
+     * `RangeError`; `supra.getEstimatedGasUnitPrice()` returns the estimate.
      * @returns Raw transaction object
      * @example
      * ```typescript
@@ -236,6 +244,7 @@ export class Build {
      *         automationFeeCapForEpoch: BigInt(1000000000),
      *         automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 2 * 60 * 60),
      *         automationAuxData: [],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *     }).toBytes();
      *
      *     console.log(supraCoinTransferAutomationSerializedRawTransaction);
@@ -275,8 +284,10 @@ export class Build {
      * @param args.functionArgs - Target function args
      * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
-     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
-     * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
+     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
+     * price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`. The builder
+     * cannot read the node's gas unit price estimate: without a `gasUnitPrice` on the call or the client it throws a
+     * `RangeError`; `supra.getEstimatedGasUnitPrice()` returns the estimate.
      * @returns Raw transaction object
      * @example
      * ```typescript
@@ -295,7 +306,8 @@ export class Build {
      *         multisigAddress: multisigAccountAddress,
      *         function: "0x1::supra_account::transfer",
      *         functionTypeArgs: [],
-     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)]
+     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() }
      *     }).toBytes();
      *
      *     console.log(supraCoinTransferSerializedMultisigRawTransaction);
@@ -331,8 +343,10 @@ export class Build {
      * @param args.functionArgs - Target function args
      * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
-     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at the
-     * default price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`.
+     * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
+     * price of 100,000 quants need 20 SUPRA (2,000,000,000 quants). A sender with less must set `maxGas`. The builder
+     * cannot read the node's gas unit price estimate: without a `gasUnitPrice` on the call or the client it throws a
+     * `RangeError`; `supra.getEstimatedGasUnitPrice()` returns the estimate.
      * @returns Raw transaction object
      * @example
      * ```typescript
@@ -352,7 +366,8 @@ export class Build {
      *             multisigAddress: multisigAccountAddress,
      *             function: "0x1::supra_account::transfer",
      *             functionTypeArgs: [],
-     *             functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)]
+     *             functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+     *             optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() }
      *         }
      *     ).toBytes();
      *
@@ -399,7 +414,8 @@ export class Build {
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
      *         function: "0x1::supra_account::transfer",
      *         functionTypeArgs: [],
-     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000n)]
+     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *     });
      *
      *     const signedTransaction = await supra.transaction.build.signedTransaction({
@@ -447,7 +463,8 @@ export class Build {
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
      *         function: "0x1::supra_account::transfer",
      *         functionTypeArgs: [],
-     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000n)]
+     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *     });
      *
      *     const supraCoinTransferSendTxnPayload = await supra.transaction.build.sendTxnPayload({

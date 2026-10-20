@@ -25,8 +25,8 @@ export interface SupraAPIErrorOptions {
  *
  * Errors that are not error statuses of the node derive from {@link SupraError}: {@link SupraTimeoutError} and
  * {@link SupraNetworkError} (a request that timed out or never reached the node), the faucet errors, and the
- * transaction outcome errors `SupraSimulationFailedError`, `SupraTransactionFailedError` and
- * `SupraTransactionTimeoutError`.
+ * transaction outcome errors `SupraSimulationFailedError`, `SupraTransactionFailedError`,
+ * `SupraTransactionTimeoutError` and `SupraGasUnitPriceBelowMinimumError`.
  *
  * `message` is the node's `message` when the error body has one, otherwise the HTTP status text.
  * `major_status` and `sub_status` hold the Move VM status that the message reports, when it reports one.

@@ -3,6 +3,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal, withSequenceNumber } from "./transactionManager/txnBuild";
 import { bindReservation, withSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
+import { mapCallGasUnitPriceRefusalInternal, withResolvedGasUnitPriceInternal } from "./transactionManager/gasPrice";
 import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
 import type {
@@ -46,6 +47,11 @@ export async function callContractInternal(
     }
 
     validateSubmitOptions(args.enableTransactionWaitAndSimulationArgs ?? {});
+    // The read of the node's gas unit price estimate starts before the account's lock is requested and is awaited
+    // inside the lock, so the lock is requested in the order of the calls and the read overlaps the calls ahead. The
+    // no-op catch keeps a rejection from being reported as unhandled before it is awaited.
+    const priceRead = withResolvedGasUnitPriceInternal(args.optionalTransactionPayloadArgs, config);
+    priceRead.catch(() => undefined);
     // A number from the client's counter is taken under the account's lock, which the submission releases when the
     // node answers it (`withSequenceNumberInternal`).
     return withSequenceNumberInternal(
@@ -55,6 +61,7 @@ export async function callContractInternal(
         },
         config,
         async (senderSequenceNumber, reservation) => {
+            const optionalTransactionPayloadArgs = await priceRead;
             // The max gas estimate simulates the transaction with `senderSequenceNumber`.
             const simpleRawTxn = await simpleInternal(
                 {
@@ -63,7 +70,7 @@ export async function callContractInternal(
                     function: args.function,
                     functionTypeArgs: args.typeArguments ?? [],
                     functionArgs: functionArguments,
-                    optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+                    optionalTransactionPayloadArgs,
                     abi: args.abi as MoveModule,
                     senderAccount,
                     reservation,
@@ -83,9 +90,14 @@ export async function callContractInternal(
                 {
                     sendTxJsonPayload: sendTxPayload,
                     enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
+                    deferGasPriceRefusalMapping: true,
                 },
                 config,
             );
         },
-    );
+    ).catch(async (error: unknown) => {
+        // A refusal for a gas unit price below the node's minimum is mapped after the lock is released, as the read of
+        // the node's minimum is not made under it.
+        throw await mapCallGasUnitPriceRefusalInternal(error, priceRead, config);
+    });
 }

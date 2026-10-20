@@ -9,13 +9,14 @@ import type { MockNode } from "./mockNode";
 export const RPC_URL = "http://node.test";
 export const RECEIVER = "0x" + "ab".repeat(32);
 
-export function newClient(config: { txExpirySecs?: number } = {}): SupraClient {
+export function newClient(config: { txExpirySecs?: number; gasUnitPrice?: bigint } = {}): SupraClient {
     return new SupraClient({ rpcUrl: RPC_URL, chainId: 255, ...config });
 }
 
 export interface TransferOptions {
     amount?: bigint;
     maxGas?: bigint | undefined;
+    gasUnitPrice?: bigint | undefined;
     simulate?: boolean;
     wait?: boolean;
     waitTimeoutMs?: number;
@@ -36,6 +37,7 @@ export function transfer(
         optionalTransactionArgs: {
             optionalTransactionPayloadArgs: {
                 ...(options.maxGas === undefined ? {} : { maxGas: options.maxGas }),
+                ...(options.gasUnitPrice === undefined ? {} : { gasUnitPrice: options.gasUnitPrice }),
                 ...(options.txExpiryTime === undefined ? {} : { txExpiryTime: options.txExpiryTime }),
                 ...(options.sequenceNumber === undefined ? {} : { sequenceNumber: options.sequenceNumber }),
             },

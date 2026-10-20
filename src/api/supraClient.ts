@@ -7,7 +7,11 @@ import { Faucet } from "./faucet";
 import { Methods } from "./methods";
 import { Table } from "./table";
 import { Transaction } from "./transaction";
-import { getGasPriceInternal, getMinGasUnitPriceInternal } from "../internal/supraClient";
+import {
+    getEstimatedGasUnitPriceInternal,
+    getGasPriceInternal,
+    getMinGasUnitPriceInternal,
+} from "../internal/supraClient";
 import { getNodeChainIdInternal } from "../internal/chainId";
 import { parseChainId } from "../client/chainIdCache";
 import { SupraChainIdMismatchError } from "../errors/chainIdError";
@@ -15,7 +19,6 @@ import { Coin } from "./coin";
 import { Events } from "./events";
 import { Block } from "./block";
 import { FungibleAsset } from "./fungibleAsset";
-import { DEFAULT_GAS_PRICE } from "../utils/constants";
 import { validateMaxGasEstimateMultiplier } from "../internal/transactionManager/maxGas";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
 import { validateRpcUrl } from "../client/url";
@@ -121,7 +124,7 @@ export class SupraClient {
      * const configured = new SupraClient({
      *     network: Network.TESTNET,
      *     maxGas: 20_000n,
-     *     minGasUnitPrice: 100_000n,
+     *     gasUnitPrice: 100_000n,
      *     timeoutMs: 60_000,
      * });
      *
@@ -155,7 +158,10 @@ export class SupraClient {
         if (config.maxGas !== undefined) {
             this.networkInformation.maxGas = config.maxGas;
         }
-        this.networkInformation.minGasUnitPrice = config.minGasUnitPrice ?? DEFAULT_GAS_PRICE;
+        // Without `gasUnitPrice` each transaction carries the node's estimate, read when it is built
+        if (config.gasUnitPrice !== undefined) {
+            this.networkInformation.gasUnitPrice = config.gasUnitPrice;
+        }
         if (config.estimateMaxGas !== undefined) {
             this.networkInformation.estimateMaxGas = config.estimateMaxGas;
         }
@@ -264,7 +270,9 @@ export class SupraClient {
 
     /**
      * Reads the median gas unit price, in quants, from `GET /rpc/v3/transactions/estimate_gas_price`
-     * (`median_gas_price`). Transactions that set no `gasUnitPrice` do not use it; they use `SupraConfig.minGasUnitPrice`.
+     * (`median_gas_price`): the median over the last transactions the RPC node executed, which can be below the node's
+     * minimum. Transactions that set no price do not carry it as such; they carry `getEstimatedGasUnitPrice()`, the
+     * larger of the median and the minimum.
      * @returns The median gas unit price
      * @example
      * ```typescript
@@ -287,8 +295,9 @@ export class SupraClient {
 
     /**
      * Reads the minimum gas unit price that the node's gas schedule configures, in quants, from
-     * `GET /rpc/v3/transactions/estimate_gas_price` (`min_configured_gas_price`). Transactions that set no
-     * `gasUnitPrice` do not use it; they use `SupraConfig.minGasUnitPrice`, default `DEFAULT_GAS_PRICE`.
+     * `GET /rpc/v3/transactions/estimate_gas_price` (`min_configured_gas_price`). The node refuses a transaction with a
+     * lower price (`SupraGasUnitPriceBelowMinimumError`). Transactions that set no price carry
+     * `getEstimatedGasUnitPrice()`, which is not below it.
      * @returns The minimum gas unit price
      * @example
      * ```typescript
@@ -307,6 +316,31 @@ export class SupraClient {
      */
     async getMinGasUnitPrice(): Promise<bigint> {
         return getMinGasUnitPriceInternal(this.networkInformation);
+    }
+
+    /**
+     * Reads the gas unit price that a transaction carries when neither the call nor `SupraConfig.gasUnitPrice` sets
+     * one: the larger of the median gas price (`median_gas_price`) and the minimum gas price
+     * (`min_configured_gas_price`) of `GET /rpc/v3/transactions/estimate_gas_price`, in quants. A caller can read it
+     * and pass a price derived from it as `gasUnitPrice`, which the builders that make no request require.
+     * @returns The estimated gas unit price
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    const gasPrice = await supra.getEstimatedGasUnitPrice();
+     *    console.log(gasPrice);
+     * }
+     * runExample().catch(console.error);
+     *
+     * ```
+     * @group SupraClient
+     */
+    async getEstimatedGasUnitPrice(): Promise<bigint> {
+        return getEstimatedGasUnitPriceInternal(this.networkInformation);
     }
 
     /**

@@ -17,8 +17,11 @@ export interface RetryConfig {
 /**
  * The SupraConfig interface is used to configure the SupraClient class.
  * `maxGas` sets the max gas of every transaction that sets none; without it the max gas is estimated (see
- * `OptionalTransactionPayloadArgs`). `minGasUnitPrice` sets the gas unit price of every transaction that sets none
- * (default `DEFAULT_GAS_PRICE`). `estimateMaxGas: false` turns the estimate off: a transaction without `maxGas` then has
+ * `OptionalTransactionPayloadArgs`). `gasUnitPrice` sets the gas unit price of every transaction that sets none, used
+ * as given and in quants; without it each transaction that sets none carries the node's estimate, `max(median gas
+ * price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, read for each transaction
+ * (`getEstimatedGasUnitPrice()`). The builders that make no request need a price on the call or here (see
+ * `OptionalTransactionPayloadArgs`). `estimateMaxGas: false` turns the estimate off: a transaction without `maxGas` then has
  * `DEFAULT_MAX_GAS_UNITS`. A simulation whose status is not `Success` throws `SupraSimulationFailedError` and nothing is
  * submitted; the simulation runs against committed state, so a transaction that depends on an earlier one that has not
  * committed fails its estimate, and needs `maxGas`. `maxGasEstimateMultiplier` replaces
@@ -60,7 +63,7 @@ export interface RetryConfig {
  * `SupraTransactionTimeoutError`.
  *
  * Every setting belongs to the client it is passed to: `network`, `rpcUrl`, `chainId`, `maxGas`,
- * `minGasUnitPrice`, `estimateMaxGas`, `maxGasEstimateMultiplier`, `timeoutMs`, `retry`, `waitTimeoutMs`,
+ * `gasUnitPrice`, `estimateMaxGas`, `maxGasEstimateMultiplier`, `timeoutMs`, `retry`, `waitTimeoutMs`,
  * `txExpirySecs` and `verifyChainId`. The client copies the configuration, so later changes
  * to the object passed in do not reach it, and two clients never share settings, including two clients of the same
  * predefined network. `rpcUrl` must be an absolute `http:` or `https:` URL, with or without trailing slashes and with
@@ -80,7 +83,7 @@ export type SupraConfig =
     | {
           network: Network.MAINNET | Network.TESTNET | Network.DEVNET;
           maxGas?: bigint;
-          minGasUnitPrice?: bigint;
+          gasUnitPrice?: bigint;
           estimateMaxGas?: boolean;
           maxGasEstimateMultiplier?: number;
           timeoutMs?: number;
@@ -95,7 +98,7 @@ export type SupraConfig =
           rpcUrl: string;
           chainId: number;
           maxGas?: bigint;
-          minGasUnitPrice?: bigint;
+          gasUnitPrice?: bigint;
           estimateMaxGas?: boolean;
           maxGasEstimateMultiplier?: number;
           timeoutMs?: number;

@@ -11,7 +11,11 @@ export interface NetworkConfig {
     rpcUrl: string;
     /** Max gas of every transaction that sets none; when absent, the max gas is estimated or defaulted. */
     maxGas?: bigint;
-    minGasUnitPrice?: bigint;
+    /**
+     * Gas unit price of every transaction that sets none, used as given; when absent, the node's estimate is read for
+     * each transaction.
+     */
+    gasUnitPrice?: bigint;
     /** Estimate the max gas of a transaction that sets none; default true. */
     estimateMaxGas?: boolean;
     /** Factor applied to the simulated gas used; default `DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`. */

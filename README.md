@@ -231,7 +231,8 @@ const rawTxn = supra.transaction.build.rawTxnObject({
   function: "0x1::supra_account::transfer",
   functionTypeArgs: [],
   functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
-  optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100n },
+  // The builders that make no request need a gas unit price, from the call or from `SupraConfig.gasUnitPrice`
+  optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n },
 });
 const signedTransaction = await rawTxn.signedTransaction(sender); // chain ID 8, no request
 ```
@@ -248,6 +249,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraRateLimitError` (extends `SupraAPIError`) | HTTP 429 | `retryAfterSeconds` |
 | `SupraServiceUnavailableError` (extends `SupraAPIError`) | HTTP 503 | |
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | HTTP 400 for a submission beyond the sequence numbers the node queues for the account | `sequenceNumber` |
+| `SupraGasUnitPriceBelowMinimumError` | the node refuses a submission or a simulation because the gas unit price is below its minimum | `gasUnitPrice`, `minimumGasUnitPrice`, `major_status`, `cause` (the `SupraAPIError` or `SupraSimulationFailedError`) |
 | `SupraTimeoutError` | a request exceeds the timeout | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers | `url`, `cause` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
@@ -476,8 +478,29 @@ const responses = await Promise.all(
 
 Each transaction has a max gas (`max_gas_amount`, in gas units), a gas unit price (in quants) and an expiration time.
 `optionalTransactionPayloadArgs` sets them per transaction (`maxGas`, `gasUnitPrice`, `txExpiryTime`) on every method
-that builds a transaction, and `SupraConfig` sets `maxGas`, `minGasUnitPrice` and `txExpirySecs` (see
+that builds a transaction, and `SupraConfig` sets `maxGas`, `gasUnitPrice` and `txExpirySecs` (see
 [Sequence numbers](#sequence-numbers)) for every transaction of the client. A per-call setting replaces the client's. The SDK does not modify the options objects it is given.
+
+The gas unit price of a transaction is, in this order:
+
+1. the call's `gasUnitPrice`;
+2. the client's `SupraConfig.gasUnitPrice`;
+3. the node's estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`
+   (`supra.getEstimatedGasUnitPrice()` returns it). The median is taken over the last transactions the RPC node
+   executed and can be below the node's current minimum. The estimate is read for each transaction that needs it. In the
+   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of
+   `Contract.fromABI`) the read starts when the call is made, before the sender's account lock is requested, and is
+   awaited in the call's turn, so calls from one account keep the order of the calls, except SUPRA fungible asset
+   transfers, whose balance check is awaited before the lock is requested. `transaction.build.simple` awaits the read
+   before it builds. The same price is used for the max gas estimate and the transaction. A failed read throws its
+   error, like a failed build, and nothing is submitted.
+
+A price set by the call or the client is used as given and makes no request. When it is below the node's minimum, the
+node refuses the transaction and the SDK throws `SupraGasUnitPriceBelowMinimumError` (`gasUnitPrice`,
+`minimumGasUnitPrice`) from the submission or from the simulation. It is not a `SupraAPIError` or a
+`SupraSimulationFailedError`; that original error is its `cause`. The SDK does not send the transaction again or raise
+the price, and the sequence number is used by the next transaction. The builders that make no request cannot read the
+estimate: without a price on the call or the client they throw a `RangeError` before building.
 
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas
 used. When neither the call nor the client sets `maxGas`:
@@ -498,13 +521,13 @@ used. When neither the call nor the client sets `maxGas`:
 
 The fixed default, `DEFAULT_MAX_GAS_UNITS`, is 20,000 units: it covers a one-module publish (about 2,000 units), a
 multisig account creation (about 1,700) and a transfer that creates the receiver (about 1,000). The node requires the
-sender's SUPRA balance to cover `max gas × gas unit price` at validation: with the default gas unit price of 100,000
-quants, 20,000 units need 20 SUPRA (2,000,000,000 quants). The builders that make no request keep this limit, so a
+sender's SUPRA balance to cover `max gas × gas unit price` at validation: at a gas unit price of 100,000 quants,
+20,000 units need 20 SUPRA (2,000,000,000 quants). The builders that make no request keep this limit, so a
 sender with less than that must set `maxGas`. `estimateMaxGas: false`, per call or in `SupraConfig`, turns the
 estimate off and uses the fixed default without a request.
 
 ```ts
-// Estimated max gas, minimum gas unit price
+// Estimated max gas, the node's gas unit price estimate
 await supra.coin.transferSupraCoin({ senderAccount: sender, receiverAccountAddress: "0x1234", amount: 100n });
 
 // Per-call settings

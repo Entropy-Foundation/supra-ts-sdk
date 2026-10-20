@@ -147,6 +147,16 @@ beforeEach(() => {
             submittedHashes.push(hash);
             return respond(json(hash));
         }
+        if (method === "GET" && path === "/transactions/estimate_gas_price") {
+            return respond(
+                json({
+                    mean_gas_price: 100_000,
+                    max_gas_price: 100_000,
+                    median_gas_price: 100_000,
+                    min_configured_gas_price: 100_000,
+                }),
+            );
+        }
         if (method === "GET" && path === "/transactions/chain_id") {
             chainIdReads += 1;
             return respond(chainIdAnswers.shift() ?? json(255));
