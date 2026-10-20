@@ -384,16 +384,17 @@ counter that the `SupraClient` keeps for each account:
   the client reads (`GET /rpc/v3/block`) has reached its expiration time, or when a read of the transaction through
   the client returns `Invalid`. Reads of a block by height or by hash do not drop records. An HTTP 404 does not drop a
   record: an RPC node answers 404 for a pending transaction that another RPC node behind the same URL received.
-- A submission whose outcome is unknown is recorded with its expiration time, at most 605 seconds after the client's
-  clock (a node refuses an expiration time more than 600 seconds after its clock).
+- A submission whose outcome is unknown holds its number until its expiration time or `resetSequenceNumber`, including
+  when its expiration time was beyond what a node accepts.
 - The number handed out is the lowest number at or above the account's sequence number on the chain that has no
   record. So transactions sent without waiting for the previous one to commit get consecutive numbers, also when they
   are sent concurrently (`Promise.all`), and a number whose transaction can no longer commit is used again.
 - The first use reads the account and the latest block (two requests). So does the next call after a refusal for a
   stale number or a full queue, and every call while the client's estimate of the chain's time has passed the
   expiration time of a record by two seconds and no latest block read has reached it (a call makes at most one such
-  read). The estimate is the client's clock shifted by the largest difference between a latest block's timestamp and
-  the client's clock seen at its read, so it does not move backwards when a read returns an older block. A read updates
+  read). The estimate is the newest latest block's timestamp read plus the time elapsed since that read, measured with
+  a monotonic clock, so it does not depend on the client's wall clock and does not move backwards when a read returns
+  an older block. Before any latest block has been read it is the client's wall clock. A read updates
   the chain's number and time and drops the records they show dead; it keeps the others.
 - A transaction that fails before the node accepts it (its estimate or signing throws, or the node refuses it for
   another reason, for example an insufficient balance) has no record, and the next call uses its number.

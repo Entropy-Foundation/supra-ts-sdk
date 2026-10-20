@@ -48,18 +48,22 @@ export function transfer(
 }
 
 /**
- * The client's clock: the real clock plus `offsetMs`, through a mock of `Date.now`. `advance` moves the client's clock
- * and the node's clock forward together.
+ * The client's clocks: the wall clock is the real clock plus `offsetMs`, through a mock of `Date.now`, and the
+ * monotonic clock is the real one plus `monotonicOffsetMs`, through a mock of `performance.now`. `advance` moves both
+ * clocks and the node's clock forward together; changing `offsetMs` alone steps only the wall clock.
  */
 export class ClientClock {
     offsetMs: number;
+    monotonicOffsetMs = 0;
     private readonly realNow: () => number;
 
     constructor(offsetMs = 0) {
         this.offsetMs = offsetMs;
         const realNow = Date.now.bind(Date);
+        const realMonotonicNow = performance.now.bind(performance);
         this.realNow = realNow;
         jest.spyOn(Date, "now").mockImplementation(() => realNow() + this.offsetMs);
+        jest.spyOn(performance, "now").mockImplementation(() => realMonotonicNow() + this.monotonicOffsetMs);
     }
 
     /** The real time, without the offset. */
@@ -69,6 +73,7 @@ export class ClientClock {
 
     advance(node: MockNode, ms: number): void {
         this.offsetMs += ms;
+        this.monotonicOffsetMs += ms;
         node.advance(ms);
     }
 }

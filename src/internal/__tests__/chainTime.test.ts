@@ -46,53 +46,98 @@ function rawTxn(supra: SupraClient, txExpiryTime?: bigint) {
     });
 }
 
+/** A `ChainClock` whose monotonic and wall clocks are set by the test. */
+function clockAt(monotonicMs: { now: number }, wallMs: { now: number } = { now: 0 }): ChainClock {
+    return new ChainClock(
+        () => monotonicMs.now,
+        () => wallMs.now,
+    );
+}
+
 describe("ChainClock", () => {
-    it("estimates the chain's time with the client's clock before any block has been read", () => {
-        const clock = new ChainClock();
+    it("estimates the chain's time with the client's wall clock before any block has been read", () => {
+        const wall = { now: 1_000_500 };
+        const clock = clockAt({ now: 50 }, wall);
 
         expect(clock.latestBlockSeconds()).toBeUndefined();
-        expect(clock.estimatedNowMs(1_000_000)).toBe(1_000_000);
-        expect(clock.estimatedNowSeconds(1_000_500)).toBe(1_000n);
+        expect(clock.estimatedNowMs()).toBe(1_000_500);
+        expect(clock.estimatedNowSeconds()).toBe(1_000n);
     });
 
-    it("shifts the client's clock by the difference observed when the latest block was read", () => {
-        const clock = new ChainClock();
+    it("is the latest block's timestamp plus the monotonic time elapsed since it was read", () => {
+        const monotonic = { now: 5_000 };
+        const clock = clockAt(monotonic);
 
-        clock.observeLatestBlock(2_000_000_000, 1_000_000);
+        clock.observeLatestBlock(2_000_000_000);
+        monotonic.now += 10_000;
 
         expect(clock.latestBlockSeconds()).toBe(2_000n);
-        expect(clock.estimatedNowMs(1_010_000)).toBe(2_010_000);
+        expect(clock.estimatedNowMs()).toBe(2_010_000);
     });
 
-    it("keeps the estimate for a block that is not newer than the latest one read", () => {
-        const clock = new ChainClock();
-        clock.observeLatestBlock(2_000_000_000, 1_000_000);
+    it("does not depend on the wall clock once a block has been read", () => {
+        const monotonic = { now: 5_000 };
+        const wall = { now: 1_000_000 };
+        const clock = clockAt(monotonic, wall);
+        clock.observeLatestBlock(2_000_000_000);
+
+        // The wall clock steps forward by 120 s and back by 240 s.
+        wall.now += 120_000;
+        expect(clock.estimatedNowMs()).toBe(2_000_000);
+        wall.now -= 240_000;
+        expect(clock.estimatedNowMs()).toBe(2_000_000);
+    });
+
+    it("ignores a block that is not newer than the latest one read", () => {
+        const monotonic = { now: 5_000 };
+        const clock = clockAt(monotonic);
+        clock.observeLatestBlock(2_000_000_000);
+        monotonic.now += 30_000;
 
         // The same block read 30 s later (the chain produced no block), and an older block.
-        clock.observeLatestBlock(2_000_000_000, 1_030_000);
-        clock.observeLatestBlock(1_500_000_000, 1_030_000);
+        clock.observeLatestBlock(2_000_000_000);
+        clock.observeLatestBlock(1_500_000_000);
 
         expect(clock.latestBlockSeconds()).toBe(2_000n);
-        expect(clock.estimatedNowMs(1_030_000)).toBe(2_030_000);
+        expect(clock.estimatedNowMs()).toBe(2_030_000);
     });
 
-    it("does not move the estimate backwards for a newer block that is older at its read than an earlier one", () => {
-        const clock = new ChainClock();
-        // A block 100 ms old at its read, then a newer block 2 s old at its read (from a node that lags).
-        clock.observeLatestBlock(2_000_000_000, 1_000_100);
-        clock.observeLatestBlock(2_001_000_000, 1_003_000);
+    it("does not move the estimate backwards for a newer block from a node that lags", () => {
+        const monotonic = { now: 5_000 };
+        const clock = clockAt(monotonic);
+        clock.observeLatestBlock(2_000_000_000);
+        monotonic.now += 3_000;
+        const before = clock.estimatedNowMs();
+
+        // The block is newer than the first, and 2 s older than the estimate.
+        clock.observeLatestBlock(2_001_000_000);
 
         expect(clock.latestBlockSeconds()).toBe(2_001n);
-        expect(clock.estimatedNowMs(1_003_000)).toBe(2_002_900);
+        expect(before).toBe(2_003_000);
+        expect(clock.estimatedNowMs()).toBe(2_003_000);
+        monotonic.now += 1_000;
+        expect(clock.estimatedNowMs()).toBe(2_004_000);
     });
 
-    it("moves the estimate forwards when the first latest block read lagged", () => {
-        const clock = new ChainClock();
+    it("moves the estimate forwards when a block is ahead of it", () => {
+        const monotonic = { now: 5_000 };
+        const clock = clockAt(monotonic);
         // The first read comes from a node 120 s behind the chain; the next from a node that is current.
-        clock.observeLatestBlock(1_880_000_000, 1_000_000);
-        clock.observeLatestBlock(2_001_000_000, 1_001_000);
+        clock.observeLatestBlock(1_880_000_000);
+        monotonic.now += 1_000;
+        clock.observeLatestBlock(2_001_000_000);
 
-        expect(clock.estimatedNowMs(1_001_000)).toBe(2_001_000);
+        expect(clock.estimatedNowMs()).toBe(2_001_000);
+    });
+
+    it("estimates with performance.now by default", () => {
+        const clock = new ChainClock();
+        clock.observeLatestBlock(2_000_000_000);
+        const first = clock.estimatedNowMs();
+
+        expect(first).toBeGreaterThanOrEqual(2_000_000);
+        expect(first).toBeLessThan(2_000_000 + 5_000);
+        expect(clock.estimatedNowMs()).toBeGreaterThanOrEqual(first);
     });
 
     it("ignores a timestamp that is not a positive safe integer", () => {
@@ -119,7 +164,8 @@ describe("ChainClock", () => {
         serveBlockAt(4_999_000);
         await supra.getLatestBlock();
         expect(clock.latestBlockSeconds()).toBe(4_999n);
-        expect(clock.estimatedNowMs()).toBe(4_999_000);
+        expect(clock.estimatedNowMs()).toBeGreaterThanOrEqual(4_999_000);
+        expect(clock.estimatedNowMs()).toBeLessThan(4_999_000 + 5_000);
 
         serveBlockAt(9_000_000);
         await supra.getBlockByHeight({ height: 2 });

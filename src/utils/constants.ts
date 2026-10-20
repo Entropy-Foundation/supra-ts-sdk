@@ -38,9 +38,7 @@ export const MAX_TX_EXPIRATION_DURATION = 600;
 /**
  * Seconds by which the clocks of the client and of the node that receives a transaction may differ. A transaction
  * built without `txExpiryTime` expires at most `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS` (595) seconds
- * after the client's clock, so that a node accepts it when `txExpirySecs` is 600. A submission whose request failed
- * without an answer is recorded with its expiration time, at most
- * `MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS` (605) seconds after the client's clock.
+ * after the client's clock, so that a node accepts it when `txExpirySecs` is 600.
  */
 export const TX_EXPIRATION_MARGIN_SECS = 5;
 export const MILLISECONDS_PER_SECOND = 1000;

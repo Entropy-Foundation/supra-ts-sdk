@@ -5,7 +5,6 @@ import type { AccountAddressInput } from "../types/account";
 import { TransactionStatus } from "../types/transaction";
 import type { RawTxnJSON, SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import { MAX_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, TX_EXPIRATION_MARGIN_SECS } from "../utils/constants";
 import { getAccountInfoInternal } from "./account";
 import { getLatestBlockInternal } from "./block";
 import { ChainClock, chainClockOf } from "./chainTime";
@@ -480,8 +479,7 @@ export function settleUnsubmittedSequenceNumberInternal(
  *   `reservation`, the number is handed out next.
  * - Any other error (a timeout, a connection failure, a 5xx other than 503): the node may have accepted the
  *   transaction, so it is recorded without a hash, whether or not its number came from the counter. The record's
- *   expiration time is the transaction's, at most `unknownOutcomeExpiration` (the latest expiration time a node
- *   accepts).
+ *   expiration time is the transaction's.
  *
  * A reservation is released in every case.
  */
@@ -516,38 +514,10 @@ export function settleFailedSubmissionInternal(
     } else if (error instanceof SupraAPIError && (error.status < 500 || error.status === 503)) {
         settle(false);
     } else {
-        tracker.record(
-            rawTxn.sender,
-            rawTxn.sequence_number,
-            unknownOutcomeExpiration(rawTxn.expiration_timestamp_secs),
-        );
+        tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs);
         settle(false);
     }
     return error;
-}
-
-/**
- * The expiration time recorded for a submission whose request failed without an answer: `expiration`, at most
- * `MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS` seconds after the client's clock (rounded up). A node
- * refuses a transaction whose expiration time is more than `MAX_TX_EXPIRATION_DURATION` seconds after the node's
- * clock, so a transaction with a later expiration time was refused by a node whose clock is less than
- * `TX_EXPIRATION_MARGIN_SECS` seconds ahead of the client's, and its record does not hold the number beyond that time.
- * `expiration` is returned unchanged when it cannot be read as an integer.
- */
-export function unknownOutcomeExpiration(
-    expiration: bigint | number,
-    localNowMs: number = Date.now(),
-): bigint | number {
-    let expires: bigint;
-    try {
-        expires = BigInt(expiration);
-    } catch {
-        return expiration;
-    }
-    const latest =
-        BigInt(Math.ceil(localNowMs / MILLISECONDS_PER_SECOND)) +
-        BigInt(MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS);
-    return expires < latest ? expires : latest;
 }
 
 /**

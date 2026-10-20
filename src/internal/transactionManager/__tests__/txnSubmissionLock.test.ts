@@ -273,10 +273,11 @@ describe("a transaction of this client that can no longer commit", () => {
         await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });
         await transfer(supra, sender, options);
         await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });
-        // The chain's time passes 6's expiration time; the client's clock moves one second less, so the estimated
-        // chain time has not passed it by two seconds and only the check before submission, which reads the latest
-        // block, finds 6 expired.
+        // The chain's time passes 6's expiration time; the client's clocks move one second less, so the
+        // estimated chain time has not passed it by two seconds and only the check before submission, which reads the
+        // latest block, finds 6 expired.
         clock.offsetMs += 60_000;
+        clock.monotonicOffsetMs += 60_000;
         mock.advance(61_000);
 
         await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });

@@ -54,6 +54,9 @@ export interface MockNodeOptions {
     startMs?: number;
 }
 
+/** The monotonic clock as it is when this module loads, so a test's mock of `performance.now` does not move the node. */
+const nodePerformanceNow = performance.now.bind(performance);
+
 /** A transfer of this amount aborts in the simulation (`EINSUFFICIENT_BALANCE`). */
 export const ABORT_AMOUNT = 0x0102030405n;
 /** `ABORT_AMOUNT` as the bytes of a u64 argument in a transaction's JSON. */
@@ -103,7 +106,7 @@ export class MockNode {
     private readonly latencyMs: [number, number];
     private readonly window: number;
     private readonly startMs: number;
-    private readonly startPerformance = performance.now();
+    private readonly startPerformance = nodePerformanceNow();
     private advancedMs = 0;
     private stalledAtMs: number | undefined;
     private timer: ReturnType<typeof setInterval> | undefined;
@@ -129,7 +132,7 @@ export class MockNode {
 
     /** The node's clock, in milliseconds since the Unix epoch. */
     nowMs(): number {
-        return this.startMs + (performance.now() - this.startPerformance) + this.advancedMs;
+        return this.startMs + (nodePerformanceNow() - this.startPerformance) + this.advancedMs;
     }
 
     /** The latest block's timestamp, in milliseconds since the Unix epoch. */

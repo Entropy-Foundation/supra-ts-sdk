@@ -67,13 +67,14 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   time, can no longer commit. A record is dropped when the chain's number passes it, when the timestamp of a latest
   block the client reads (`GET /rpc/v3/block`; not a block read by height or hash) has reached its expiration time, or
   when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it, since an RPC node answers 404 for a
-  pending transaction that another RPC node received. A submission whose outcome is unknown is recorded with an
-  expiration time at most 605 seconds after the client's clock. The next number is the lowest number at or above the
+  pending transaction that another RPC node received. A submission whose outcome is unknown holds its number until the
+  transaction's expiration time or `resetSequenceNumber`, including when its expiration time was beyond what a node
+  accepts. The next number is the lowest number at or above the
   chain's that has no record. The first use reads the account and the latest block; so does the next call after a
   refusal for a stale number or a full queue, and every call (once per call) while the estimated chain time has passed
   the expiration time of a record by two seconds and no latest block read has reached it. The estimated chain time is
-  the client's clock shifted by the largest difference between a latest block's timestamp and the client's clock seen
-  at its read; it does not move backwards. A read never drops a record that can still commit. A check behind pending
+  the newest latest block's timestamp read plus the time elapsed since that read on a monotonic clock
+  (`performance.now()`); it does not depend on the client's wall clock and does not move backwards. A read never drops a record that can still commit. A check behind pending
   transactions uses the higher of the account's number read and the highest number the client has observed on the
   chain. A refusal for a stale number
   (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the account's, or a number that already has a

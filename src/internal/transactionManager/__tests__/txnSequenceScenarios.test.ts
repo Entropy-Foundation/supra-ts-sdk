@@ -653,21 +653,74 @@ describe("reads of the chain, chain time and expiration times", () => {
         expect(acceptedNumbers(mock)).toEqual([5, 6, 7]);
     });
 
-    it("records an unknown outcome with at most the latest expiration time a node accepts", async () => {
+    it("keeps the number of an unknown outcome the node accepted until the chain's time reaches the transaction's expiration time, with a client clock behind the node's", async () => {
+        const mock = start({ latencyMs: [1, 1] });
+        const clock = new ClientClock(-30_000);
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const gas = { maxGas: 5_000n };
+        await transfer(supra, sender, gas);
+        mock.tick();
+
+        // 629 s after the client's clock is 599 s after the node's, which the node accepts. The node pools the
+        // transaction and the answer is a 500.
+        const expiry = BigInt(Math.floor(Date.now() / 1000) + 629);
+        mock.refuseNext.set(6, { status: 500, message: "Internal error", pool: true });
+        await expect(transfer(supra, sender, { ...gas, txExpiryTime: expiry })).rejects.toBeInstanceOf(SupraAPIError);
+        expect(mock.pooled()).toEqual([6]);
+
+        // 580 s later the latest block is 19 s short of the expiration time: the number is still held.
+        clock.advance(mock, 580_000);
+        await transfer(supra, sender, gas);
+
+        expect(mock.submissions.map((submission) => submission.status)).toEqual([200, 500, 200]);
+        expect(mock.pooled()).toEqual([6, 7]);
+
+        // Once the latest block has reached the expiration time and the client has read it, the number is used again.
+        clock.advance(mock, 25_000);
+        expect(mock.blockSeconds()).toBeGreaterThanOrEqual(Number(expiry));
+        await transfer(supra, sender, gas);
+
+        expect(mock.submitted).toEqual([5, 6, 7, 6]);
+    });
+});
+
+describe("the estimate of the chain's time", () => {
+    beforeEach(() => {
+        jest.spyOn(SupraAccount.prototype, "signBuffer").mockReturnValue(new HexString("00".repeat(64)));
+    });
+
+    /** The account reads of ten pipelined calls with an explicit max gas after the first call, with `disturb` between. */
+    async function accountReadsOfPipelinedCalls(disturb: (clock: ClientClock) => void): Promise<number> {
         const mock = start({ latencyMs: [1, 1] });
         const clock = new ClientClock();
         const supra = newClient();
         const sender = new SupraAccount();
         const gas = { maxGas: 5_000n };
-        mock.refuseNext.set(5, { status: 500, message: "Internal error" });
-        const hourLater = BigInt(Math.floor(Date.now() / 1000) + 3_600);
-        await expect(transfer(supra, sender, { ...gas, txExpiryTime: hourLater })).rejects.toBeInstanceOf(
-            SupraAPIError,
-        );
-
-        clock.advance(mock, (MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS + 4) * 1_000);
         await transfer(supra, sender, gas);
+        const before = mock.counts["account"] ?? 0;
+        for (let index = 1; index <= 10; index += 1) {
+            if (index === 3) {
+                disturb(clock);
+            }
+            if (index === 7) {
+                clock.offsetMs = 0;
+            }
+            await transfer(supra, sender, gas);
+        }
+        expect(mock.submitted).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        return (mock.counts["account"] ?? 0) - before;
+    }
 
-        expect(acceptedNumbers(mock)).toEqual([5]);
+    it("does not depend on the client's wall clock: a step forward and back adds no chain reads", async () => {
+        const reads = await accountReadsOfPipelinedCalls((clock) => {
+            clock.offsetMs += 120_000;
+        });
+
+        expect(reads).toBe(0);
+    });
+
+    it("is unchanged by a wall clock that is not stepped (control)", async () => {
+        expect(await accountReadsOfPipelinedCalls(() => undefined)).toBe(0);
     });
 });

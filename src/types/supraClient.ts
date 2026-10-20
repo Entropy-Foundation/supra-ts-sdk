@@ -37,14 +37,14 @@ export interface RetryConfig {
  * The counter records every transaction of the account that the client submitted (accepted, or whose submission
  * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time, and hands out the
  * lowest number at or above the account's sequence number on the chain that has no record. A submission whose request
- * failed without an answer is recorded with an expiration time at most 605 seconds
- * (`MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS`) after the client's clock. A record is dropped when the
+ * failed without an answer holds its number until the transaction's expiration time or `resetSequenceNumber`, including
+ * when its expiration time was beyond what a node accepts. A record is dropped when the
  * chain's number passes it, when the timestamp of a latest block the client reads (`GET /rpc/v3/block`) has reached
  * its expiration time, or when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it. The first use
  * of an account reads the account and the latest block; so does the next call after a refusal for a stale number or a
- * full queue (`SupraAccountQueueFullError`), and every call while the estimated chain time (the client's clock shifted
- * by the largest difference to a latest block's timestamp observed at its read) has passed the expiration time of a
- * record by two seconds and no latest block read has reached it.
+ * full queue (`SupraAccountQueueFullError`), and every call while the estimated chain time (the newest latest block's
+ * timestamp read plus the time elapsed since that read on a monotonic clock, never decreasing) has passed the
+ * expiration time of a record by two seconds and no latest block read has reached it.
  *
  * `txExpirySecs` sets the expiration time of every transaction built without `txExpiryTime`: that many seconds after
  * the client's clock in whole seconds, at most 595 (`MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`) so that
