@@ -531,6 +531,31 @@ const body = stringifyWithBigInt(await supra.transaction.build.sendTxnPayload({ 
 const text = JSON.stringify(value, (_key, v) => (typeof v === 'bigint' ? v.toString() : v));
 ```
 
+### Fixed-point arguments
+
+An entry or view function parameter of type `0x1::fixed_point32::FixedPoint32` or `0x1::fixed_point64::FixedPoint64`
+takes the struct's raw value: the `u64` of a `FixedPoint32` (the number times 2^32) or the `u128` of a `FixedPoint64`
+(the number times 2^64), as a `bigint` or a decimal string. `vector<FixedPoint32>` and `Option<FixedPoint64>` work
+the same way. A view function returns such a value as `{ value: bigint }`.
+
+```ts
+const oneAndAHalf = 3n << 31n; // 1.5 as a FixedPoint32
+
+const rawTxn = await supra.transaction.build.simple({
+    senderAddress: sender.address(),
+    senderSequenceNumber: sequenceNumber,
+    function: `${moduleAddress}::prices::set_rate`, // set_rate(account: &signer, rate: FixedPoint32)
+    functionTypeArgs: [],
+    functionArgs: [oneAndAHalf],
+});
+
+const [rate] = await supra.methods.view<[{ value: bigint }]>({
+    function: `${moduleAddress}::prices::rate`,
+    functionArguments: [],
+});
+console.log(rate.value); // 6442450944n
+```
+
 ## 📚 More Examples
 
 Every example runs against Devnet, Testnet or a localnet given `SUPRA_NETWORK` (or `SUPRA_RPC_URL` and

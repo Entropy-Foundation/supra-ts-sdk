@@ -176,7 +176,15 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     if (type === "address" || isObjectType(type)) return addressArgument(value, type);
 
     // ----------------------------
-    // 6️⃣ Struct
+    // 6️⃣ Fixed-point structs: the node reads { value: "<raw integer>" }
+    // ----------------------------
+    const fixedPointType = fixedPointRawType(type);
+    if (fixedPointType) {
+        return { value: integerArgument(fixedPointType, value).toString() };
+    }
+
+    // ----------------------------
+    // 7️⃣ Struct
     // ----------------------------
     if (isMoveStruct(type)) {
         return value;
@@ -257,7 +265,17 @@ export function convertValueToReturnTypedValue(type: string, value: unknown): un
     if (type === "address") return String(value);
 
     // --------------------
-    // 5️⃣ Struct
+    // 5️⃣ Fixed-point structs: { value: "<raw integer>" } becomes { value: bigint }
+    // --------------------
+    if (fixedPointRawType(type)) {
+        if (typeof value !== "object" || value === null || !("value" in value)) {
+            throw new Error(`Expected an object with a value field for ${type}, got ${describeArgument(value)}`);
+        }
+        return { value: BigInt((value as { value: string | number | bigint }).value) };
+    }
+
+    // --------------------
+    // 6️⃣ Struct
     // --------------------
     if (isMoveStruct(type)) return value;
 
@@ -314,6 +332,20 @@ export function isMoveStruct(type: string) {
  */
 export function isObjectType(type: string): boolean {
     return /^0x0*1::object::Object<.*>$/.test(type);
+}
+
+/**
+ * The integer type of the raw value of a fixed-point struct: `u64` for `0x1::fixed_point32::FixedPoint32` and `u128`
+ * for `0x1::fixed_point64::FixedPoint64`. Arguments and results of these types are their raw values.
+ * @example
+ * fixedPointRawType("0x1::fixed_point32::FixedPoint32") // "u64"
+ * fixedPointRawType("0x1::fixed_point64::FixedPoint64") // "u128"
+ * fixedPointRawType("u64") // null
+ */
+export function fixedPointRawType(type: string): "u64" | "u128" | null {
+    if (/^0x0*1::fixed_point32::FixedPoint32$/.test(type)) return "u64";
+    if (/^0x0*1::fixed_point64::FixedPoint64$/.test(type)) return "u128";
+    return null;
 }
 
 /** A value for an error message: strings and objects as JSON, bigints with an `n` suffix. */

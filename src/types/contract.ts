@@ -9,7 +9,32 @@ import type {
 
 export type MoveModules = DeepReadonly<MoveModule[]>;
 
-export type MoveToTS<T extends string> =
+/** The fixed-point structs, whose arguments and results are their raw integer values. */
+type FixedPointType = "0x1::fixed_point32::FixedPoint32" | "0x1::fixed_point64::FixedPoint64";
+
+/**
+ * The TypeScript type of an argument of Move type `T`. A `FixedPoint32` or `FixedPoint64` argument is its raw
+ * integer value as a `bigint` or a decimal integer string. Results are typed by `MoveResultToTS`.
+ */
+export type MoveToTS<T extends string> = T extends FixedPointType ? bigint | string : MoveToTSOther<T>;
+
+/**
+ * The TypeScript type of a value of Move type `T` returned by a view function. A `FixedPoint32` or `FixedPoint64`
+ * is `{ value: bigint }`, the raw integer value; other types are typed as `MoveToTS` types them.
+ */
+export type MoveResultToTS<T extends string> = T extends FixedPointType
+    ? { value: bigint }
+    : T extends "vector<u8>"
+      ? MoveToTS<T>
+      : T extends `vector<${infer U}>`
+        ? MoveResultToTS<U>[]
+        : T extends "0x1::option::Option<u8>"
+          ? MoveToTS<T>
+          : T extends `0x1::option::Option<${infer U}>`
+            ? MoveResultToTS<U> | null
+            : MoveToTS<T>;
+
+type MoveToTSOther<T extends string> =
     // ----------------------------
     // Numeric types
     // ----------------------------
@@ -73,7 +98,7 @@ export type MoveToTS<T extends string> =
                                 unknown;
 
 export type ReturnTypes<F extends DeepReadonly<MoveFunction>> = F["return"] extends readonly [...infer R]
-    ? { [K in keyof R]: MoveToTS<R[K] & string> }
+    ? { [K in keyof R]: MoveResultToTS<R[K] & string> }
     : void;
 
 export type MapArgs<ARGUMENTS extends readonly string[] | undefined> = ARGUMENTS extends readonly [...infer R]

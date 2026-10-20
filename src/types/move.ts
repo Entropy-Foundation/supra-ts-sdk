@@ -360,6 +360,10 @@ export type AutomationAuthenticator = {
  *
  * `Struct - 0x${string}::${string}::${string}`
  *
+ * `0x1::fixed_point32::FixedPoint32 -> bigint` or a decimal string, the raw `u64` value
+ *
+ * `0x1::fixed_point64::FixedPoint64 -> bigint` or a decimal string, the raw `u128` value
+ *
  * `Object -> 0x${string}` or `HexString`, the object's address
  *
  * `Vector -> Array<MoveValue>`

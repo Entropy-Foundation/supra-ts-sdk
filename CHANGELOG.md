@@ -38,6 +38,11 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `major_status`, `sub_status` and `transaction`) and `SupraTransactionTimeoutError` (no final status within the wait
   timeout; carries `hash`, `timeoutMs`, `lastStatus`, `transaction` and the last read error as `cause`). All three
   extend `SupraError`.
+- **`FixedPoint32` and `FixedPoint64` arguments.** An entry or view function parameter of type
+  `0x1::fixed_point32::FixedPoint32` or `0x1::fixed_point64::FixedPoint64`, also inside `vector` and `Option`, takes the
+  struct's raw `u64` or `u128` value as a `bigint` or a decimal string, with the range checks of `u64` and `u128`.
+  `transaction.build.simple` previously threw `Unsupported type` for them. `MoveToTS` maps them to
+  `bigint | string`.
 - **`SubmitTransactionResponse`** and **`NotReadBackTransactionResponse`** types.
 - **`SupraConfig.waitTimeoutMs`** sets how long `waitForTransaction` and submissions with `enableWaitForTransaction`
   wait for a final status (default `DEFAULT_TXN_WAIT_TIMEOUT_MS`, 60000 ms).
@@ -161,6 +166,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 - The package includes a `NOTICE` file, and files with portions derived from `@aptos-labs/ts-sdk` carry an
   Apache-2.0 notice.
+- **Breaking:** a view function that returns `0x1::fixed_point32::FixedPoint32` or `0x1::fixed_point64::FixedPoint64`,
+  also inside `vector` and `Option`, returns `{ value: bigint }` where it returned `{ value: string }` (the node's
+  JSON). The typed contract proxy types these results with the new `MoveResultToTS`; `ReturnTypes` uses it, and
+  `MoveToTS` no longer maps them to the struct name string.
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
   an error status, which is thrown as `SupraAPIError`.
