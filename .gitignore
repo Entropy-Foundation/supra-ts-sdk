@@ -51,3 +51,6 @@ testAccount.ts
 /docs
 /docs/
 /src/abi.ts
+
+# Move build output
+e2e/fixtures/move/build/

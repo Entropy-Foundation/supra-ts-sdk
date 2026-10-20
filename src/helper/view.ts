@@ -14,12 +14,9 @@ export async function generateViewFunctionPayload(
 ) {
     let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
 
-    if (!args.abi) {
-        args.abi = (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
-    }
+    const abi = args.abi ?? (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
 
-
-    let funcABI = await getFunctionABI(args.abi, moduleAddress!, moduleName!, functionName!);
+    let funcABI = await getFunctionABI(abi, moduleAddress!, moduleName!, functionName!);
 
     // Convert type arguments to JSON parsable
     let parsableTypeArguments = convertPayloadTypeArgsToJSONParsable(funcABI, args);

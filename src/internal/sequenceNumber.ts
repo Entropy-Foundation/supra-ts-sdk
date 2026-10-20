@@ -183,9 +183,23 @@ export async function reserveSequenceNumberInternal(
     return { sequenceNumber: reservation.sequenceNumber, reservation };
 }
 
-/** Hands the number of a reservation out again when its transaction could not be built or submitted. */
-export function releaseSequenceNumberInternal(reservation: SequenceNumberReservation, config: NetworkConfig): void {
-    sequenceNumberTrackerOf(config).release(reservation);
+/**
+ * Settles a reservation whose transaction threw before it was submitted, while it was built, its max gas
+ * estimated or it was signed. An error that reports a stale number (for example the estimating simulation's
+ * `SEQUENCE_NUMBER_TOO_OLD`) means the counter is wrong, so it is read from the chain again; after any other error the
+ * number is handed out again.
+ */
+export function settleUnsubmittedSequenceNumberInternal(
+    reservation: SequenceNumberReservation,
+    error: unknown,
+    config: NetworkConfig,
+): void {
+    const tracker = sequenceNumberTrackerOf(config);
+    if (isStaleSequenceNumberError(error)) {
+        tracker.invalidate(reservation.address);
+    } else {
+        tracker.release(reservation);
+    }
 }
 
 /** Forgets the counter of `address`; the next transaction reads its sequence number from the chain. */

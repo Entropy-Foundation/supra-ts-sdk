@@ -8,10 +8,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_TXN_WAIT_TIMEOUT_MS, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
 import { sleep } from "../utils/functions";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
-import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
-import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
-import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
-import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
+import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSubmit";
 import { checkChainIdBeforeSigningInternal } from "./chainId";
 import sha3 from 'js-sha3';
 
@@ -213,38 +210,16 @@ export async function publishPackageInternal(
 
     BCS.serializeVector(modulesTypeCode, codeSerializer);
 
-    const senderAddress = args.senderAccount.address();
-    const explicitSequenceNumber = args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber;
-    validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
-    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal({ address: senderAddress, sequenceNumber: explicitSequenceNumber }, config);
+    const publishPayload = {
+        function: `${SUPRA_FRAMEWORK_ADDRESS}::code::publish_package_txn` as const,
+        functionTypeArgs: [],
+        functionArgs: [BCS.bcsSerializeBytes(args.packageMetadata), codeSerializer.getBytes()],
+    };
 
-    let sendTxPayload: SendTxnPayload;
-    try {
-        sendTxPayload = await sendTxnPayloadInternal({
-            senderAccount: args.senderAccount,
-            rawTxn: rawTxnObjectInternal({
-                senderAddress,
-                senderSequenceNumber,
-                function: `${SUPRA_FRAMEWORK_ADDRESS}::code::publish_package_txn`,
-                functionTypeArgs: [],
-                functionArgs: [BCS.bcsSerializeBytes(args.packageMetadata), codeSerializer.getBytes()],
-                optionalTransactionPayloadArgs: args.optionalTransactionArgs?.optionalTransactionPayloadArgs ?? {},
-            }, config)
-        }, config);
-    } catch (error) {
-        // The transaction was not submitted, so a number from the counter is not used.
-        if (reservation !== undefined) {
-            releaseSequenceNumberInternal(reservation, config);
-        }
-        throw error;
-    }
-    if (reservation !== undefined) {
-        bindReservation(sendTxPayload, reservation);
-    }
-
-    return await submitTxnInternal({
-        sendTxJsonPayload: sendTxPayload,
-        enableTransactionWaitAndSimulationArgs: args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
+    return await buildAndSubmitEntryFunctionInternal({
+        senderAccount: args.senderAccount,
+        payload: publishPayload,
+        optionalTransactionArgs: args.optionalTransactionArgs,
     }, config);
 }
 

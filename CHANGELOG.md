@@ -66,6 +66,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The helper uses it as given and does not use or change the counter.
 - The transaction examples read `SUPRA_RPC_URL` and `SUPRA_CHAIN_ID` to run against another node, and
   `SUPRA_EXAMPLES_FUND=1` to fund their accounts from that node's faucet.
+- **Max gas estimate.** Without a `maxGas` on the call or the client, the coin and fungible asset transfers,
+  `publishPackage` and the entry functions of `Contract.fromABI` read the sender's SUPRA balance, simulate the
+  transaction with the largest max gas that balance pays for (at most `MAX_GAS_UNITS_PER_TRANSACTION`), and submit it
+  with `ceil(gas used × 1.5)`, at least `MIN_ESTIMATED_MAX_GAS_UNITS` (1,500) and at most what the balance pays for.
+  `SupraConfig.maxGasEstimateMultiplier` replaces the factor (`DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`). The simulation
+  runs against committed state: for a transaction sent while an earlier transaction of the account has not committed,
+  it uses the account's sequence number on the chain, so pipelined transactions work with the default gas settings; a
+  transaction that depends on an earlier uncommitted one fails its estimate and needs `maxGas`.
+- **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
+  without a request.
+- **`stringifyWithBigInt`** is exported. It serializes a value whose `bigint` fields (for example the result of
+  `transaction.build.sendTxnPayload`) `JSON.stringify` rejects, writing them as exact JSON numbers.
 
 ### Changed
 
@@ -90,6 +102,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rpcUrl` may end in slashes and may carry a path prefix (`https://host/prefix/`); every request goes to the same
   URL whichever form is configured.
 - `SupraConfig` documents which settings belong to a client: all of them.
+
+- **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
+  none when the estimate is turned off or the estimating simulation could not run to a result (a request error, a
+  response without `gas_used`), and of the builders that cannot estimate. The node requires the sender's balance to pay
+  for `max gas × gas unit price`: 20 SUPRA at the default gas unit price of 100,000 quants. A sender with less must set
+  `maxGas` on the builders that make no request.
+- **Breaking:** without a `maxGas` on the call or the client, a transaction's max gas is estimated by the methods listed
+  under Added, and `transaction.build.simple` uses `DEFAULT_MAX_GAS_UNITS` at most what the sender's balance pays for
+  (one balance read). These methods make a balance read and, except `transaction.build.simple`, a simulation request
+  before the submission. A transaction whose estimating simulation has a status other than `Success` (an abort,
+  `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and is not submitted.
+- **Breaking:** `SupraClient.networkInformation.maxGas` is `undefined` when `SupraConfig.maxGas` is not set; it was
+  `DEFAULT_MAX_GAS_UNITS`.
+
 - **Breaking:** `SupraAPIError.message` is the node's `message` when the error body has one (for example
   `General err: MoveTransactionValidationFailed(0x…, 0, SEQUENCE_NUMBER_TOO_OLD)`), otherwise the HTTP status text.
   It was always the status text. `statusText` and `data` are unchanged.
@@ -159,10 +185,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `supra.constructor` is `SupraClient`; it was the constructor of the last mixed-in class.
 - `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
   signatures were replaced with zeros when the simulation request failed.
+- `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset` and
+  `fungibleAsset.transferFungibleAsset` submit the `maxGas`, `gasUnitPrice` and `txExpiryTime` of
+  `optionalTransactionArgs.optionalTransactionPayloadArgs`; they used the client's settings. A transfer of SUPRA with
+  `coin.transferCoin` to a new account no longer runs out of gas with the default settings.
+- No method modifies the options object it is given: the transfers no longer write a `maxGas` into
+  `optionalTransactionPayloadArgs`, and `methods.view` no longer writes the fetched ABI into the caller's arguments.
+- The JSDoc of `events.getEventsByType` describes events and calls `getEventsByType`.
 
 ### Removed
 
 - **Breaking:** `DEFAULT_TXN_TIMEOUT_SEC`; `DEFAULT_TXN_WAIT_TIMEOUT_MS` replaces it.
+- **Breaking:** `DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS` and
+  `DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS`; the max gas estimate replaces the transfers'
+  receiver-dependent max gas.
 
 ## [1.2.0] - 2026-09-22
 

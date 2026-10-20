@@ -1,0 +1,6 @@
+[package]
+name = "sdk_e2e_fixtures"
+version = "1.0.0"
+
+[addresses]
+sdk_e2e = "_"

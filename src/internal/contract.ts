@@ -1,7 +1,7 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal } from "./transactionManager/txnBuild";
-import { bindReservation, releaseSequenceNumberInternal, reserveSequenceNumberInternal } from "./sequenceNumber";
+import { bindReservation, reserveSequenceNumberInternal, settleUnsubmittedSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs, SendTxnPayload } from "../types/transactionManager/transactionBuild";
@@ -51,6 +51,7 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
 
     let sendTxPayload: SendTxnPayload;
     try {
+        // The max gas estimate simulates the transaction with `senderSequenceNumber`.
         const simpleRawTxn = await simpleInternal({
             senderAddress: senderAccount.address(),
             senderSequenceNumber,
@@ -58,13 +59,14 @@ export async function callContractInternal(args: CallContractArgs, config: Netwo
             functionTypeArgs: args.typeArguments ?? [],
             functionArgs: functionArguments,
             optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-            abi: args.abi as MoveModule
+            abi: args.abi as MoveModule,
+            senderAccount,
         }, config);
         sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: simpleRawTxn }, config);
     } catch (error) {
         // The transaction was not submitted, so a number from the counter is not used.
         if (reservation !== undefined) {
-            releaseSequenceNumberInternal(reservation, config);
+            settleUnsubmittedSequenceNumberInternal(reservation, error, config);
         }
         throw error;
     }

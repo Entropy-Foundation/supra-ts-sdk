@@ -64,10 +64,10 @@ const supra = new SupraClient({
     chainId: 6,
 });
 
-// With gas overrides
+// With gas settings for every transaction of the client (without maxGas, it is estimated per transaction)
 const supra = new SupraClient({
     network: Network.TESTNET,
-    maxGas: 2000n,
+    maxGas: 20_000n,
     minGasUnitPrice: 100_000n,
 });
 ```
@@ -686,10 +686,14 @@ export function useTransferSupra() {
 
 ## Important Caveats
 
-1. **`bigint` serialization**: JSON.stringify cannot handle `bigint`. When passing data from server to client in Next.js, convert to `string` first. Use a custom serializer or SuperJSON if needed.
+1. **`bigint` serialization**: JSON.stringify cannot handle `bigint`, which built transactions, `sendTxnPayload` results, balances and view results hold. `stringifyWithBigInt` (exported by the SDK) writes them as exact JSON numbers, the form the node accepts in a request body. When passing data from server to client in Next.js, convert to `string` first. Use a custom serializer or SuperJSON if needed.
 2. **Private keys on client**: Never expose `SupraAccount` private keys in client-side code. Sign transactions server-side or use a wallet adapter.
 3. **RPC rate limits**: Create one `SupraClient` instance and reuse it. Do not create a new client per request.
 4. **`as const` for ABIs**: The ABI proxy type system requires `as const` assertion on the ABI array for TypeScript to infer the literal types.
 5. **Pagination limits**: The `count` option accepts 1-100 per page.
 6. **Transaction wait**: By default `enableWaitForTransaction` is `false`. Pass `true` to get a `CommittedTransactionResponse` instead of a `PendingTransactionResponse`.
-7. **Gas defaults**: `maxGas: 1000`, `minGasUnitPrice: 100_000`. Override via `SupraConfig` or per-transaction via `optionalTransactionPayloadArgs`.
+7. **Gas**: `maxGas`, `gasUnitPrice` and `txExpiryTime` in `optionalTransactionPayloadArgs` apply to the transaction on every method that builds one (transfers, `publishPackage`, contract entry functions, `transaction.build.*`) and replace the client's `maxGas` / `minGasUnitPrice` from `SupraConfig`. The SDK does not modify the options object. Without `maxGas` on the call or the client:
+   - the transfers, `publishPackage` and contract entry functions simulate the transaction and use `ceil(gas used × 1.5)` (`SupraConfig.maxGasEstimateMultiplier`), at least 1,500 units and at most what the sender's SUPRA balance pays for at the gas unit price; a simulation whose status is not `Success` (abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` before submitting, while a balance-read or simulation request error falls back to `DEFAULT_MAX_GAS_UNITS` at most what the balance pays for;
+   - `transaction.build.simple` uses `DEFAULT_MAX_GAS_UNITS` (20,000), at most what the sender's balance pays for;
+   - `rawTxnObject`, `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and `multisigProposalTxRawTxnObject` use `DEFAULT_MAX_GAS_UNITS`; a sender with less than 20 SUPRA must set `maxGas` there.
+   `estimateMaxGas: false` (per call or in `SupraConfig`) uses `DEFAULT_MAX_GAS_UNITS` without a request. The node requires the sender's balance to pay for `max gas × gas unit price` (20 SUPRA for 20,000 units at the minimum price of 100,000 quants) and charges the gas used. The default gas unit price is 100,000 quants.

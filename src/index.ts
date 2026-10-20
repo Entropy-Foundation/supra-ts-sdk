@@ -43,6 +43,7 @@ export { parseVmStatus, type ParsedVmStatus } from "./errors/vmStatus";
 //function 
 export { standardizeAddress } from './helper/account';
 export { addAddressPadding, getFunctionParts } from "./helper/general";
+export { stringifyWithBigInt } from "./utils/json";
 
 //constants
 export * from "./utils/constants";

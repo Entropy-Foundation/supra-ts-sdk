@@ -16,6 +16,7 @@ import { simulateSerializedTxnInternal, simulateTxnInternal } from "./txnSimulat
 import { submitMultiAgentTransactionInternal, submitSerializedRawTransactionAndSignatureInternal, submitSerializedRawTransactionInternal, submitSponsorTransactionInternal } from "./txnSubmit";
 import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import sha3 from "js-sha3";
+import { resolveMaxGasInternal } from "./maxGas";
 
 
 /**
@@ -33,11 +34,9 @@ export async function generateTransactionPayload(
 
     let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
 
-    if (!args.abi) {
-        args.abi = (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
-    }
+    const abi = args.abi ?? (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
 
-    let funcABI = await getFunctionABI(args.abi, moduleAddress!, moduleName!, functionName!);
+    let funcABI = await getFunctionABI(abi, moduleAddress!, moduleName!, functionName!);
 
     // Convert type arguments to move type arguments
     let serializedTypeArguments = convertPayloadTypeArgsToMoveType(funcABI, {
@@ -68,6 +67,11 @@ export async function generateTransactionPayload(
     }
 }
 
+/**
+ * Builds an entry function transaction from arguments serialized with the function's ABI. Without a `maxGas` on the
+ * call or the client, the max gas is resolved by `resolveMaxGasInternal`: estimated by simulation when
+ * `senderAccount` is given, else `DEFAULT_MAX_GAS_UNITS` at most what the sender's balance pays for.
+ */
 export async function simpleInternal(args: {
     senderAddress: AccountAddressInput,
     senderSequenceNumber: bigint,
@@ -75,7 +79,8 @@ export async function simpleInternal(args: {
     functionTypeArgs: Array<TypeArgument>,
     functionArgs: Array<Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>>,
     optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
-    abi?: MoveModule
+    abi?: MoveModule,
+    senderAccount?: SupraAccount,
 }, config: NetworkConfig): Promise<TxnBuilderTypes.RawTransaction> {
     let { functionArguments, typeArguments } = await generateTransactionPayload({
         function: args.function,
@@ -84,15 +89,42 @@ export async function simpleInternal(args: {
         abi: args.abi
     }, config);
 
-    return rawTxnObjectInternal({
+    return await buildWithResolvedMaxGasInternal({
         senderAddress: args.senderAddress,
-        senderSequenceNumber: args.senderSequenceNumber,
-        function: args.function,
-        functionTypeArgs: typeArguments as TxnBuilderTypes.TypeTag[],
-        functionArgs: functionArguments,
-        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {}
-    }, config)
+        senderAccount: args.senderAccount,
+        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs,
+        buildRawTxn: (optionalTransactionPayloadArgs) => rawTxnObjectInternal({
+            senderAddress: args.senderAddress,
+            senderSequenceNumber: args.senderSequenceNumber,
+            function: args.function,
+            functionTypeArgs: typeArguments as TxnBuilderTypes.TypeTag[],
+            functionArgs: functionArguments,
+            optionalTransactionPayloadArgs,
+        }, config),
+    }, config);
+}
 
+/**
+ * Builds a transaction with `buildRawTxn` and the caller's settings, with the max gas that `resolveMaxGasInternal`
+ * resolves. The caller's `optionalTransactionPayloadArgs` is copied, not modified.
+ */
+export async function buildWithResolvedMaxGasInternal(
+    args: {
+        senderAddress: AccountAddressInput,
+        senderAccount?: SupraAccount | undefined,
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs | undefined,
+        buildRawTxn: (optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction,
+    },
+    config: NetworkConfig
+): Promise<TxnBuilderTypes.RawTransaction> {
+    const options = args.optionalTransactionPayloadArgs ?? {};
+    const maxGas = await resolveMaxGasInternal({
+        senderAddress: args.senderAddress,
+        senderAccount: args.senderAccount,
+        optionalTransactionPayloadArgs: options,
+        buildRawTxn: (candidate) => args.buildRawTxn({ ...options, maxGas: candidate }),
+    }, config);
+    return args.buildRawTxn({ ...options, maxGas });
 }
 
 export function rawTxnObjectInnerInternal(
@@ -110,6 +142,7 @@ export function rawTxnObjectInnerInternal(
         new TxnBuilderTypes.AccountAddress(senderAddress.toUint8Array()),
         args.senderSequenceNumber,
         args.payload,
+        // The builders that make no request use `DEFAULT_MAX_GAS_UNITS`; the others pass a resolved `maxGas`.
         args.optionalTransactionPayloadArgs?.maxGas ?? config.maxGas ?? DEFAULT_MAX_GAS_UNITS,
         // If the user has not passed `gasUnitPrice` value then, we will use cached value of the
         // `min_gas_unit_price` assigned to `this.minGasUnitPrice` at the time of `SupraClient`

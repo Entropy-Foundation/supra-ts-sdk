@@ -2,15 +2,22 @@ import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk
 import { post } from "../../client/post";
 import { SupraTransactionFailedError } from "../../errors/transactionError";
 import { TransactionStatus, type WaitForTransactionOptions } from "../../types/transaction";
-import { reservationOf, sequenceNumberTrackerOf, settleRefusedSubmission } from "../sequenceNumber";
+import {
+    bindReservation,
+    reservationOf,
+    reserveSequenceNumberInternal,
+    sequenceNumberTrackerOf,
+    settleRefusedSubmission,
+    settleUnsubmittedSequenceNumberInternal,
+} from "../sequenceNumber";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
-import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
+import type { EnableTransactionWaitAndSimulationArgs, OptionalTransactionArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../../utils/constants";
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateTxnInternal } from "./txnSimulate";
-import { getRawTxnJSONInternal, sendTxnPayloadInternal } from "./txnBuild";
+import { buildWithResolvedMaxGasInternal, getRawTxnJSONInternal, rawTxnObjectInternal, sendTxnPayloadInternal } from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
 
@@ -91,6 +98,64 @@ export async function submitTxnInternal(
     } catch (readError) {
         return { hash: txHash, status: "NotReadBack", readError };
     }
+}
+
+
+/**
+ * Builds, signs and submits an entry function transaction of `senderAccount`, for the transfer, migration and publish
+ * helpers.
+ *
+ * The sequence number is the call's `sequenceNumber`, else the next number of the client's counter. The max gas
+ * estimate simulates the transaction with that number, and the submission uses it. When the counter assigned the
+ * number and building, estimating or signing throws, the number is handed out again, or the counter is read from the
+ * chain again when the error reports a stale number.
+ */
+export async function buildAndSubmitEntryFunctionInternal(
+    args: {
+        senderAccount: SupraAccount,
+        payload: Pick<Parameters<typeof rawTxnObjectInternal>[0], "function" | "functionTypeArgs" | "functionArgs">,
+        optionalTransactionArgs?: OptionalTransactionArgs | undefined,
+    },
+    config: NetworkConfig
+): Promise<SubmitTransactionResponse> {
+    const senderAddress = args.senderAccount.address();
+    const optionalTransactionPayloadArgs = args.optionalTransactionArgs?.optionalTransactionPayloadArgs;
+    const explicitSequenceNumber = optionalTransactionPayloadArgs?.sequenceNumber;
+    validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
+    const { sequenceNumber: senderSequenceNumber, reservation } = await reserveSequenceNumberInternal(
+        { address: senderAddress, sequenceNumber: explicitSequenceNumber },
+        config,
+    );
+
+    let sendTxPayload: SendTxnPayload;
+    try {
+        const rawTxn = await buildWithResolvedMaxGasInternal({
+            senderAddress,
+            senderAccount: args.senderAccount,
+            optionalTransactionPayloadArgs,
+            buildRawTxn: (options) => rawTxnObjectInternal({
+                ...args.payload,
+                senderAddress,
+                senderSequenceNumber,
+                optionalTransactionPayloadArgs: options,
+            }, config),
+        }, config);
+        sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
+    } catch (error) {
+        // The transaction was not submitted, so a number from the counter is not used.
+        if (reservation !== undefined) {
+            settleUnsubmittedSequenceNumberInternal(reservation, error, config);
+        }
+        throw error;
+    }
+    if (reservation !== undefined) {
+        bindReservation(sendTxPayload, reservation);
+    }
+
+    return await submitTxnInternal({
+        sendTxJsonPayload: sendTxPayload,
+        enableTransactionWaitAndSimulationArgs: args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
+    }, config);
 }
 
 
