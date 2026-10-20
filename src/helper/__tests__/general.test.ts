@@ -11,6 +11,7 @@ import {
     extractOptionInner,
     extractVectorInner,
     isMoveStruct,
+    fixedPointRawType,
 } from "../general";
 import { HexString, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import { parseTypeArgument, typeTagToString } from "../typeTag";
@@ -660,5 +661,56 @@ describe("vector<u8> view arguments", () => {
         expect(convertArgsValueToJSONParsable("vector<u8>", new Uint8Array([1, 255]))).toBe("01ff");
         expect(convertArgsValueToJSONParsable("vector<u8>", "0x01ff")).toBe("0x01ff");
         expect(() => convertArgsValueToJSONParsable("vector<u8>", "0x1")).toThrow();
+    });
+});
+
+describe("fixed-point structs", () => {
+    const FP32 = "0x1::fixed_point32::FixedPoint32";
+    const FP64 = "0x1::fixed_point64::FixedPoint64";
+
+    it("fixedPointRawType names the raw integer type", () => {
+        expect(fixedPointRawType(FP32)).toBe("u64");
+        expect(fixedPointRawType(FP64)).toBe("u128");
+        expect(
+            fixedPointRawType(
+                "0x0000000000000000000000000000000000000000000000000000000000000001::fixed_point32::FixedPoint32",
+            ),
+        ).toBe("u64");
+        expect(fixedPointRawType("0x2::fixed_point32::FixedPoint32")).toBeNull();
+        expect(fixedPointRawType("u64")).toBeNull();
+    });
+
+    it("sends a view argument as { value: <decimal string> }", () => {
+        expect(convertArgsValueToJSONParsable(FP32, 123n)).toEqual({ value: "123" });
+        expect(convertArgsValueToJSONParsable(FP32, "18446744073709551615")).toEqual({ value: "18446744073709551615" });
+        expect(convertArgsValueToJSONParsable(FP64, 340282366920938463463374607431768211455n)).toEqual({
+            value: "340282366920938463463374607431768211455",
+        });
+        expect(convertArgsValueToJSONParsable(`vector<${FP32}>`, [1n, "2"])).toEqual([{ value: "1" }, { value: "2" }]);
+        expect(convertArgsValueToJSONParsable(`0x1::option::Option<${FP64}>`, 5n)).toEqual({ vec: [{ value: "5" }] });
+        expect(convertArgsValueToJSONParsable(`0x1::option::Option<${FP64}>`, null)).toEqual({ vec: [] });
+    });
+
+    it("refuses a view argument outside the range of the raw type", () => {
+        expect(() => convertArgsValueToJSONParsable(FP32, 18446744073709551616n)).toThrow("out of range");
+        expect(() => convertArgsValueToJSONParsable(FP64, -1n)).toThrow("out of range");
+        expect(() => convertArgsValueToJSONParsable(FP32, "1.5")).toThrow("Expected an integer for u64");
+        expect(() => convertArgsValueToJSONParsable(FP32, { value: "1" })).toThrow("Expected an integer for u64");
+    });
+
+    it("returns a view result as { value: bigint }", () => {
+        expect(convertValueToReturnTypedValue(FP32, { value: "123" })).toEqual({ value: 123n });
+        expect(convertValueToReturnTypedValue(FP64, { value: "340282366920938463463374607431768211455" })).toEqual({
+            value: 340282366920938463463374607431768211455n,
+        });
+        expect(convertValueToReturnTypedValue(`vector<${FP32}>`, [{ value: "1" }, { value: "2" }])).toEqual([
+            { value: 1n },
+            { value: 2n },
+        ]);
+        expect(convertValueToReturnTypedValue(`0x1::option::Option<${FP64}>`, { vec: [{ value: "7" }] })).toEqual({
+            value: 7n,
+        });
+        expect(convertValueToReturnTypedValue(`0x1::option::Option<${FP64}>`, { vec: [] })).toBeNull();
+        expect(() => convertValueToReturnTypedValue(FP32, "123")).toThrow("Expected an object with a value field");
     });
 });

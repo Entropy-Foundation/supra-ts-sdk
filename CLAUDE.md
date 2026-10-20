@@ -69,7 +69,7 @@ Transaction sub-modules are accessible via `supra.transaction.build`, `supra.tra
 
 ### Move Type Mapping
 
-Move `u8/u16/u32` → `number`, `u64/u128/u256` → `bigint`, `vector<T>` → `T[]`, `Option<T>` → `T | null`. Conversion logic lives in `src/helper/general.ts`.
+Move `u8/u16/u32` → `number`, `u64/u128/u256` → `bigint`, `vector<T>` → `T[]`, `Option<T>` → `T | null`. `0x1::fixed_point32::FixedPoint32` and `0x1::fixed_point64::FixedPoint64` arguments are their raw `u64`/`u128` values (`bigint` or a decimal string); view results are `{ value: bigint }`. Conversion logic lives in `src/helper/general.ts`.
 
 ### HTTP Client
 

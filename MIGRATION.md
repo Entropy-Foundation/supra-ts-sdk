@@ -559,6 +559,31 @@ function structName(typeArg: FunctionTypeArgs): string | undefined {
 }
 ```
 
+### View results of `FixedPoint32` and `FixedPoint64` hold a `bigint`
+
+A view function that returns `0x1::fixed_point32::FixedPoint32` or `0x1::fixed_point64::FixedPoint64`, also inside a
+`vector` or an `Option`, returns the raw value as a `bigint`. In 1.2.0 the result was the node's JSON, with the value
+as a string:
+
+```typescript
+import type { SupraClient } from "supra-ts-sdk";
+
+async function readRate(supra: SupraClient) {
+    // 1.2.0: [{ value: "6442450944" }]
+    // 2.0.0: [{ value: 6442450944n }]
+    const [rate] = await supra.methods.view<[{ value: bigint }]>({
+        function: "0x1::example::rate",
+        functionArguments: [],
+    });
+    return rate.value; // a bigint; code that treated it as a string uses `rate.value.toString()`
+}
+```
+
+In the typed contract proxy, `ReturnTypes` uses the new `MoveResultToTS` type, which maps these types to
+`{ value: bigint }`. `MoveToTS`, the type of arguments, maps them to `bigint | string` (the raw value); in 1.2.0 it
+mapped them to the struct name as a string literal type. Code that uses `MoveToTS` for a result type uses
+`MoveResultToTS`.
+
 ## Responses and pagination
 
 ### The end of a feed is `cursor === undefined`

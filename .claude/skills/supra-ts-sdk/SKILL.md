@@ -348,6 +348,8 @@ When passing **function arguments** to `view()`:
 | `vector<u8>` | `string` (hex) |
 | `vector<T>` | `T[]` |
 | `0x1::string::String` | `string` |
+| `0x1::fixed_point32::FixedPoint32` | the raw `u64` value as `bigint` or a decimal string (e.g., `1n << 32n` is 1.0) |
+| `0x1::fixed_point64::FixedPoint64` | the raw `u128` value as `bigint` or a decimal string (e.g., `1n << 64n` is 1.0) |
 | `0x1::option::Option<T>` | `T \| null` |
 | `signer` / `&signer` | `SupraAccount` (for entry functions) |
 
@@ -358,6 +360,7 @@ When **return types** come back from `view()`:
 | `u64`, `u128`, `u256` | `bigint` |
 | `bool` | `boolean` |
 | `address` | `string` |
+| `0x1::fixed_point32::FixedPoint32`, `0x1::fixed_point64::FixedPoint64` | `{ value: bigint }`, the raw value |
 | `vector<T>` | `T[]` |
 | `Option<T>` | `T \| null` |
 
