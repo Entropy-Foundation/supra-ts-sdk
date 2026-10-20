@@ -5,6 +5,15 @@ import { MILLISECONDS_PER_SECOND } from "../utils/constants";
 const MICROSECONDS_PER_MILLISECOND = 1_000;
 
 /**
+ * The monotonic clock that chain clocks read by default. It is a property of an object the SDK owns so that tests can
+ * replace it; `performance.now` itself is read-only on some runtimes (Node.js 18).
+ */
+export const monotonicClock = {
+    /** Milliseconds from a fixed origin; never decreases. */
+    now: (): number => performance.now(),
+};
+
+/**
  * The client's view of the chain's time, from the client's reads of the latest block (`GET /rpc/v3/block`). A read of
  * a block by height or by hash does not change it.
  *
@@ -25,12 +34,12 @@ export class ChainClock {
     private anchorMonotonicMs = 0;
 
     /**
-     * @param monotonicNowMs A monotonic clock in milliseconds; `performance.now()` by default.
+     * @param monotonicNowMs A monotonic clock in milliseconds; `monotonicClock.now()` (`performance.now()`) by default.
      * @param wallNowMs The client's wall clock in milliseconds since the Unix epoch, used before any latest block has
      * been read; `Date.now()` by default.
      */
     constructor(
-        private readonly monotonicNowMs: () => number = () => performance.now(),
+        private readonly monotonicNowMs: () => number = () => monotonicClock.now(),
         private readonly wallNowMs: () => number = () => Date.now(),
     ) {}
 

@@ -1,6 +1,7 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import { SupraClient } from "../../../../api/supraClient";
 import type { SubmitTransactionResponse } from "../../../../types/transactionManager/transactionSubmit";
+import { monotonicClock } from "../../../chainTime";
 import type { MockNode } from "./mockNode";
 
 /** Helpers for tests that send SUPRA transfers of one client to a `MockNode`. */
@@ -49,8 +50,9 @@ export function transfer(
 
 /**
  * The client's clocks: the wall clock is the real clock plus `offsetMs`, through a mock of `Date.now`, and the
- * monotonic clock is the real one plus `monotonicOffsetMs`, through a mock of `performance.now`. `advance` moves both
- * clocks and the node's clock forward together; changing `offsetMs` alone steps only the wall clock.
+ * monotonic clock is the real one plus `monotonicOffsetMs`, through a mock of the SDK's `monotonicClock.now`.
+ * `advance` moves both clocks and the node's clock forward together; changing `offsetMs` alone steps only the wall
+ * clock.
  */
 export class ClientClock {
     offsetMs: number;
@@ -63,7 +65,7 @@ export class ClientClock {
         const realMonotonicNow = performance.now.bind(performance);
         this.realNow = realNow;
         jest.spyOn(Date, "now").mockImplementation(() => realNow() + this.offsetMs);
-        jest.spyOn(performance, "now").mockImplementation(() => realMonotonicNow() + this.monotonicOffsetMs);
+        jest.spyOn(monotonicClock, "now").mockImplementation(() => realMonotonicNow() + this.monotonicOffsetMs);
     }
 
     /** The real time, without the offset. */

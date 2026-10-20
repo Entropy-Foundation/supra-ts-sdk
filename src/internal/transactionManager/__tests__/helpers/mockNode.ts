@@ -54,7 +54,7 @@ export interface MockNodeOptions {
     startMs?: number;
 }
 
-/** The monotonic clock as it is when this module loads, so a test's mock of `performance.now` does not move the node. */
+/** The node's monotonic clock, read from `performance.now` directly, so a test's mock of the SDK's clocks does not move it. */
 const nodePerformanceNow = performance.now.bind(performance);
 
 /** A transfer of this amount aborts in the simulation (`EINSUFFICIENT_BALANCE`). */
