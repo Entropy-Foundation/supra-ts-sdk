@@ -673,6 +673,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
      */
     submitTransaction(args: {
         senderAccount: SupraAccount;
@@ -693,6 +694,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.senderPubkey - Sender ed25519 pubkey
      * @param args.signature - Ed25519 signature
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
+     * @throws `RangeError` before submitting when `senderPubkey` or `signature` is not hex digits in pairs after its
+     * `0x` prefix
      */
     submitTransactionAndSignature(args: {
         senderPubkey: HexString;
@@ -718,6 +722,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.feePayerAuthenticator - Fee payer authenticator
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
+     * @throws `RangeError` before submitting when the fee payer address or a secondary signer address is not 1 to 64
+     * hex digits after an optional `0x` or `0X`
      */
     submitSponsorTransaction(args: {
         feePayerAddress: AccountAddressInput;
@@ -747,6 +754,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.senderAuthenticator - Sender authenticator
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
+     * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
+     * @throws `RangeError` before submitting when a secondary signer address is not 1 to 64 hex digits after an optional
+     * `0x` or `0X`
      */
     submitMultiAgentTransaction(args: {
         secondarySignersAccountAddress: Array<string>;

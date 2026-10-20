@@ -114,7 +114,10 @@ A transaction that fails after the SDK waited for it, and a simulation that does
 ### Timeouts and connection failures
 
 A request that times out rejects with `SupraTimeoutError` (`url`, `timeoutMs`), and a request that fails before the
-node answers with `SupraNetworkError` (`url`); the original `DOMException` or `TypeError` is their `cause`.
+node answers with `SupraNetworkError` (`url`); the original `DOMException` or `TypeError` is their `cause`. A submission
+request is the exception: its timeout or connection failure makes the submit helper throw
+`SupraSubmissionOutcomeUnknownError`, with the `SupraTimeoutError` or `SupraNetworkError` as `cause`
+([A submission whose outcome is unknown](#a-submission-whose-outcome-is-unknown-throws-suprasubmissionoutcomeunknownerror)).
 
 1.2.0:
 
@@ -370,6 +373,8 @@ invalid characters kept. Code that caught the `SupraAPIError` of an invalid addr
 `fundAccountWithFaucet`, `getFaucetTransaction`, `resetSequenceNumber` and the builders of `transaction.build` throw
 this `RangeError` for a malformed address before any request, and so do `submitMultiAgentTransaction` and
 `submitSponsorTransaction` for a malformed secondary signer or fee payer address, which 1.2.0 sent to the node.
+`submitSerializedRawTransactionAndSignature` and `submitTransactionAndSignature` throw a `RangeError` naming
+`senderPubkey` or `signature` when that value is not hex digits in pairs after its `0x` prefix, which 1.2.0 also sent.
 
 ## Gas
 

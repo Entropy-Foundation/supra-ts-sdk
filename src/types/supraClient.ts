@@ -56,7 +56,9 @@ export interface RetryConfig {
  *
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`, and a submission request that exceeds it makes the submit helper throw
- * `SupraSubmissionOutcomeUnknownError`. `retry` turns on retries of GET requests; it is off by default.
+ * `SupraSubmissionOutcomeUnknownError`; with `enableWaitForTransaction`, the helper first waits for the transaction's
+ * hash and throws it only when that wait ends without a final status. `retry` turns on retries of GET requests; it is
+ * off by default.
  * `waitTimeoutMs` sets how long a wait for a transaction's final status lasts (`waitForTransaction` and submissions
  * with `enableWaitForTransaction`) when the call sets no timeout (default 60000 ms); a wait that exceeds it throws
  * `SupraTransactionTimeoutError`.

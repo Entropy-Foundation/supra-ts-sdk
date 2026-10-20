@@ -14,8 +14,8 @@ export function transactionHashInternal(signedTransaction: TxnBuilderTypes.Signe
 /**
  * The transaction authenticator of a single Ed25519 signature, serialized as `TransactionAuthenticatorEd25519` is
  * (variant 0, the public key bytes, the signature bytes) without checking the lengths of the key and the signature,
- * so that a hash is derived for any key and signature a caller passes. The node refuses a key or signature of the
- * wrong length.
+ * so that a hash is derived for a key and a signature of any length. The node refuses a key or signature of the wrong
+ * length. The caller converts the key and the signature from hex to bytes first.
  */
 class Ed25519TransactionAuthenticatorBytes extends TxnBuilderTypes.TransactionAuthenticator {
     constructor(

@@ -241,6 +241,42 @@ describe("transfers whose transactions the node drops or never receives", () => 
         expect(mock.chain).toBe(11);
     });
 
+    it("with enableWaitForTransaction, finds a transaction answered with 500 that the node pooled by its derived hash", async () => {
+        // Blocks commit the pooled transactions every 50 ms.
+        const mock = start({ blockMs: 50 });
+        const supra = newClient();
+        const sender = new SupraAccount();
+        mock.refuseNext.set(5, { status: 500, message: "Internal error", pool: true });
+
+        const committed = await transfer(supra, sender, { wait: true, waitTimeoutMs: 10_000 });
+
+        expect(committed).toMatchObject({ hash: mock.submissionHash(5), status: "Success" });
+        expect(mock.chain).toBe(6);
+        // The next transfer takes the next number.
+        await transfer(supra, sender);
+        expect(mock.submitted).toEqual([5, 6]);
+    });
+
+    it("gives the number of a transaction answered with 500 to the next transfer once a read of its derived hash shows it Invalid", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        mock.refuseNext.set(5, { status: 500, message: "Internal error", pool: true });
+
+        const error = (await transfer(supra, sender).catch((e: unknown) => e)) as SupraSubmissionOutcomeUnknownError;
+        expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+        expect(error.hash).toBe(mock.submissionHash(5));
+        mock.drop(5, "Invalid");
+        expect((await supra.getTransactionByHash({ transactionHash: error.hash })).status).toBe("Invalid");
+
+        await transfer(supra, sender);
+
+        expect(acceptedNumbers(mock)).toEqual([5]);
+        expect(mock.submitted).toEqual([5, 5]);
+        mock.tick();
+        expect(mock.chain).toBe(6);
+    });
+
     it("fills the number of a transaction a read shows Invalid while later ones of this client are pending", async () => {
         const mock = start();
         const supra = newClient();

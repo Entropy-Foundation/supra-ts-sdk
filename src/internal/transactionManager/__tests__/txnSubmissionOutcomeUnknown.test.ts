@@ -1,4 +1,4 @@
-import { BCS, HexString, SupraAccount, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import { BCS, HexString, SupraAccount } from "supra-l1-sdk-core";
 import { SupraClient } from "../../../api/supraClient";
 import { SupraAPIError } from "../../../errors/apiError";
 import { SupraNetworkError, SupraTimeoutError } from "../../../errors/supraError";
@@ -11,6 +11,7 @@ import { standardizeAddress } from "../../../helper/account";
 import { TransactionStatus } from "../../../types/transaction";
 import { sequenceNumberTrackerOf } from "../../sequenceNumber";
 import { MockNode } from "./helpers/mockNode";
+import { hashOfSubmittedBody } from "./helpers/submittedHash";
 import { ClientClock, newClient, RECEIVER, transfer } from "./helpers/transfers";
 
 /**
@@ -33,11 +34,15 @@ afterEach(() => {
     jest.restoreAllMocks();
 });
 
-type Read = { status: number; body: unknown };
+/** An answer: `body` sent as JSON, or `text` sent as it is. */
+type Read = { status: number; body?: unknown; text?: string };
 
 interface Stub {
-    /** The answer to a submission: a response, `"timeout"` (no answer before the request's signal aborts) or an error. */
-    submit: () => Read | "timeout" | Error;
+    /**
+     * The answer to a submission: a response, `"timeout"` (no answer before the request's signal aborts), an error, or
+     * `"malformed"` (an object that is not a `Response`).
+     */
+    submit: () => Read | "timeout" | "malformed" | Error;
     /** The answers to the reads by hash, in order; the last one repeats. */
     reads: Read[];
 }
@@ -63,7 +68,7 @@ function moveTxn(hash: string, status: TransactionStatus, vmStatus = "Executed s
 }
 
 function response(read: Read): Response {
-    return new Response(JSON.stringify(read.body), {
+    return new Response(read.text ?? JSON.stringify(read.body), {
         status: read.status,
         headers: { "Content-Type": "application/json" },
     });
@@ -83,6 +88,9 @@ function stubNode(stub: Stub): Recorded[] {
                 return new Promise<Response>((_, reject) => {
                     init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
                 });
+            }
+            if (answer === "malformed") {
+                return Promise.resolve({} as Response);
             }
             return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(response(answer));
         }
@@ -132,72 +140,6 @@ async function rejection(promise: Promise<unknown>): Promise<unknown> {
         return error;
     }
     throw new Error("expected the promise to reject");
-}
-
-/**
- * The hash of the transaction a submission request carried, rebuilt from its JSON body: an entry function without
- * struct type arguments without type arguments of their own, signed with one Ed25519 key.
- */
-function hashOfSubmittedBody(body: string): string {
-    const { raw_txn: raw, authenticator } = (
-        JSON.parse(body) as {
-            Move: {
-                raw_txn: {
-                    sender: string;
-                    sequence_number: number;
-                    payload: {
-                        EntryFunction: {
-                            module: { address: string; name: string };
-                            function: string;
-                            ty_args: unknown[];
-                            args: number[][];
-                        };
-                    };
-                    max_gas_amount: number;
-                    gas_unit_price: number;
-                    expiration_timestamp_secs: number;
-                    chain_id: number;
-                };
-                authenticator: { Ed25519: { public_key: string; signature: string } };
-            };
-        }
-    ).Move;
-    const entry = raw.payload.EntryFunction;
-    const typeArguments = entry.ty_args.map((typeArgument) => {
-        const { address, module, name, type_args } = (
-            typeArgument as { struct: { address: string; module: string; name: string; type_args: unknown[] } }
-        ).struct;
-        expect(type_args).toEqual([]);
-        return new TypeTagParser(`${address}::${module}::${name}`).parseTypeTag();
-    });
-    const rawTxn = new TxnBuilderTypes.RawTransaction(
-        TxnBuilderTypes.AccountAddress.fromHex(raw.sender),
-        BigInt(raw.sequence_number),
-        new TxnBuilderTypes.TransactionPayloadEntryFunction(
-            new TxnBuilderTypes.EntryFunction(
-                new TxnBuilderTypes.ModuleId(
-                    TxnBuilderTypes.AccountAddress.fromHex(entry.module.address),
-                    new TxnBuilderTypes.Identifier(entry.module.name),
-                ),
-                new TxnBuilderTypes.Identifier(entry.function),
-                typeArguments,
-                entry.args.map((arg) => Uint8Array.from(arg)),
-            ),
-        ),
-        BigInt(raw.max_gas_amount),
-        BigInt(raw.gas_unit_price),
-        BigInt(raw.expiration_timestamp_secs),
-        new TxnBuilderTypes.ChainId(raw.chain_id),
-    );
-    return supra.transaction.deriveTransactionHash({
-        signedTransaction: new TxnBuilderTypes.SignedTransaction(
-            rawTxn,
-            new TxnBuilderTypes.TransactionAuthenticatorEd25519(
-                new TxnBuilderTypes.Ed25519PublicKey(new HexString(authenticator.Ed25519.public_key).toUint8Array()),
-                new TxnBuilderTypes.Ed25519Signature(new HexString(authenticator.Ed25519.signature).toUint8Array()),
-            ),
-        ),
-    });
 }
 
 /** The submission failures after which the node may have accepted the transaction, and the class of each `cause`. */
@@ -384,6 +326,156 @@ describe("a submission the node refuses", () => {
         expect(error).toBeInstanceOf(SupraAPIError);
         expect(error).not.toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
         expect((error as SupraAPIError).status).toBe(Number(status));
+    });
+});
+
+describe("a submission whose request fails with an error that is not a request outcome", () => {
+    it("rethrows the error as it is and records nothing", async () => {
+        const client = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false });
+        const sender = new SupraAccount();
+        stubNode({ submit: () => "malformed", reads: [json({ message: "Not Found" }, 404)] });
+
+        const error = await rejection(
+            client.coin.transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: RECEIVER,
+                amount: 1_000n,
+                optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n } },
+            }),
+        );
+
+        expect(error).toBeInstanceOf(TypeError);
+        expect(
+            sequenceNumberTrackerOf(client.networkInformation).recorded(standardizeAddress(sender.address().toString()))
+                .size,
+        ).toBe(0);
+    });
+});
+
+describe("a submission the node accepts with a body that is not a transaction hash", () => {
+    const answers: Array<[string, Read]> = [
+        ["a body that is not JSON", { status: 200, text: "accepted" }],
+        ["an empty body", { status: 200, text: "" }],
+        ["a JSON value that is not a string", json({ hash: "0x" + "ab".repeat(32) })],
+        ["a string that is not a hash", json("accepted")],
+    ];
+
+    it.each(answers)("with %s, reads the transaction back by the derived hash", async (_name, answer) => {
+        const sender = new SupraAccount();
+        const rawTxn = rawTransfer(sender);
+        const derived = supra.transaction.deriveTransactionHash({
+            signedTransaction: await rawTxn.signedTransaction(sender),
+        });
+        const requests = stubNode({ submit: () => answer, reads: [json(moveTxn(derived, TransactionStatus.Pending))] });
+
+        const result = await rawTxn.submitTransaction({ senderAccount: sender });
+
+        expect(result).toMatchObject({ hash: derived, status: TransactionStatus.Pending });
+        expect(requests.filter((request) => request.method === "GET").map((request) => request.path)).toEqual([
+            `/transactions/${derived}`,
+        ]);
+    });
+
+    it.each(answers)("with %s and enableWaitForTransaction, waits for the derived hash", async (_name, answer) => {
+        const sender = new SupraAccount();
+        const rawTxn = rawTransfer(sender);
+        const derived = supra.transaction.deriveTransactionHash({
+            signedTransaction: await rawTxn.signedTransaction(sender),
+        });
+        stubNode({
+            submit: () => answer,
+            reads: [
+                json(moveTxn(derived, TransactionStatus.Pending)),
+                json(moveTxn(derived, TransactionStatus.Success)),
+            ],
+        });
+
+        await expect(
+            rawTxn.submitTransaction({
+                senderAccount: sender,
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true, waitTimeoutMs: 10_000 },
+            }),
+        ).resolves.toMatchObject({ hash: derived, status: TransactionStatus.Success });
+    });
+
+    it.each(answers)("with %s, records the derived hash and hands out the next number", async (_name, answer) => {
+        const client = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false });
+        const sender = new SupraAccount();
+        const requests = stubNode({ submit: () => answer, reads: [json({ message: "Not Found" }, 404)] });
+        const send = () =>
+            client.coin.transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: RECEIVER,
+                amount: 1_000n,
+                optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n } },
+            });
+
+        const first = await send();
+        const second = await send();
+
+        const bodies = requests.filter((request) => request.path === "/transactions/submit").map((r) => r.body);
+        expect(first.hash).toBe(hashOfSubmittedBody(bodies[0] as string));
+        expect(second.hash).toBe(hashOfSubmittedBody(bodies[1] as string));
+        const record = sequenceNumberTrackerOf(client.networkInformation)
+            .recorded(standardizeAddress(sender.address().toString()))
+            .get(5n);
+        expect(record?.hash).toBe(first.hash);
+        expect(
+            bodies.map(
+                (body) =>
+                    (JSON.parse(body as string) as { Move: { raw_txn: { sequence_number: number } } }).Move.raw_txn
+                        .sequence_number,
+            ),
+        ).toEqual([5, 6]);
+    });
+
+    it("uses the node's hash when it is a hash, also when it differs from the derived one", async () => {
+        const nodeHash = "0x" + "cd".repeat(32);
+        const sender = new SupraAccount();
+        stubNode({ submit: () => json(nodeHash), reads: [json(moveTxn(nodeHash, TransactionStatus.Pending))] });
+
+        await expect(rawTransfer(sender).submitTransaction({ senderAccount: sender })).resolves.toMatchObject({
+            hash: nodeHash,
+        });
+    });
+});
+
+describe("a public key or signature that is not hex", () => {
+    it.each([
+        ["senderPubkey", "an odd number of digits", "0xabc"],
+        ["senderPubkey", "a digit that is not hex", "0x" + "zz".repeat(32)],
+        ["signature", "an odd number of digits", "0xabc"],
+        ["signature", "a digit that is not hex", "0x" + "zz".repeat(64)],
+    ])("throws a RangeError naming %s for %s, before any request", async (name, _case, value) => {
+        const requests = stubNode({ submit: () => json("0x" + "ab".repeat(32)), reads: [json({}, 404)] });
+        const sender = new SupraAccount();
+        const rawTxn = rawTransfer(sender);
+        const valid = {
+            senderPubkey: sender.pubKey(),
+            signature: await rawTxn.signTransaction(sender),
+        };
+
+        const error = await rejection(rawTxn.submitTransactionAndSignature({ ...valid, [name]: new HexString(value) }));
+
+        expect(error).toBeInstanceOf(RangeError);
+        expect((error as RangeError).message).toContain(name);
+        expect(requests).toHaveLength(0);
+    });
+
+    it("derives a hash for a key and a signature of the wrong length and submits them", async () => {
+        const requests = stubNode({
+            submit: () => json({ message: "Transaction validation failed: invalid signature" }, 400),
+            reads: [json({}, 404)],
+        });
+        const sender = new SupraAccount();
+
+        await expect(
+            rawTransfer(sender).submitTransactionAndSignature({
+                senderPubkey: new HexString("0xabcd"),
+                signature: new HexString("0x1234"),
+            }),
+        ).rejects.toBeInstanceOf(SupraAPIError);
+        expect(requests.map((request) => request.path)).toEqual(["/transactions/submit"]);
     });
 });
 

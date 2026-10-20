@@ -88,6 +88,8 @@ export class FungibleAsset {
      * @throws {SupraInsufficientFungibleAssetBalanceError} When the sender's fungible asset balance is below `amount`.
      * @throws {SupraSimulationFailedError} When the estimating simulation or an enabled simulation does not succeed.
      * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
+     * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
+     * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`).
      * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript
@@ -196,6 +198,8 @@ export class FungibleAsset {
      * errors of a submission.
      * @throws {SupraSimulationFailedError} When the estimating simulation or an enabled simulation does not succeed.
      * @throws {SupraTransactionFailedError} When `enableWaitForTransaction` is set and the transaction fails.
+     * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
+     * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`).
      * @throws {SupraChainIdMismatchError} Before signing, when the chain ID is not the node's.
      * @example
      * ```typescript

@@ -3,6 +3,7 @@ import { post } from "../../client/post";
 import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
 import type { CommittedTransactionResponse, WaitForTransactionOptions } from "../../types/transaction";
+import { SupraAPIError } from "../../errors/apiError";
 import { SupraSubmissionOutcomeUnknownError, SupraTransactionTimeoutError } from "../../errors/transactionError";
 import { ed25519TransactionAuthenticator, transactionHashOf, withTransactionHash } from "./txnHash";
 import {
@@ -196,9 +197,9 @@ export async function submitTxnInternal(
         waitOptions.timeoutMs = options.waitTimeoutMs;
     }
 
-    let txHash: string;
+    let answer: unknown;
     try {
-        txHash = await post<SendTxnPayload, string>(
+        answer = await post<SendTxnPayload, unknown>(
             {
                 path: "/transactions/submit",
                 data: payload,
@@ -206,16 +207,24 @@ export async function submitTxnInternal(
             config,
         );
     } catch (error) {
-        const settled = settleFailedSubmissionInternal({ rawTxn, reservation, hash: derivedHash }, error, config);
-        if (!settled.mayHaveAccepted) {
-            throw settled.error;
+        if (isUnreadableAcceptance(error)) {
+            // The node accepted the transaction with a 2xx status, and its body is not JSON.
+            answer = undefined;
+        } else {
+            const settled = settleFailedSubmissionInternal({ rawTxn, reservation, hash: derivedHash }, error, config);
+            if (!settled.mayHaveAccepted) {
+                throw settled.error;
+            }
+            // The node may have accepted the transaction, which is recorded with the derived hash.
+            return await unknownSubmissionOutcomeInternal(
+                { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
+                config,
+            );
         }
-        // The node may have accepted the transaction, which is recorded with the derived hash.
-        return await unknownSubmissionOutcomeInternal(
-            { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
-            config,
-        );
     }
+    // The node accepted the transaction. Its answer is the transaction's hash; an answer that is not a hash (an empty
+    // or non-string body) is replaced by the derived hash.
+    const txHash = isTransactionHash(answer) ? answer : derivedHash;
     // The record keeps the number from the counter until the transaction has committed or can no longer commit.
     tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, txHash);
     if (reservation !== undefined) {
@@ -233,6 +242,19 @@ export async function submitTxnInternal(
     } catch (readError) {
         return { hash: txHash, status: "NotReadBack", readError };
     }
+}
+
+/**
+ * Whether the error of a submission request is the node's acceptance with a 2xx status whose body is not JSON:
+ * `parseJsonResponse` reports such a body as a `SupraAPIError` with the 2xx status.
+ */
+function isUnreadableAcceptance(error: unknown): boolean {
+    return error instanceof SupraAPIError && error.status >= 200 && error.status < 300;
+}
+
+/** Whether the node's answer to a submission is a transaction hash: `0x` followed by 64 hex digits. */
+function isTransactionHash(answer: unknown): answer is string {
+    return typeof answer === "string" && /^0x[0-9a-fA-F]{64}$/.test(answer);
 }
 
 /**
@@ -337,6 +359,8 @@ export async function submitSerializedRawTransactionAndSignatureInternal(
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
+    const publicKey = hexBytesOf(args.senderPubkey, "senderPubkey");
+    const signature = hexBytesOf(args.signature, "signature");
     const rawTxn = TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction));
     const sendTxPayload = withTransactionHash(
         {
@@ -351,7 +375,7 @@ export async function submitSerializedRawTransactionAndSignatureInternal(
             },
         },
         rawTxn,
-        ed25519TransactionAuthenticator(args.senderPubkey.toUint8Array(), args.signature.toUint8Array()),
+        ed25519TransactionAuthenticator(publicKey, signature),
     );
 
     return await submitTxnInternal(
@@ -456,6 +480,18 @@ export async function submitMultiAgentTransactionInternal(
         },
         config,
     );
+}
+
+/**
+ * The bytes of a public key or signature passed as hex, for the hash of the signed transaction.
+ * @throws {RangeError} If the value, after its `0x` prefix, is not hex digits in pairs
+ */
+function hexBytesOf(value: HexString, name: string): Uint8Array {
+    const digits = String(value).replace(/^0x/, "");
+    if (!/^(?:[0-9a-fA-F]{2})*$/.test(digits)) {
+        throw new RangeError(`${name} must be hex digits in pairs after an optional 0x, got ${String(value)}`);
+    }
+    return new HexString(digits).toUint8Array();
 }
 
 /**

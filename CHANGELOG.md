@@ -227,6 +227,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Breaking:** `transaction.submit.submitMultiAgentTransaction` and `submitSponsorTransaction`, and the matching
   methods of a built transaction, throw a `RangeError` before submitting when a secondary signer or fee payer address
   is not 1 to 64 hex digits after an optional `0x`. They sent the transaction, which the node refused.
+- **Breaking:** `transaction.submit.submitSerializedRawTransactionAndSignature` and `submitTransactionAndSignature` of a
+  built transaction throw a `RangeError` naming `senderPubkey` or `signature` before submitting when that value is not
+  hex digits in pairs after its `0x` prefix. They sent the transaction, which the node refused.
 - **Breaking:** `getTransactionByHash` takes no type argument. It returns `TransactionResponse`, which is narrowed
   by `txn_type`; the type argument did not change the value returned.
 - **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
@@ -379,6 +382,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 ### Fixed
 
+- A submission that the node accepts with a 2xx status whose body is not a transaction hash (a body that is not JSON,
+  an empty body, or a value that is not a hash) is handled as an accepted submission with the hash derived from the
+  signed transaction: the wait or the read-back uses that hash. A body that was not JSON threw a `SupraAPIError` with
+  the 2xx status, and the other bodies were returned as the hash.
 - `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
   signatures were replaced with zeros when the simulation request failed.
 - `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset` and

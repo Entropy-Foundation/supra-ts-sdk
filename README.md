@@ -344,7 +344,8 @@ transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handl
   first waits for that hash as above: a transaction that reaches a final status is returned (or throws
   `SupraTransactionFailedError`), and `SupraSubmissionOutcomeUnknownError` is thrown when the wait ends without a final
   status, with the wait's `SupraTransactionTimeoutError` as `waitError`. A node that answers the submission with a 4xx
-  status or 503 did not accept the transaction; that is thrown as `SupraAPIError`.
+  status or 503 did not accept the transaction; that is thrown as `SupraAPIError`. A 2xx answer whose body is not a
+  transaction hash is an accepted submission, and the derived hash is used in place of the body.
 
 ```ts
 import {

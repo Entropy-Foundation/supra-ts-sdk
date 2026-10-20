@@ -23,6 +23,8 @@ import type { AccountAddressInput } from "../../types/account";
  *    throws `SupraSimulationFailedError` and nothing is submitted.
  * 2. The transaction's hash is derived from the signed transaction (as `deriveTransactionHash` does), and the
  *    transaction is submitted.
+ *    - The node accepts it with a 2xx status. Its answer is the transaction's hash; an answer that is not a hash (a
+ *      body that is not JSON, an empty body, or another value) is replaced by the derived hash. Steps 3 and 4 follow.
  *    - The node refuses it with a 4xx status or 503: `SupraAPIError` is thrown; the transaction was not accepted. A v12
  *      node whose transaction pool is full answers 503; the transaction can be submitted again later.
  *    - The request times out, the connection fails before the node answers, or the node answers with a 5xx status
@@ -33,6 +35,7 @@ import type { AccountAddressInput } from "../../types/account";
  *      way (see "HTTP status codes by node version" in the README). With `enableWaitForTransaction`, the call first
  *      waits for the derived hash as in step 3, and throws `SupraSubmissionOutcomeUnknownError` (with the wait's
  *      `SupraTransactionTimeoutError` as `waitError`) only when the wait ends without a final status.
+ *    - Any other error of the request is thrown as it is.
  * 3. With `enableWaitForTransaction`, the call waits until the transaction has a final status, as
  *    `waitForTransaction` does:
  *    - `Success`: the transaction is returned.
@@ -195,6 +198,8 @@ export class Submit {
      * @throws {SupraSubmissionOutcomeUnknownError} When the submission request times out, fails before the node
      * answers or is answered with a 5xx status other than 503 (after the wait, with `enableWaitForTransaction`);
      * carries the hash derived before the submission.
+     * @throws {RangeError} Before submitting, when `senderPubkey` or `signature` is not hex digits in pairs after its
+     * `0x` prefix.
      * @example
      * ```typescript
      * import { BCS, Network, SupraAccount, SupraClient, TxnBuilderTypes } from "supra-ts-sdk";
