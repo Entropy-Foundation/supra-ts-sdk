@@ -242,20 +242,25 @@ describeE2E("sequence numbers", () => {
             const supra = newClient();
             const price = await ctx.supra.getMinGasUnitPrice();
             const balance = await rawSupraBalance(ctx, sender.address().toString());
-            const send = (amount: bigint, maxGas: bigint) =>
+            const send = (amount: bigint, maxGas: bigint, txExpiryTime?: bigint) =>
                 supra.coin.transferSupraCoin({
                     senderAccount: sender,
                     receiverAccountAddress: createUnfundedAccount().address().toString(),
                     amount,
                     optionalTransactionArgs: {
-                        optionalTransactionPayloadArgs: { maxGas, gasUnitPrice: price },
+                        optionalTransactionPayloadArgs: {
+                            maxGas,
+                            gasUnitPrice: price,
+                            ...(txExpiryTime === undefined ? {} : { txExpiryTime }),
+                        },
                         enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
                     },
                 });
             // The first transfer (0) leaves less than 5,000 gas units' worth of SUPRA. The second (1), with max gas
-            // 5,000, is accepted while the first is pending and is discarded when it executes after it.
+            // 5,000, is accepted while the first is pending; it cannot execute after the first, and the node holds it
+            // as Pending until it expires 30 seconds later and then no longer reports it.
             const first = await send(balance - 2_000n * price - 3_000n * price, 2_000n);
-            const second = await send(AMOUNT, 5_000n);
+            const second = await send(AMOUNT, 5_000n, BigInt(Math.floor(Date.now() / 1000) + 30));
             expect((await rawWaitForCommit(ctx, first.hash)).status).toBe("Success");
             await pollUntil(
                 "the second transfer to be discarded",
