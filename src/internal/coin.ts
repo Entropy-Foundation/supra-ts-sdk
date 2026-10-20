@@ -3,6 +3,7 @@ import type { AccountAddressInput } from "../types/account";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
+import { addressToBytes } from "../helper/account";
 import { parseTypeArgument } from "../helper/typeTag";
 import { getAccountResourceInternal } from "./account";
 import type { MoveFunctionId } from "../types/move";
@@ -20,13 +21,11 @@ export async function transferCoinInternal(
     config: NetworkConfig
 ): Promise<SubmitTransactionResponse> {
 
-    let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
-
     // Coin Transfer Payload
     let supraTransferPayload = {
         function: `${SUPRA_FRAMEWORK_ADDRESS}::supra_account::transfer_coins` as MoveFunctionId,
         functionTypeArgs: [parseTypeArgument(args.coinType)],
-        functionArgs: [receiverAccountAddress.toUint8Array(), BCS.bcsSerializeUint64(args.amount)]
+        functionArgs: [addressToBytes(args.receiverAccountAddress), BCS.bcsSerializeUint64(args.amount)]
     }
 
     return await buildAndSubmitEntryFunctionInternal({

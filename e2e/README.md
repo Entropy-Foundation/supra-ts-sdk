@@ -41,6 +41,7 @@ why every account is new.
 - `helpers/transfers.ts`: a SUPRA transfer used to give an account some history.
 - `helpers/fixturePackage.ts`: the compiled package of `fixtures/`, with its module address replaced by the
   publishing account's address.
+- `helpers/taggedModule.ts`: publishes the `sdk_e2e::tagged` module of `fixtures/move`.
 - `*.e2e.test.ts`: one file per area of the API.
 
 A test that fails because of a defect in the SDK is written with `test.failing` and a comment stating the

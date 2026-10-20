@@ -353,7 +353,7 @@ export type AutomationAuthenticator = {
  *
  * Map of a Move value to the corresponding TypeScript value
  *
- * `Bool -> boolean`
+ * `Bool -> boolean`, or the string `"true"` or `"false"`
  *
  * `u8, u16, u32 -> number`
  *
@@ -363,13 +363,16 @@ export type AutomationAuthenticator = {
  *
  * `i64, i128, i256 -> string`
  *
+ * Integers are also accepted as `bigint`, and as `number` when they are safe integers (at most 2^53 - 1 in
+ * magnitude). A value outside the range of the type throws.
+ *
  * `String -> string`
  *
- * `Address -> 0x${string}`
+ * `Address -> 0x${string}` or `HexString`, 1 to 64 hex digits
  *
  * `Struct - 0x${string}::${string}::${string}`
  *
- * `Object -> 0x${string}`
+ * `Object -> 0x${string}` or `HexString`, the object's address
  *
  * `Vector -> Array<MoveValue>`
  *

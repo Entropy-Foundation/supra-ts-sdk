@@ -11,17 +11,17 @@ import { SupraClient, Network, TypeTagParser } from "supra-ts-sdk";
     // address : "0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5"
     // u8, u16, u32 : 10
     // u64, u128, u256 : 100n
-    // vector<u8> : "10"
+    // vector<u8> : "0x10" or [16] or new Uint8Array([16])
     // vector<u16> : [1,2,3]
     // vector<u256> :[100n]
     // vector<address> : ["0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5"]
-    // Option<u8> : "10"
+    // Option<u8> : 10
     // Option<u16> : 10
     // Option<u32> : 10
     // Option<u64>: 100n
     // Option<u256>: 100n
     // Option<null> : null
-    // Option<vector<u8>> : "10"
+    // Option<vector<u8>> : "0x10"
     // Option<vector<32>> : [100]
     // Option<vector<u256>> : [100n]
     // ---------------------------------------------------------------------------

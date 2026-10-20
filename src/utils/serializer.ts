@@ -1,4 +1,5 @@
 import { HexString, BCS } from "supra-l1-sdk-core";
+import { addressArgument, assertSafeIntegerArgument, boolArgument, isObjectType, vectorU8ToBytes } from "../helper/general";
 import type { SimpleEntryFunctionArgumentTypes } from "../types/move";
 
 export class DynamicTransactionSerializer {
@@ -9,11 +10,8 @@ export class DynamicTransactionSerializer {
     ): void {
 
 
-        if (type.startsWith("0x1::object::Object")) {
-            if (typeof value !== 'string') {
-                throw new Error(`Expected string for Object, got ${typeof value}`);
-            }
-            return this.serializeAddress(value, serializer);
+        if (isObjectType(type)) {
+            return this.serializeAddress(value, type, serializer);
         }
 
         if (type === "0x1::string::String") {
@@ -44,10 +42,10 @@ export class DynamicTransactionSerializer {
 
         switch (type) {
             case "address":
-                this.serializeAddress(value as string, serializer);
+                this.serializeAddress(value, type, serializer);
                 break;
             case "bool":
-                this.serializeBool(value as boolean, serializer);
+                serializer.serializeBool(boolArgument(value));
                 break;
             case "u8":
                 this.serializeU8(value as number | string, serializer);
@@ -77,6 +75,11 @@ export class DynamicTransactionSerializer {
         innerType: string,
         serializer: BCS.Serializer
     ): void {
+        if (innerType === "u8") {
+            this.serializeBytes(value, serializer);
+            return;
+        }
+
         if (!Array.isArray(value)) {
             throw new Error(
                 `Expected array for vector<${innerType}>, got ${typeof value}`
@@ -90,45 +93,39 @@ export class DynamicTransactionSerializer {
         }
     }
 
-    private serializeAddress(value: string, serializer: BCS.Serializer): void {
-        if (typeof value !== "string") {
-            throw new Error(`Expected string for address, got ${typeof value}`);
-        }
-
-        let cleanAddress = value.replace(/^0x/, "");
-        if (cleanAddress.length !== 64) {
-            cleanAddress = cleanAddress.padStart(64, "0");
-        }
-
-        const addressBytes = new HexString("0x" + cleanAddress).toUint8Array();
-        if (addressBytes.length !== 32) {
-            throw new Error("Invalid address length");
-        }
-        serializer.serializeFixedBytes(addressBytes);
+    /** Serialize a `vector<u8>`; see `vectorU8ToBytes` for the accepted forms. */
+    private serializeBytes(value: unknown, serializer: BCS.Serializer): void {
+        serializer.serializeBytes(vectorU8ToBytes(value));
     }
 
     /**
-     * Parse a small unsigned integer (u8/u16/u32) from number or string, rejecting
-     * non-integer / out-of-range / NaN input before handing it to the serializer.
+     * Serialize an `address` or `Object<T>` argument as 32 bytes, left-padded with zeros. See `addressArgument` for
+     * the accepted forms.
      */
-    private parseUint(value: number | string, bits: 8 | 16 | 32): number {
-        const num = typeof value === "string" ? Number(value) : value;
-        if (typeof num !== "number" || !Number.isInteger(num)) {
-            throw new Error(`u${bits} value must be an integer, got ${JSON.stringify(value)}`);
-        }
-        const max = 2 ** bits - 1;
-        if (num < 0 || num > max) {
-            throw new Error(`u${bits} value out of range (0-${max}): ${num}`);
-        }
-        return num;
+    private serializeAddress(value: unknown, type: string, serializer: BCS.Serializer): void {
+        const hex = addressArgument(value, type).replace(/^0x/, "").padStart(64, "0");
+        serializer.serializeFixedBytes(new HexString(`0x${hex}`).toUint8Array());
     }
 
     /**
-     * Parse a large unsigned integer (u64/u128/u256) into a non-negative bigint.
-     * `BigInt()` throws on malformed input, so no NaN can slip through. Range is
-     * enforced by the underlying BCS serializer.
+     * Parse an integer given as a string: decimal digits, or `0x` followed by hex digits.
+     * Empty, whitespace-only, signed, fractional and otherwise malformed strings are rejected.
      */
-    private parseBigUint(value: number | string | bigint, bits: 64 | 128 | 256): bigint {
+    private parseIntegerString(value: string, bits: number): bigint {
+        if (!/^(\d+|0x[0-9a-fA-F]+)$/.test(value)) {
+            throw new Error(
+                `u${bits} value must be a decimal or 0x-prefixed hexadecimal integer string, got ${JSON.stringify(value)}`
+            );
+        }
+        return BigInt(value);
+    }
+
+    /**
+     * Parse an unsigned integer of the given width from a number, a string or a bigint into a
+     * bigint, rejecting malformed, negative and out-of-range input, and numbers that are not safe
+     * integers.
+     */
+    private parseUnsigned(value: unknown, bits: number): bigint {
         let num: bigint;
         if (typeof value === "bigint") {
             num = value;
@@ -137,52 +134,64 @@ export class DynamicTransactionSerializer {
                 throw new Error(`u${bits} value must be an integer, got ${value}`);
             }
             num = BigInt(value);
+        } else if (typeof value === "string") {
+            num = this.parseIntegerString(value, bits);
         } else {
-            num = BigInt(value);
+            throw new Error(`u${bits} value must be a number, string or bigint, got ${typeof value}`);
         }
 
+        const max = (1n << BigInt(bits)) - 1n;
         if (num < 0n) {
             throw new Error(`u${bits} value cannot be negative: ${num}`);
+        }
+        if (num > max) {
+            throw new Error(`u${bits} value out of range (0-${max}): ${num}`);
+        }
+        if (typeof value === "number") {
+            assertSafeIntegerArgument(`u${bits}`, value);
         }
         return num;
     }
 
-    private serializeU8(value: number | string, serializer: BCS.Serializer): void {
+    /** Parse a u8, u16 or u32 value. */
+    private parseUint(value: unknown, bits: 8 | 16 | 32): number {
+        return Number(this.parseUnsigned(value, bits));
+    }
+
+    /** Parse a u64, u128 or u256 value. */
+    private parseBigUint(value: unknown, bits: 64 | 128 | 256): bigint {
+        return this.parseUnsigned(value, bits);
+    }
+
+    private serializeU8(value: unknown, serializer: BCS.Serializer): void {
         serializer.serializeU8(this.parseUint(value, 8));
     }
 
-    private serializeU16(value: number | string, serializer: BCS.Serializer): void {
+    private serializeU16(value: unknown, serializer: BCS.Serializer): void {
         serializer.serializeU16(this.parseUint(value, 16));
     }
 
-    private serializeU32(value: number | string, serializer: BCS.Serializer): void {
+    private serializeU32(value: unknown, serializer: BCS.Serializer): void {
         serializer.serializeU32(this.parseUint(value, 32));
     }
 
-    private serializeU64(value: number | string | bigint, serializer: BCS.Serializer): void {
+    private serializeU64(value: unknown, serializer: BCS.Serializer): void {
         // Pass the bigint directly — BCS.Serializer.serializeU64 accepts bigint and
         // range-checks the full u64 domain. Do NOT branch to serializeU128 for large
         // values: that would encode 16 bytes for a u64 and corrupt the payload.
         serializer.serializeU64(this.parseBigUint(value, 64));
     }
 
-    private serializeU128(value: number | string | bigint, serializer: BCS.Serializer): void {
+    private serializeU128(value: unknown, serializer: BCS.Serializer): void {
         serializer.serializeU128(this.parseBigUint(value, 128));
     }
 
-    private serializeU256(value: number | string | bigint, serializer: BCS.Serializer): void {
+    private serializeU256(value: unknown, serializer: BCS.Serializer): void {
         serializer.serializeU256(this.parseBigUint(value, 256));
     }
 
-    private serializeBool(value: boolean, serializer: BCS.Serializer): void {
-        if (typeof value !== "boolean") {
-            throw new Error(`Expected boolean, got ${typeof value}`);
-        }
-        serializer.serializeBool(value);
-    }
-
     public prepareTransactionArgs(
-        args: Array<Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>>,
+        args: Array<SimpleEntryFunctionArgumentTypes>,
         paramTypes: string[]
     ): Uint8Array[] {
 

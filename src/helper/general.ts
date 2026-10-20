@@ -1,4 +1,4 @@
-import { TxnBuilderTypes } from "supra-l1-sdk-core";
+import { HexString, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { InputViewFunctionData } from "../types/methods";
 import type { MoveFunction, MoveFunctionId, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { parseTypeArgument, typeTagToString } from "./typeTag";
@@ -120,17 +120,22 @@ export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefi
  */
 export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryFunctionArgumentTypes): unknown {
 
-    // ----------------------------
-    // 1️⃣ Handle null for Option
-    // ----------------------------
-    if (value === null || value === undefined) {
+    const optionInner = extractOptionInner(type);
 
-        const optionInner = extractOptionInner(type);
-        if (optionInner) {
-            if (optionInner === "u8") return { vec: "" };
-            if (optionInner === "vector<u8>") return { vec: [] };
-            return { vec: [] };
+    // ----------------------------
+    // 1. Option<T>
+    // ----------------------------
+    // The node reads an Option<T> as the struct { vec: vector<T> }: `vec` is a hex string for
+    // T = u8 and an array holding zero or one element of T otherwise.
+    if (optionInner) {
+        const isNone = value === null || value === undefined;
+        if (optionInner === "u8") {
+            return { vec: isNone ? "" : uint8ArrayToHexString(Uint8Array.of(Number(integerArgument("u8", value)))) };
         }
+        return { vec: isNone ? [] : [convertArgsValueToJSONParsable(optionInner, value)] };
+    }
+
+    if (value === null || value === undefined) {
         return null;
     }
 
@@ -138,59 +143,10 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     const bigIntTypes = ["u64", "u128", "u256", "i64", "i128", "i256"];
 
     // ----------------------------
-    // 2️⃣ Option<T>
-    // ----------------------------
-    // Handle Option<T> types
-    const optionInner = extractOptionInner(type);
-    if (optionInner) {
-
-        // Special RPC convention: Option<u8> is directly serialized
-        if (optionInner === "u8") {
-            return { vec: String(value) };
-        }
-
-        // Option<vector<u8>> → wrap hex string inside array
-        if (optionInner === "vector<u8>") {
-            if (typeof value === "string") return { vec: [value] };
-
-            if (value instanceof Uint8Array) return { vec: [uint8ArrayToHexString(value)] };
-
-            if (value instanceof ArrayBuffer) return { vec: [uint8ArrayToHexString(new Uint8Array(value))] };
-
-            if (Array.isArray(value)) {
-                const hex = value.map(v => Number(v).toString(16).padStart(2, "0")).join("");
-                return { vec: [hex] };
-            }
-            throw new Error("Invalid Option<vector<u8>> value");
-        }
-
-        // Nested Option, vector, or struct inside Option
-        return { vec: [convertArgsValueToJSONParsable(optionInner, value)] };
-    }
-
-    // ----------------------------
-    // 3️⃣ vector<u8> (SPECIAL CASE)
+    // 2. vector<u8>
     // ----------------------------
     if (type === "vector<u8>") {
-        // Allow string or byte array
-        if (typeof value === "string") {
-            return value; // assume hex/base64 handled upstream
-        }
-
-        if (value instanceof Uint8Array) return uint8ArrayToHexString(value);
-
-        if (value instanceof ArrayBuffer) return uint8ArrayToHexString(new Uint8Array(value));
-
-
-        if (Array.isArray(value)) {
-            // convert number array to hex string
-            return value.map(v => {
-                const n = Number(v);
-                if (n < 0 || n > 255) throw new Error("Invalid u8 value in vector<u8>");
-                return n.toString(16).padStart(2, "0");
-            }).join("");
-        }
-        throw new Error("Invalid vector<u8> input");
+        return vectorU8ToHex(value);
     }
 
     // ----------------------------
@@ -209,10 +165,10 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     // ----------------------------
     // 5️⃣ Primitives
     // ----------------------------
-    if (intTypes.includes(type)) return Number(value);
-    if (bigIntTypes.includes(type)) return value.toString();
-    if (type === "bool") return Boolean(value);
-    if (type === "address") return String(value);
+    if (intTypes.includes(type)) return Number(integerArgument(type, value));
+    if (bigIntTypes.includes(type)) return integerArgument(type, value).toString();
+    if (type === "bool") return boolArgument(value);
+    if (type === "address" || isObjectType(type)) return addressArgument(value, type);
 
     // ----------------------------
     // 6️⃣ Struct
@@ -354,6 +310,57 @@ export function isMoveStruct(type: string) {
     return /^0x[0-9a-fA-F]+::[0-9a-zA-Z_]+::[0-9a-zA-Z_]+$/.test(type);
 }
 
+/**
+ * Whether a parameter type of a function's ABI is `0x1::object::Object<T>`, whose values are addresses.
+ * @example
+ * isObjectType("0x1::object::Object<T0>") // true
+ * isObjectType("address") // false
+ */
+export function isObjectType(type: string): boolean {
+    return /^0x0*1::object::Object<.*>$/.test(type);
+}
+
+/** A value for an error message: strings and objects as JSON, bigints with an `n` suffix. */
+export function describeArgument(value: unknown): string {
+    if (typeof value === "bigint") return `${value}n`;
+    if (typeof value === "string") return JSON.stringify(value);
+    if (value instanceof HexString) return `HexString(${value.toString()})`;
+    return typeof value === "object" && value !== null ? Object.prototype.toString.call(value) : String(value);
+}
+
+/**
+ * Converts a `bool` argument to a boolean. Accepts a boolean and the strings `"true"` and `"false"`.
+ * @throws Error for any other value
+ */
+export function boolArgument(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    throw new Error(`Expected a boolean, "true" or "false" for bool, got ${describeArgument(value)}`);
+}
+
+/** An address argument: an optional `0x` followed by 1 to 64 hex digits in either case. */
+const ADDRESS_ARGUMENT = /^(?:0x)?[0-9a-fA-F]{1,64}$/;
+
+/**
+ * Validates an `address` or `0x1::object::Object<T>` argument and returns it as a string. The argument is a string
+ * or a `HexString` holding an optional `0x` followed by 1 to 64 hex digits, the form `validateAddress` accepts with
+ * the prefix optional.
+ * @param value - The argument.
+ * @param type - The parameter type, for the error message.
+ * @returns The address as given, or the string of a `HexString`.
+ * @throws Error for any other value, including `""`, `"0x"`, `"0X1"` and addresses of more than 64 hex digits
+ */
+export function addressArgument(value: unknown, type: string): string {
+    const address = value instanceof HexString ? value.toString() : value;
+    if (typeof address !== "string" || !ADDRESS_ARGUMENT.test(address)) {
+        throw new Error(
+            `Expected an address (0x followed by 1 to 64 hex digits) as a string or HexString for ${type}, got ${describeArgument(value)}`,
+        );
+    }
+    return address;
+}
+
 
 export function uint8ArrayToHexString(bytes: Uint8Array) {
     return Array.from(bytes)
@@ -407,3 +414,104 @@ export function addAddressPadding(address: string): string {
   
     return '0x' + paddedHex
   }
+
+/**
+ * Converts a `vector<u8>` argument to bytes. Accepts a `number[]` of integers from 0 to 255, a
+ * `Uint8Array`, an `ArrayBuffer`, and a hex string of whole bytes with or without a `0x` prefix.
+ * @throws Error for any other value
+ */
+export function vectorU8ToBytes(value: unknown): Uint8Array {
+    if (value instanceof Uint8Array) {
+        return value;
+    }
+    if (value instanceof ArrayBuffer) {
+        return new Uint8Array(value);
+    }
+    if (typeof value === "string") {
+        const match = /^(?:0x)?((?:[0-9a-fA-F]{2})*)$/.exec(value);
+        if (!match) {
+            throw new Error(`Expected a hex string of whole bytes for vector<u8>, got ${JSON.stringify(value)}`);
+        }
+        const hex = match[1]!;
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < bytes.length; i++) {
+            bytes[i] = parseInt(hex.slice(2 * i, 2 * i + 2), 16);
+        }
+        return bytes;
+    }
+    if (Array.isArray(value)) {
+        return Uint8Array.from(value, (item) => {
+            const byte = typeof item === "string" && /^\d+$/.test(item) ? Number(item) : item;
+            if (typeof byte !== "number" || !Number.isInteger(byte) || byte < 0 || byte > 255) {
+                throw new Error(`Invalid u8 value in vector<u8>: ${JSON.stringify(item)}`);
+            }
+            return byte;
+        });
+    }
+    throw new Error(`Expected number[], Uint8Array or hex string for vector<u8>, got ${typeof value}`);
+}
+
+/**
+ * Converts a `vector<u8>` argument to the hex string the node expects. A string is validated and
+ * returned unchanged; every other accepted form is hex-encoded without a prefix.
+ */
+export function vectorU8ToHex(value: unknown): string {
+    const bytes = vectorU8ToBytes(value);
+    return typeof value === "string" ? value : uint8ArrayToHexString(bytes);
+}
+
+/**
+ * Checks that a `number` given for an integer argument is a safe integer (at most `Number.MAX_SAFE_INTEGER`,
+ * 2^53 - 1, in magnitude), which a JavaScript number holds exactly.
+ * @param type - The parameter type, for the error message.
+ * @param value - The number.
+ * @throws Error if the number is not a safe integer
+ */
+export function assertSafeIntegerArgument(type: string, value: number): void {
+    if (!Number.isSafeInteger(value)) {
+        throw new Error(
+            `${type} value ${value} is not a safe integer (above 2^53 - 1 in magnitude, so it may have been rounded); use a bigint or a decimal string`,
+        );
+    }
+}
+
+/** The smallest and largest value of the integer types `u8` to `u256` and `i8` to `i256`. */
+function integerBounds(type: string): { min: bigint; max: bigint } {
+    const match = /^([ui])(8|16|32|64|128|256)$/.exec(type);
+    if (!match) {
+        throw new Error(`Unsupported integer type: ${type}`);
+    }
+    const bits = BigInt(match[2]!);
+    return match[1] === "u"
+        ? { min: 0n, max: (1n << bits) - 1n }
+        : { min: -(1n << (bits - 1n)), max: (1n << (bits - 1n)) - 1n };
+}
+
+/**
+ * Converts an integer argument given as a number, bigint or decimal string to a bigint. Signed
+ * types accept a leading `-`. Empty, whitespace-only and otherwise malformed strings are rejected.
+ * A number must be a safe integer; larger values are given as a bigint or a decimal string.
+ * @throws Error if the value is not an integer, is outside the range of the type, or is a number that is not a safe
+ *   integer
+ */
+function integerArgument(type: string, value: unknown): bigint {
+    let integer: bigint;
+    const pattern = type.startsWith("i") ? /^-?\d+$/ : /^\d+$/;
+    if (typeof value === "bigint") {
+        integer = value;
+    } else if (typeof value === "number" && Number.isInteger(value)) {
+        integer = BigInt(value);
+    } else if (typeof value === "string" && pattern.test(value)) {
+        integer = BigInt(value);
+    } else {
+        throw new Error(`Expected an integer for ${type}, got ${describeArgument(value)}`);
+    }
+    const { min, max } = integerBounds(type);
+    if (integer < min || integer > max) {
+        throw new Error(`${type} value out of range (${min} to ${max}): ${integer}`);
+    }
+    if (typeof value === "number") {
+        assertSafeIntegerArgument(type, value);
+    }
+    return integer;
+}

@@ -117,7 +117,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the node's chain ID once per client and shares it with signing and `getChainId()`.
 - **Breaking:** `new SupraClient` throws a `RangeError` when the `chainId` of a custom configuration is not an integer
   from 0 to 255, and a `TypeError` when `verifyChainId` is not a boolean.
-
 - **Breaking:** `new SupraClient` throws a `TypeError` when `rpcUrl` is not an absolute `http:` or `https:` URL.
 - **Breaking:** `SupraClient.config` is a copy of the configuration object passed to the constructor, no longer that
   object.
@@ -126,7 +125,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `rpcUrl` may end in slashes and may carry a path prefix (`https://host/prefix/`); every request goes to the same
   URL whichever form is configured.
 - `SupraConfig` documents which settings belong to a client: all of them.
-
 - **Breaking:** `fungibleAsset.transferSupraFungibleAsset`, and `fungibleAsset.transferFungibleAsset` with the SUPRA
   fungible asset address, read the sender's fungible asset balance first and throw
   `SupraInsufficientFungibleAssetBalanceError` without submitting a transaction when it is below `amount`. The transfer
@@ -140,7 +138,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `account.getAccountCoinsCount` also counts SUPRA held as a fungible asset when the account has no
   `CoinStore<SupraCoin>`, so a migrated account returns 1 where it returned 0. Fungible assets other than SUPRA are not
   counted: the node has no listing of an account's fungible asset stores.
-
 - **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
   none when the estimate is turned off or the estimating simulation could not run to a result (a request error, a
   response without `gas_used`), and of the builders that cannot estimate. The node requires the sender's balance to pay
@@ -153,7 +150,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and is not submitted.
 - **Breaking:** `SupraClient.networkInformation.maxGas` is `undefined` when `SupraConfig.maxGas` is not set; it was
   `DEFAULT_MAX_GAS_UNITS`.
-
 - **Breaking:** `SupraAPIError.message` is the node's `message` when the error body has one (for example
   `General err: MoveTransactionValidationFailed(0x…, 0, SEQUENCE_NUMBER_TOO_OLD)`), otherwise the HTTP status text.
   It was always the status text. `statusText` and `data` are unchanged.
@@ -177,14 +173,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   type to be Move identifiers (a letter or underscore, then letters, digits and underscores). Other values are
   rejected before any request. The resource and event type and the module name are percent-encoded in the request
   path.
-
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
   an error status, which is thrown as `SupraAPIError`.
 - **Breaking:** `fundAccountWithFaucet` throws `SupraFaucetUnavailableError` or `SupraFaucetResponseError` where it
   returned `{ hash: undefined }`.
 - The `SupraConfig` type accepts `Network.DEVNET` alongside `Network.MAINNET` and `Network.TESTNET`.
-
 - **Breaking:** a submission with `enableWaitForTransaction: true` throws `SupraTransactionFailedError` when the
   transaction ends with `Fail` or `Invalid`, unless `checkSuccess: false` is passed. It resolved with the failed
   transaction. This applies to every submit helper: `transaction.submit.*`, the submit methods of a built transaction,
@@ -217,7 +211,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The examples `buildTransaction.ts` and `submitTransaction.ts` read a fresh sequence number for each transaction
   (they reused the number of the first one), use the client's RPC URL for the raw HTTP request, and take the
   automation gas price cap from the network's minimum gas unit price.
-
 - **Breaking:** `PaginatedResponse.cursor` is `undefined` exactly at the end of a feed, on v11 and v12 nodes alike.
   The empty header, the `"0"` of `coin_transactions` and the echoed `start` of `resources` and `modules` that v11
   nodes send at the end of a feed are returned as `undefined`. A page can be empty and still carry a cursor.
@@ -237,7 +230,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `"record"` and `"settlement"`.
 - Every cursor option (`start` or `cursor`) accepts `undefined`, so a returned cursor is passed back without a
   check or a cast. An empty cursor is not sent.
-
 - **Breaking:** `isAccountExists` returns `false` only when the node reports the account as absent (HTTP 404 on
   v12 nodes, HTTP 400 with a "Resource not found" message on v11 nodes). Every other failure, such as an unreachable
   node, a timeout, HTTP 429 or HTTP 5xx, is thrown.
@@ -251,7 +243,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   result are no longer needed. `ExtendedRawTransaction.signTransaction` resolves to `HexString`.
 - `getFungibleAssetMetadata` is declared to return `FungibleAssetMetadata` (`name`, `symbol`, `decimals`,
   `icon_uri`, `project_uri`), which is what it returns. It was declared `CoinInfo`.
-
+- **Breaking:** integer arguments given as strings (`u8` to `u256` in entry functions, `u8` to `u256` and `i8`
+  to `i256` in views) must be decimal digits, with a leading `-` for signed types, or, for entry
+  functions, `0x` followed by hex digits. Empty and whitespace-only strings, strings with surrounding
+  whitespace, `"1.5"`, `"-1"` for unsigned types, `"0x"` and values above the maximum of the type throw
+  before any request, with an error naming the argument index and type. Previously `""` and `" "` were
+  encoded as 0 and padded strings were accepted.
+- **Breaking:** integer arguments of views given in any form (number, bigint or string) must lie in the range of
+  the type, `0` to `2^n - 1` for `un` and `-2^(n-1)` to `2^(n-1) - 1` for `in`; other values throw before any
+  request. Views sent them to the node, which refused them (`u8` 300, `u64` -1).
+- **Breaking:** a `number` given for an integer argument of an entry function or a view must be a safe integer
+  (at most `Number.MAX_SAFE_INTEGER`, 2^53 - 1, in magnitude); larger values are given as a `bigint` or a decimal
+  string. A larger `number` such as `2 ** 53 + 1` holds a rounded value, which was encoded.
+- **Breaking:** `methods.view` encodes an `Option<u8>` argument the way the node reads it, as the hex of the
+  byte (`Some(16)` is `{"vec":"10"}`). It was sent as the decimal string, which the node read as a
+  different byte or rejected. `Option<T>` for every other `T` is a one-element array of the encoded
+  value, `None` is an empty array, and `Option<vector<u8>>` carries the hex of the bytes.
+- A `vector<u8>` argument of a view is validated: a string must be hex of whole bytes, with or without
+  `0x`, and array elements must be integers from 0 to 255.
+- **Breaking:** a `bool` argument of a view is a boolean or one of the strings `"true"` and `"false"`; other
+  values throw before any request. Views converted the value with `Boolean(value)`, which sent `"false"` and `"0"`
+  as `true`. Entry functions accept the same two strings, so both encode a value alike.
+- **Breaking:** `address` and `0x1::object::Object<T>` arguments of entry functions and views must be a string
+  or a `HexString` holding 1 to 64 hex digits after an optional `0x`. Other values, including `""` and `"0x"`,
+  throw before any request. Entry functions encoded `""` and `"0x"` as the address `0x0`, and views sent every
+  value to the node, converted with `String(value)` for `address` and unchanged for `Object<T>`.
 - **Breaking (types):** `FunctionTypeArgs`, the type of an entry in `ty_args` of a transaction payload
   in JSON form, is a union of the primitive type names, `{ vector }` and `{ struct }` instead of an
   interface that only describes `{ struct }`. Code that reads `ty_args[i].struct` directly must narrow
@@ -278,6 +294,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The JSDoc of `events.getEventsByType` describes events and calls `getEventsByType`.
 - `getAccountInfo` returns `sequence_number` as a `bigint`, the declared type. It returned the number the node
   sends, so `info.sequence_number + 1n` threw a `TypeError`.
+- `transferSupraCoin`, `transferCoin`, `transferFungibleAsset` and `transferSupraFungibleAsset` encode the
+  receiver and asset addresses as 32 bytes, left-padded with zeros, for every address that
+  `validateAddress` accepts (1 to 64 hex characters). Addresses of 63 or fewer characters previously
+  threw or were sent as arguments shorter than 32 bytes. The address of the sender of a raw
+  transaction, the multisig address and the module address are padded the same way.
+- Entry function arguments of type `vector<u8>` accept `number[]`, `Uint8Array`, `ArrayBuffer` and hex
+  strings with or without `0x`, with identical BCS. Previously only `number[]` was accepted although the
+  argument types admit the other forms.
+- `transaction.build.simple` removes every leading `&signer` and `signer` parameter of the entry function
+  from the expected arguments, not only the first, so functions with several signer parameters can be
+  built.
 - Type arguments of every `TypeTag` variant (`bool`, `u8` to `u256`, `address`, `signer`, `vector` and
   `struct` with type parameters, nested to any depth) are written correctly in transaction payloads.
   Building, simulating or submitting an entry function, script, automation registration or multisig
@@ -288,6 +315,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A type argument string `0x1::object::Object<T>` is the struct type `Object<T>` in an entry function
   payload, alone and inside `vector<…>` or another struct; it was signed as `address`. A view function and an
   entry function given the same type argument string instantiate the same type.
+- `address` and `Object<T>` arguments of entry functions accept a `HexString`, as their declared type
+  `AccountAddressInput` states; they threw `Expected string for address, got object`. A `HexString` `Object<T>`
+  argument of a view is sent as its address string; it was sent as the object `{"hexString":…}`.
 - Type argument strings whose module or struct names contain `T` followed by digits, such as
   `0xabc::usdt0::USDT0` or `0xabc::m::T1`, are accepted in entry functions and as the `coinType` of
   `coin.transferCoin` and `fungibleAsset.migrateCoinToFungibleStore`; they threw

@@ -12,7 +12,7 @@ import {
     extractVectorInner,
     isMoveStruct,
 } from "../general";
-import { TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
+import { HexString, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import { parseTypeArgument, typeTagToString } from "../typeTag";
 import type { MoveFunction, MoveModule } from "../../types/move";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
@@ -82,8 +82,8 @@ describe("convertArgsValueToJSONParsable", () => {
     });
 
     // Option<u8> with value
-    it("should wrap Option<u8> value as { vec: String(value) }", () => {
-        expect(convertArgsValueToJSONParsable("0x1::option::Option<u8>", 42)).toEqual({ vec: "42" });
+    it("should encode the Option<u8> value as vector<u8> hex", () => {
+        expect(convertArgsValueToJSONParsable("0x1::option::Option<u8>", 42)).toEqual({ vec: "2a" });
     });
 
     // Option<vector<u8>> with string value
@@ -171,14 +171,53 @@ describe("convertArgsValueToJSONParsable", () => {
         expect(convertArgsValueToJSONParsable("bool", false)).toBe(false);
     });
 
+    it("should convert the strings true and false to booleans", () => {
+        expect(convertArgsValueToJSONParsable("bool", "true")).toBe(true);
+        expect(convertArgsValueToJSONParsable("bool", "false")).toBe(false);
+        expect(convertArgsValueToJSONParsable("vector<bool>", ["false", true])).toEqual([false, true]);
+        expect(convertArgsValueToJSONParsable("0x1::option::Option<bool>", "false")).toEqual({ vec: [false] });
+    });
+
+    it("should refuse other bool values", () => {
+        for (const value of ["0", "1", "", "False", "yes", 0, 1, {}]) {
+            expect(() => convertArgsValueToJSONParsable("bool", value as string)).toThrow(
+                'Expected a boolean, "true" or "false" for bool',
+            );
+        }
+    });
+
     it("should convert address to string", () => {
         expect(convertArgsValueToJSONParsable("address", "0x1")).toBe("0x1");
     });
 
     // Struct passthrough
     it("should pass through struct values", () => {
-        const structValue = { inner: "0x1" };
-        expect(convertArgsValueToJSONParsable("0x1::object::Object<0x1::supra_coin::SupraCoin>", structValue)).toBe(structValue);
+        const structValue = { field: "0x1" };
+        expect(convertArgsValueToJSONParsable("0x1::m::S", structValue)).toBe(structValue);
+    });
+});
+
+describe("address and Object<T> view arguments", () => {
+    const OBJECT = "0x1::object::Object<T0>";
+
+    it.each(["address", OBJECT])("sends a %s string as given", (type) => {
+        for (const address of ["0x1", "0xa", "a", "0xABCdef", `0x${"1".repeat(64)}`]) {
+            expect(convertArgsValueToJSONParsable(type, address)).toBe(address);
+        }
+    });
+
+    it.each(["address", OBJECT])("sends a HexString %s argument as its string", (type) => {
+        expect(convertArgsValueToJSONParsable(type, new HexString("0xa"))).toBe("0xa");
+        expect(convertArgsValueToJSONParsable(`vector<${type}>`, [new HexString("0x1"), "0x2"])).toEqual(["0x1", "0x2"]);
+        expect(convertArgsValueToJSONParsable(`0x1::option::Option<${type}>`, new HexString("0x3"))).toEqual({
+            vec: ["0x3"],
+        });
+    });
+
+    it.each(["address", OBJECT])("refuses a %s argument without a hex digit, or malformed", (type) => {
+        for (const value of ["", "0x", "0X1", " 0x1", "0xzz", `0x${"1".repeat(65)}`, 1, {}, { inner: "0x1" }]) {
+            expect(() => convertArgsValueToJSONParsable(type, value as string)).toThrow(/Expected an address/);
+        }
     });
 });
 
@@ -487,4 +526,128 @@ describe("type arguments of a view function", () => {
             expect(fromTag.typeArguments).toEqual([type]);
         },
     );
+});
+
+describe("Option<T> view arguments", () => {
+    const option = (inner: string) => `0x1::option::Option<${inner}>`;
+
+    it("encodes Some(T) of u8 as the hex of the byte, which the node reads as vector<u8>", () => {
+        expect(convertArgsValueToJSONParsable(option("u8"), 16)).toEqual({ vec: "10" });
+        expect(convertArgsValueToJSONParsable(option("u8"), 5)).toEqual({ vec: "05" });
+        expect(convertArgsValueToJSONParsable(option("u8"), "255")).toEqual({ vec: "ff" });
+        expect(convertArgsValueToJSONParsable(option("u8"), 0)).toEqual({ vec: "00" });
+    });
+
+    it("encodes None of u8 as an empty byte string", () => {
+        expect(convertArgsValueToJSONParsable(option("u8"), null)).toEqual({ vec: "" });
+        expect(convertArgsValueToJSONParsable(option("u8"), undefined)).toEqual({ vec: "" });
+    });
+
+    it("rejects a u8 value that is out of range or malformed", () => {
+        expect(() => convertArgsValueToJSONParsable(option("u8"), 256)).toThrow();
+        expect(() => convertArgsValueToJSONParsable(option("u8"), "")).toThrow();
+    });
+
+    it("encodes Option<u64> as a one-element array of the decimal string", () => {
+        expect(convertArgsValueToJSONParsable(option("u64"), 5n)).toEqual({ vec: ["5"] });
+        expect(convertArgsValueToJSONParsable(option("u64"), 5)).toEqual({ vec: ["5"] });
+        expect(convertArgsValueToJSONParsable(option("u64"), null)).toEqual({ vec: [] });
+    });
+
+    it("encodes Option<address> as a one-element array", () => {
+        expect(convertArgsValueToJSONParsable(option("address"), "0x2")).toEqual({ vec: ["0x2"] });
+        expect(convertArgsValueToJSONParsable(option("address"), null)).toEqual({ vec: [] });
+    });
+
+    it("encodes Option<vector<u8>> as a one-element array of hex", () => {
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), [1, 2])).toEqual({ vec: ["0102"] });
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), new Uint8Array([1, 2]))).toEqual({ vec: ["0102"] });
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), "0x0102")).toEqual({ vec: ["0x0102"] });
+        expect(convertArgsValueToJSONParsable(option("vector<u8>"), null)).toEqual({ vec: [] });
+    });
+});
+
+describe("integer view arguments", () => {
+    it("rejects empty, whitespace-only and malformed strings", () => {
+        for (const type of ["u8", "u32", "u64", "u256", "i64"]) {
+            for (const value of ["", " ", "1.5", "0x", "abc"]) {
+                expect(() => convertArgsValueToJSONParsable(type, value)).toThrow(`Expected an integer for ${type}`);
+            }
+        }
+        expect(() => convertArgsValueToJSONParsable("u64", "-1")).toThrow();
+    });
+
+    it("accepts decimal strings, numbers and bigints, and a sign for signed types", () => {
+        expect(convertArgsValueToJSONParsable("u8", "16")).toBe(16);
+        expect(convertArgsValueToJSONParsable("u64", 7n)).toBe("7");
+        expect(convertArgsValueToJSONParsable("i64", "-7")).toBe("-7");
+    });
+
+    const BOUNDS: Array<[string, bigint, bigint]> = [
+        ["u8", 0n, 255n],
+        ["u16", 0n, 65535n],
+        ["u32", 0n, 4294967295n],
+        ["u64", 0n, 2n ** 64n - 1n],
+        ["u128", 0n, 2n ** 128n - 1n],
+        ["u256", 0n, 2n ** 256n - 1n],
+        ["i8", -128n, 127n],
+        ["i16", -32768n, 32767n],
+        ["i32", -(2n ** 31n), 2n ** 31n - 1n],
+        ["i64", -(2n ** 63n), 2n ** 63n - 1n],
+        ["i128", -(2n ** 127n), 2n ** 127n - 1n],
+        ["i256", -(2n ** 255n), 2n ** 255n - 1n],
+    ];
+
+    it.each(BOUNDS)("accepts the bounds of %s and refuses the values beyond them", (type, min, max) => {
+        const expected = (value: bigint) => (["u8", "u16", "u32", "i8", "i16", "i32"].includes(type) ? Number(value) : value.toString());
+        for (const value of [min, max]) {
+            expect(convertArgsValueToJSONParsable(type, value)).toBe(expected(value));
+            expect(convertArgsValueToJSONParsable(type, value.toString())).toBe(expected(value));
+        }
+        for (const value of [min - 1n, max + 1n]) {
+            expect(() => convertArgsValueToJSONParsable(type, value)).toThrow(`${type} value out of range`);
+        }
+        expect(() => convertArgsValueToJSONParsable(type, (max + 1n).toString())).toThrow(`${type} value out of range`);
+    });
+
+    it("refuses out-of-range numbers", () => {
+        expect(() => convertArgsValueToJSONParsable("u8", 300)).toThrow("u8 value out of range");
+        expect(() => convertArgsValueToJSONParsable("u8", -1)).toThrow("u8 value out of range");
+        expect(() => convertArgsValueToJSONParsable("u64", -1)).toThrow("u64 value out of range");
+        expect(() => convertArgsValueToJSONParsable("i8", -129)).toThrow("i8 value out of range");
+    });
+
+    it("refuses a u8 to u32 value above 2^53 instead of rounding it", () => {
+        expect(() => convertArgsValueToJSONParsable("u8", "1152921504606846976")).toThrow("u8 value out of range");
+        expect(() => convertArgsValueToJSONParsable("u32", 2n ** 60n)).toThrow("u32 value out of range");
+    });
+
+    it("refuses numbers that are not safe integers and accepts the same values as bigints and strings", () => {
+        for (const type of ["u64", "u128", "u256", "i64", "i128", "i256"]) {
+            for (const value of [2 ** 53, 2 ** 53 + 2, 2 ** 60]) {
+                expect(() => convertArgsValueToJSONParsable(type, value)).toThrow(/use a bigint or a decimal string/);
+            }
+            expect(convertArgsValueToJSONParsable(type, Number.MAX_SAFE_INTEGER)).toBe("9007199254740991");
+            expect(convertArgsValueToJSONParsable(type, 2n ** 53n + 1n)).toBe("9007199254740993");
+            expect(convertArgsValueToJSONParsable(type, "9007199254740993")).toBe("9007199254740993");
+        }
+        expect(() => convertArgsValueToJSONParsable("i64", -(2 ** 53))).toThrow(/not a safe integer/);
+    });
+
+    it("checks integers inside a vector and an Option", () => {
+        expect(() => convertArgsValueToJSONParsable("vector<u8>", [256])).toThrow();
+        expect(() => convertArgsValueToJSONParsable("vector<u16>", [1, 65536])).toThrow("u16 value out of range");
+        expect(() => convertArgsValueToJSONParsable("0x1::option::Option<u64>", 2 ** 53)).toThrow(/not a safe integer/);
+        expect(convertArgsValueToJSONParsable("0x1::option::Option<u8>", 5n)).toEqual({ vec: "05" });
+        expect(() => convertArgsValueToJSONParsable("0x1::option::Option<u8>", -1)).toThrow("u8 value out of range");
+    });
+});
+
+describe("vector<u8> view arguments", () => {
+    it("encodes number[], Uint8Array and hex strings", () => {
+        expect(convertArgsValueToJSONParsable("vector<u8>", [1, 255])).toBe("01ff");
+        expect(convertArgsValueToJSONParsable("vector<u8>", new Uint8Array([1, 255]))).toBe("01ff");
+        expect(convertArgsValueToJSONParsable("vector<u8>", "0x01ff")).toBe("0x01ff");
+        expect(() => convertArgsValueToJSONParsable("vector<u8>", "0x1")).toThrow();
+    });
 });
