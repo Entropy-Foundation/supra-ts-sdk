@@ -1,3 +1,5 @@
+// Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
+// Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { CommittedTransactionResponse, TransactionQueryType, TransactionResponse, WaitForTransactionOptions } from "../types/transaction";
 import { getTransactionByHashInternal, getTransactionSignatureMessageInternal, isPendingTransactionInternal, publishPackageInternal, signTransactionInternal, waitForTransactionInternal } from "../internal/transaction";

@@ -121,6 +121,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 ### Changed
 
+- The package includes a `NOTICE` file, and files with portions derived from `@aptos-labs/ts-sdk` carry an
+  Apache-2.0 notice.
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
   an error status, which is thrown as `SupraAPIError`.

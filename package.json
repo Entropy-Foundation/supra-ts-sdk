@@ -33,7 +33,8 @@
     "CHANGELOG.md",
     "MIGRATION.md",
     "compatibility.json",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsup",

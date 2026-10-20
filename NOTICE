@@ -1,0 +1,26 @@
+supra-ts-sdk
+Copyright (c) 2026 Supra (Entropy Foundation)
+
+This project is licensed under the MIT License. See LICENSE.
+
+Third-party software
+--------------------
+
+@aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk)
+Copyright © Aptos Foundation
+Licensed under the Apache License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0), for the versions
+released under the Apache License 2.0, up to and including 5.1.4.
+
+The following files contain portions derived from @aptos-labs/ts-sdk. The rest of each file is licensed under the
+MIT License.
+
+- src/api/account.ts
+- src/api/transaction.ts
+- src/helper/general.ts
+- src/internal/transaction.ts
+- src/types/account.ts
+- src/types/methods.ts
+- src/types/move.ts
+- src/types/table.ts
+- src/types/transaction.ts
+- src/utils/functions.ts

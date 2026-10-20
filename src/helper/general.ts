@@ -1,3 +1,5 @@
+// Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
+// Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import { HexString, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { InputViewFunctionData } from "../types/methods";
 import type { MoveFunction, MoveFunctionId, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";

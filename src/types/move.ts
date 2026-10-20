@@ -1,3 +1,5 @@
+// Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
+// Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import { TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { AccountAddressInput } from "./account";
 
@@ -73,8 +75,7 @@ export type MoveStruct = {
      */
     is_event?: boolean;
     /**
-     * True if the struct is an enum (e.g. enum MyEnum { A, B, C }), false if it is a
-     * regular struct (e.g. struct MyStruct { a: u8, b: u8 }).
+     * Whether the type is declared as a Move `enum` with variants (`true`) or as a plain struct (`false`)
      */
     is_enum?: boolean;
     /**
