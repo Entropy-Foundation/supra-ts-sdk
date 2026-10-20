@@ -1,5 +1,5 @@
 import type { MoveModule, SubmitTransactionResponse, SupraAccount } from "../src/index";
-import { SupraClient, SupraSimulationFailedError, TypeTagParser } from "../src/index";
+import { SupraAccountQueueFullError, SupraClient, SupraSimulationFailedError, TypeTagParser } from "../src/index";
 import { isStaleSequenceNumberError } from "../src/internal/sequenceNumber";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
@@ -152,14 +152,48 @@ describeE2E("sequence numbers", () => {
         const supra = newClient();
         await transfer(supra, sender, { wait: true });
 
-        // An explicit number does not touch the counter, which stays at 1 while the chain moves to 2.
-        const committed = await transfer(supra, sender, { sequenceNumber: 1n, wait: true });
+        // Another client sends 1; the counter of `supra` still hands out 1 until it reads the chain.
+        const committed = await transfer(newClient(), sender, { wait: true });
         expect(committed.status).toBe("Success");
         supra.resetSequenceNumber(sender.address());
         const afterReset = await transfer(supra, sender, { wait: true });
 
         expect(afterReset.status).toBe("Success");
         expect(await chainSequenceNumber(sender)).toBe(3n);
+    });
+
+    test("a number beyond the node's queue for the account is refused with SupraAccountQueueFullError", async () => {
+        const sender = await createFundedAccount(ctx);
+        const supra = newClient();
+        const beyond = (await chainSequenceNumber(sender)) + 100n;
+
+        const error = await transfer(supra, sender, { sequenceNumber: beyond }).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(SupraAccountQueueFullError);
+        expect((error as SupraAccountQueueFullError).sequenceNumber).toBe(beyond);
+        expect(isStaleSequenceNumberError(error)).toBe(false);
+    });
+
+    test("a transfer the helpers build expires about 60 seconds after the chain's time", async () => {
+        const sender = await createFundedAccount(ctx);
+        const supra = newClient();
+        const blockSeconds = async () => {
+            const block = await rawGet<{ header: { timestamp: { microseconds_since_unix_epoch: number } } }>(
+                ctx,
+                "/rpc/v3/block",
+            );
+            return block.body.header.timestamp.microseconds_since_unix_epoch / 1_000_000;
+        };
+
+        const before = await blockSeconds();
+        const response = await transfer(supra, sender, { wait: true });
+        const after = await blockSeconds();
+
+        const raw = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${response.hash}`);
+        const expiration =
+            Number(raw.body.header?.expiration_timestamp.microseconds_since_unix_epoch ?? 0) / 1_000_000;
+        expect(expiration).toBeGreaterThanOrEqual(before + 55);
+        expect(expiration).toBeLessThanOrEqual(after + 65);
     });
 
     test("an explicit sequence number is used as given", async () => {
@@ -299,7 +333,8 @@ describeE2E("sequence numbers", () => {
             // 5,000, is accepted while the first is pending; it cannot execute after the first, and the node holds it
             // as Pending until it expires 30 seconds later and then no longer reports it.
             const first = await send(balance - 2_000n * price - 3_000n * price, 2_000n);
-            const second = await send(AMOUNT, 5_000n, BigInt(Math.floor(Date.now() / 1000) + 30));
+            const expiration = BigInt(Math.floor(Date.now() / 1000) + 30);
+            const second = await send(AMOUNT, 5_000n, expiration);
             expect((await rawWaitForCommit(ctx, first.hash)).status).toBe("Success");
             await pollUntil(
                 "the second transfer to be discarded",
@@ -309,8 +344,20 @@ describeE2E("sequence numbers", () => {
                 },
                 (status) => status === "Invalid" || status === "HTTP 404",
             );
+            await pollUntil(
+                "a block at the second transfer's expiration time",
+                async () =>
+                    (
+                        await rawGet<{ header: { timestamp: { microseconds_since_unix_epoch: number } } }>(
+                            ctx,
+                            "/rpc/v3/block",
+                        )
+                    ).body.header.timestamp.microseconds_since_unix_epoch,
+                (micros) => BigInt(micros) >= expiration * 1_000_000n,
+            );
 
-            // The counter is at 2; nothing holds 1. The transfer is sent with 1 and commits.
+            // 1 can no longer commit: the counter reads the chain, finds the block past 1's expiration time and
+            // sends the transfer with 1.
             const third = await supra.coin.transferSupraCoin({
                 senderAccount: sender,
                 receiverAccountAddress: createUnfundedAccount().address().toString(),
