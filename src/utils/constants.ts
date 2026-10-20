@@ -22,3 +22,7 @@ export const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
 export const DEFAULT_RPC_VERSION = "v3"
 export const DEFAULT_TXN_TIMEOUT_SEC = 20;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+/** Requests (the first included) a retrying client sends before it gives up, when `retry.attempts` is not set. */
+export const DEFAULT_RETRY_ATTEMPTS = 3;
+/** Longest wait before a retry, when `retry.maxDelayMs` is not set. */
+export const DEFAULT_RETRY_MAX_DELAY_MS = 10000;

@@ -35,6 +35,30 @@ describeE2E("account", () => {
         expect(info.authentication_key).toBe(funded.authKey().toString());
     });
 
+    test("an address in upper case reads the same account", async () => {
+        const upper = `0x${address.slice(2).toUpperCase()}`;
+        const info = await ctx.supra.account.getAccountInfo({ accountAddress: upper });
+        expect(info.authentication_key).toBe(funded.authKey().toString());
+        await expect(ctx.supra.account.isAccountExists({ accountAddress: upper })).resolves.toBe(true);
+    });
+
+    test("getAccountModule and getAccountResource send their names as one path segment", async () => {
+        await expect(
+            ctx.supra.account.getAccountModule({ accountAddress: "0x1", moduleName: "../resources" }),
+        ).rejects.toThrow("Invalid moduleName");
+        await expect(
+            ctx.supra.account.getAccountResource({
+                accountAddress: address,
+                resourceType: "0x1::account::Account/../Account" as `${string}::${string}::${string}`,
+            }),
+        ).rejects.toThrow("Invalid resourceType");
+        const resource = await ctx.supra.account.getAccountResource({
+            accountAddress: address,
+            resourceType: SUPRA_COIN_STORE,
+        });
+        expect(resource.type).toBe(SUPRA_COIN_STORE);
+    });
+
     // Expected: the value matches the declared type `bigint`.
     test.failing("getAccountInfo returns the sequence number as a bigint", async () => {
         const info = await ctx.supra.account.getAccountInfo({ accountAddress: address });

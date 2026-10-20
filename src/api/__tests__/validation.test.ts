@@ -80,6 +80,28 @@ describe("Coin validation", () => {
         expect(transferCoinInternal).not.toHaveBeenCalled();
     });
 
+    it.each([2 ** 53, 2 ** 53 + 2, 1.5, Number.NaN])("rejects the amount %p on transferCoin", async (amount) => {
+        await expect(
+            coin.transferCoin({
+                senderAccount: anyAccount,
+                receiverAccountAddress: "0x2",
+                amount,
+                coinType: "0x1::supra_coin::SupraCoin",
+            }),
+        ).rejects.toThrow("Invalid amount");
+        expect(transferCoinInternal).not.toHaveBeenCalled();
+    });
+
+    it("passes a bigint amount above 2^53 - 1 through to the internal on transferCoin", async () => {
+        await coin.transferCoin({
+            senderAccount: anyAccount,
+            receiverAccountAddress: "0x2",
+            amount: 2n ** 53n + 1n,
+            coinType: "0x1::supra_coin::SupraCoin",
+        });
+        expect(transferCoinInternal).toHaveBeenCalledTimes(1);
+    });
+
     it("passes valid input through to the internal", async () => {
         await coin.transferSupraCoin({ senderAccount: anyAccount, receiverAccountAddress: "0x2", amount: 100n });
         expect(transferCoinInternal).toHaveBeenCalledTimes(1);

@@ -34,7 +34,7 @@ describe("internal/events", () => {
 
             expect(mockGet).toHaveBeenCalledWith(
                 {
-                    path: "/events/0x1::coin::Transfer",
+                    path: "/events/0x1%3A%3Acoin%3A%3ATransfer",
                     query: {
                         start_height: 100,
                         end_height: 200,

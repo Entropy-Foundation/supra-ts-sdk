@@ -148,9 +148,21 @@ describe("internal/account", () => {
             );
 
             expect(mockGet).toHaveBeenCalledWith(
-                { path: `/accounts/${fullAddress}/resources/${resourceType}` },
+                { path: `/accounts/${fullAddress}/resources/${encodeURIComponent(resourceType)}` },
                 testConfig,
             );
+            expect(encodeURIComponent(resourceType)).toBe("0x1%3A%3Acoin%3A%3ACoinStore%3C0x1%3A%3Asupra_coin%3A%3ASupraCoin%3E");
+        });
+
+        it("should encode a resource type so that it stays one path segment", async () => {
+            mockGet.mockResolvedValue({ data: { type: "t", data: {} } });
+
+            await getAccountResourceInternal(
+                { accountAddress: "0x1", resourceType: "0x1::a::B/../c" as `${string}::${string}::${string}` },
+                testConfig,
+            );
+
+            expect(mockGet).toHaveBeenCalledWith({ path: `/accounts/${fullAddress}/resources/0x1%3A%3Aa%3A%3AB%2F..%2Fc` }, testConfig);
         });
     });
 

@@ -97,6 +97,64 @@ import { SupraClient, Network } from 'supra-ts-sdk';
 })();
 ```
 
+## Errors
+
+Every error the SDK raises on its own behalf derives from `SupraError`.
+
+| Class | Raised when | Useful fields |
+|---|---|---|
+| `SupraAPIError` | the node answers with an error status | `status`, `statusText`, `url`, `data`, `major_status`, `sub_status` |
+| `SupraNotFoundError` (extends `SupraAPIError`) | HTTP 404 | |
+| `SupraGoneError` (extends `SupraAPIError`) | HTTP 410: the node has pruned the data | |
+| `SupraRateLimitError` (extends `SupraAPIError`) | HTTP 429 | `retryAfterSeconds` |
+| `SupraServiceUnavailableError` (extends `SupraAPIError`) | HTTP 503 | |
+| `SupraTimeoutError` | a request exceeds the timeout | `url`, `timeoutMs`, `cause` |
+| `SupraNetworkError` | the connection fails before the node answers | `url`, `cause` |
+| `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
+
+`SupraAPIError.message` is the node's `message` when the error body has one, otherwise the HTTP status text.
+`major_status` is the name of the Move VM status the message reports, for example `SEQUENCE_NUMBER_TOO_OLD`,
+`INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE`, `LINKER_ERROR` or `ABORTED`, and `sub_status` is the abort code of an
+`ABORTED` status. Both are `undefined` when the message names no status. `MoveVmError` lists the common statuses.
+
+```ts
+import { SupraClient, Network, SupraAPIError, SupraRateLimitError, SupraTimeoutError } from 'supra-ts-sdk';
+
+const supra = new SupraClient({ network: Network.TESTNET });
+
+try {
+  await supra.faucet.fundAccountWithFaucet({ accountAddress: "0x1234" });
+} catch (error) {
+  if (error instanceof SupraRateLimitError) {
+    console.log(`Try again in ${error.retryAfterSeconds} seconds`);
+  } else if (error instanceof SupraTimeoutError) {
+    console.log(`No answer within ${error.timeoutMs} ms`);
+  } else if (error instanceof SupraAPIError) {
+    console.log(error.message, error.major_status);
+  } else {
+    throw error;
+  }
+}
+```
+
+### Timeout and retries
+
+Each request times out after 30 seconds. `timeoutMs` changes that, and `retry` turns on retries of GET requests, which
+are off by default:
+
+```ts
+const supra = new SupraClient({
+  network: Network.TESTNET,
+  timeoutMs: 10_000,
+  retry: { attempts: 3, maxDelayMs: 5_000 },
+});
+```
+
+A GET is retried when the node answers 429 or 503 or the connection fails, up to `attempts` requests in total. A 429 is
+retried after the wait the node asks for (`retry_after_seconds`, else `Retry-After`) and is thrown at once when that wait
+exceeds `maxDelayMs`; the other cases wait 250 ms, doubling on every retry, up to `maxDelayMs`. A timeout is not
+retried. POST requests (submit, simulate, view) are never retried.
+
 ## 📚 More Examples
 
 - [Account](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/account.ts)

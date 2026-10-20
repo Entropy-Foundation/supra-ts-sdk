@@ -16,8 +16,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries no transaction hash; the body is available as `data`.
 - **`faucet.getFaucetTransaction({ transactionHash })`** — reads a faucet transaction
   (`GET /rpc/v3/wallet/faucet/transactions/{hash}`).
+- **Typed errors.** `SupraNotFoundError` (HTTP 404), `SupraGoneError` (410), `SupraRateLimitError` (429, with
+  `retryAfterSeconds` from the body's `retry_after_seconds` or the `Retry-After` header) and
+  `SupraServiceUnavailableError` (503) extend `SupraAPIError`, so `instanceof SupraAPIError` still matches.
+  `SupraTimeoutError` and `SupraNetworkError` replace the raw `DOMException` and `TypeError` of a request that times
+  out or fails before the node answers; the original error is their `cause`. `SupraError` is the base class of all of
+  them and of the faucet errors.
+- **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms; an integer up to 2147483647) for predefined
+  networks and custom configurations.
+- **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`, `maxDelayMs` up to 2147483647) turns on retries of GET
+  requests that fail with 429, 503 or a connection failure, honouring the node's `retry_after_seconds` /
+  `Retry-After`. It is off by default; POST requests and the faucet request are never retried.
+- **`SupraAPIError.sub_status`** is the abort code of an `ABORTED` status. `parseVmStatus` is exported.
+- `MoveVmError` lists the validation, verification, invariant and runtime statuses that clients commonly handle,
+  including `ABORTED`, `MISSING_DATA`, `TYPE_RESOLUTION_FAILURE`, `LOOKUP_FAILED` and `MAX_GAS_UNITS_*`.
 
 ### Changed
+
+- **Breaking:** `SupraAPIError.message` is the node's `message` when the error body has one (for example
+  `General err: MoveTransactionValidationFailed(0x…, 0, SEQUENCE_NUMBER_TOO_OLD)`), otherwise the HTTP status text.
+  It was always the status text. `statusText` and `data` are unchanged.
+- **Breaking:** `SupraAPIError.major_status` is the name of the Move VM status that the message reports (view errors,
+  submit validation errors, and the `vm_status` of a failed simulation), and `undefined` when the message names none.
+  It was `"unknown"` for every error. `toJSON()` also returns `message` and `sub_status`.
+- **Breaking:** `MoveVmError` follows the Move VM `StatusCode` names: `MOVE_ABORT`, which is not a VM status, is
+  removed (`ABORTED` replaces it), the description of `OUT_OF_GAS` is corrected, and the link to an unrelated
+  repository is removed.
+- **Breaking:** `SupraFaucetUnavailableError` and `SupraFaucetResponseError` extend `SupraError`; they are still not
+  `SupraAPIError`s and keep their names.
+- **Breaking:** a request that times out or fails before the node answers, or whose response body cannot be read,
+  rejects with `SupraTimeoutError` or
+  `SupraNetworkError` instead of a raw `DOMException` or `TypeError`.
+- Clients of a predefined network no longer share one mutable network configuration: the gas, timeout and retry
+  settings of one `SupraClient` no longer reach another client of the same network.
+- **Breaking:** `standardizeAddress` returns lower-case hex, and throws a `RangeError` for an address of more than 64
+  hex digits instead of a `SupraAPIError` with status 400 that no node sent.
+- **Breaking:** `getAccountModule` requires `moduleName` to be a Move identifier, and the resource, event and coin
+  type arguments of the account, event, coin and fungible asset methods require the module and struct names of the
+  type to be Move identifiers (a letter or underscore, then letters, digits and underscores). Other values are
+  rejected before any request. The resource and event type and the module name are percent-encoded in the request
+  path.
 
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with

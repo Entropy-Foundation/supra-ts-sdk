@@ -4,7 +4,7 @@ import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/mo
 import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
 import { getAccountAutoTransactionsInternal, getAccountCoinBalanceInternal, getAccountCoinsCountInternal, getAccountCoinTransactionsInternal, getAccountInfoInternal, getAccountModuleInternal, getAccountModulesInternal, getAccountResourceInternal, getAccountResourcesInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../internal/account";
 import { SUPRA_COIN_TYPE } from "../utils/constants";
-import { validateAddress, validatePaginationCount, validateStructId } from "../helper/validation";
+import { validateAddress, validateMoveIdentifier, validatePaginationCount, validateStructId } from "../helper/validation";
 
 
 /**
@@ -141,6 +141,7 @@ export class Account {
         moduleName: string;
     }): Promise<MoveModuleBytecode> {
         validateAddress(args.accountAddress, "accountAddress");
+        validateMoveIdentifier(args.moduleName, "moduleName");
         return getAccountModuleInternal(args, this.networkInformation);
     }
 

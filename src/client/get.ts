@@ -1,12 +1,18 @@
 import { type NetworkConfig } from "../utils/apiEndpoints";
-import { SupraAPIError } from "../errors/apiError";
+import { createSupraAPIError } from "../errors/apiError";
 import { parseJsonResponse } from "./parseResponse";
-import { DEFAULT_RPC_VERSION, DEFAULT_REQUEST_TIMEOUT_MS } from "../utils/constants";
+import { sendRequest } from "./request";
+import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RPC_VERSION } from "../utils/constants";
 
 export interface RequestParams {
     path: string;
     query?: Record<string, string | number | boolean | undefined>;
     data?: unknown;
+    /**
+     * Whether `get` may repeat the request under the client's retry policy (default true). A request that has an
+     * effect on the node, such as the faucet's, is sent once.
+     */
+    retryable?: boolean;
 }
 
 /**
@@ -27,16 +33,15 @@ export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVe
         }
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await sendRequest(url.toString(), {
         method: "GET",
         headers: {
             "Content-Type": "application/json",
         },
-        signal: AbortSignal.timeout(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS),
-    });
+    }, config, args.retryable ?? true);
 
     const cursor = response.headers.get("x-supra-cursor") ?? undefined;
-    const data = await parseJsonResponse(response, url.toString());
+    const data = await parseJsonResponse(response, url.toString(), config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
 
     if (response.ok) {
         return {
@@ -45,10 +50,10 @@ export async function get<Res>(args: RequestParams, config: NetworkConfig, rpcVe
         };
     }
 
-    throw new SupraAPIError({
+    throw createSupraAPIError({
         status: response.status,
         statusText: response.statusText,
         url: url.toString(),
         data,
-    });
+    }, response.headers.get("retry-after"));
 }

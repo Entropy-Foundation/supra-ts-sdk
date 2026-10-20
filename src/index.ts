@@ -32,9 +32,11 @@ export * from "./types/transactionManager/transactionBuild";
 export * from "./types/transactionManager/transactionSubmit";
 
 // errors
+export * from "./errors/supraError";
 export * from "./errors/apiError";
 export * from "./errors/faucetError";
 export * from "./errors/moveVmErrors";
+export { parseVmStatus, type ParsedVmStatus } from "./errors/vmStatus";
 
 //function 
 export { standardizeAddress } from './helper/account';

@@ -1,8 +1,9 @@
 import type { RequestParams } from "./get";
 import { type NetworkConfig } from "../utils/apiEndpoints";
-import { SupraAPIError } from "../errors/apiError";
+import { createSupraAPIError } from "../errors/apiError";
 import { parseJsonResponse } from "./parseResponse";
-import { DEFAULT_RPC_VERSION, DEFAULT_REQUEST_TIMEOUT_MS } from "../utils/constants";
+import { sendRequest } from "./request";
+import { DEFAULT_REQUEST_TIMEOUT_MS, DEFAULT_RPC_VERSION } from "../utils/constants";
 import { stringifyWithBigInt } from "../utils/json";
 
 /**
@@ -14,7 +15,7 @@ export async function post<Req extends object, Res>(args: RequestParams, config:
 
     const url = `${config.rpcUrl}/rpc/${rpcVersion}${args.path}`;
 
-    const response = await fetch(url, {
+    const response = await sendRequest(url, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -23,19 +24,18 @@ export async function post<Req extends object, Res>(args: RequestParams, config:
         // values as `bigint`, which must reach the wire exactly rather than being
         // rounded through a JavaScript `number`.
         body: args.data ? stringifyWithBigInt(args.data as Req) : null,
-        signal: AbortSignal.timeout(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS),
-    });
+    }, config, false);
 
-    const data = await parseJsonResponse(response, url);
+    const data = await parseJsonResponse(response, url, config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
 
     if (response.ok) {
         return data as Res;
     }
 
-    throw new SupraAPIError({
+    throw createSupraAPIError({
         status: response.status,
         statusText: response.statusText,
         url,
         data,
-    });
+    }, response.headers.get("retry-after"));
 }

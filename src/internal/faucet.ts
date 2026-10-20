@@ -22,6 +22,8 @@ export async function fundAccountWithFaucetInternal(
 
     const response = await get<unknown>({
         path: `/wallet/faucet/${standardizeAddress(args.accountAddress)}`,
+        // The faucet funds the account on every request that it serves, so a repeated request can fund it twice.
+        retryable: false,
     }, config);
 
     const body = response.data;
