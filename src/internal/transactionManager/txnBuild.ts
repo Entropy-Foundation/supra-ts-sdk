@@ -1,10 +1,29 @@
 import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import type { OptionalTransactionPayloadArgs, RawTxnJSON, SendTxnPayload, TransactionPayloadJSON } from "../../types/transactionManager/transactionBuild";
-import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
+import type {
+    OptionalTransactionPayloadArgs,
+    RawTxnJSON,
+    SendTxnPayload,
+    TransactionPayloadJSON,
+} from "../../types/transactionManager/transactionBuild";
+import {
+    DEFAULT_GAS_PRICE,
+    DEFAULT_MAX_GAS_UNITS,
+    DEFAULT_TX_EXPIRATION_DURATION,
+    MAX_TX_EXPIRATION_DURATION,
+    MILLISECONDS_PER_SECOND,
+    SUPRA_FRAMEWORK_ADDRESS,
+    TX_EXPIRATION_MARGIN_SECS,
+} from "../../utils/constants";
 import type { AccountAddressInput } from "../../types/account";
 import { addressToBytes } from "../../helper/account";
-import type { MoveFunctionId, MoveInnerAuthenticator, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
+import type {
+    MoveFunctionId,
+    MoveInnerAuthenticator,
+    MoveModule,
+    SimpleEntryFunctionArgumentTypes,
+    TypeArgument,
+} from "../../types/move";
 import { convertPayloadTypeArgsToMoveType, getFunctionParts, uint8ArrayToHexString } from "../../helper/general";
 import { signTransactionInternal } from "../transaction";
 import { fromUint8ArrayToJSArray, parseFunctionTypeArgs, parseScriptArgs } from "../../utils/functions";
@@ -13,28 +32,37 @@ import { getFunctionABI } from "../../helper/abi";
 import { DynamicTransactionSerializer } from "../../utils/serializer";
 import type { TransactionResponse } from "../../types/transaction";
 import { simulateSerializedTxnInternal, simulateTxnInternal } from "./txnSimulate";
-import { submitMultiAgentTransactionInternal, submitSerializedRawTransactionAndSignatureInternal, submitSerializedRawTransactionInternal, submitSponsorTransactionInternal } from "./txnSubmit";
-import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
+import {
+    submitMultiAgentTransactionInternal,
+    submitSerializedRawTransactionAndSignatureInternal,
+    submitSerializedRawTransactionInternal,
+    submitSponsorTransactionInternal,
+} from "./txnSubmit";
+import type {
+    EnableTransactionWaitAndSimulationArgs,
+    SubmitTransactionResponse,
+} from "../../types/transactionManager/transactionSubmit";
 import sha3 from "js-sha3";
 import { resolveMaxGasInternal } from "./maxGas";
-
+import type { SequenceNumberReservation } from "../sequenceNumber";
 
 /**
  * Generate the serialized payload for a transaction
  */
 export async function generateTransactionPayload(
     args: {
-        function: MoveFunctionId,
-        functionTypeArgs: Array<TypeArgument>,
-        functionArgs: Array<SimpleEntryFunctionArgumentTypes>,
-        abi?: MoveModule | undefined
+        function: MoveFunctionId;
+        functionTypeArgs: Array<TypeArgument>;
+        functionArgs: Array<SimpleEntryFunctionArgumentTypes>;
+        abi?: MoveModule | undefined;
     },
-    config: NetworkConfig
-): Promise<{ typeArguments: TxnBuilderTypes.TypeTag[], functionArguments: Uint8Array[] }> {
-
+    config: NetworkConfig,
+): Promise<{ typeArguments: TxnBuilderTypes.TypeTag[]; functionArguments: Uint8Array[] }> {
     let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
 
-    const abi = args.abi ?? (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
+    const abi =
+        args.abi ??
+        (await getAccountModuleInternal({ accountAddress: moduleAddress!, moduleName: moduleName! }, config)).abi!;
 
     let funcABI = await getFunctionABI(abi, moduleAddress!, moduleName!, functionName!);
 
@@ -42,7 +70,7 @@ export async function generateTransactionPayload(
     let serializedTypeArguments = convertPayloadTypeArgsToMoveType(funcABI, {
         function: args.function,
         typeArguments: args.functionTypeArgs,
-        functionArguments: args.functionArgs
+        functionArguments: args.functionArgs,
     });
 
     const serializer = new DynamicTransactionSerializer();
@@ -53,15 +81,12 @@ export async function generateTransactionPayload(
     const firstValueParam = funcABI.params.findIndex((param) => param !== "&signer" && param !== "signer");
     const paramTypes = funcABI.params.slice(firstValueParam === -1 ? funcABI.params.length : firstValueParam);
 
-    const serializedArguments = serializer.prepareTransactionArgs(
-        args.functionArgs,
-        paramTypes
-    );
+    const serializedArguments = serializer.prepareTransactionArgs(args.functionArgs, paramTypes);
 
     return {
         typeArguments: serializedTypeArguments ?? [],
         functionArguments: serializedArguments ?? [],
-    }
+    };
 }
 
 /**
@@ -69,36 +94,52 @@ export async function generateTransactionPayload(
  * call or the client, the max gas is resolved by `resolveMaxGasInternal`: estimated by simulation when
  * `senderAccount` is given, else `DEFAULT_MAX_GAS_UNITS` at most what the sender's balance pays for.
  */
-export async function simpleInternal(args: {
-    senderAddress: AccountAddressInput,
-    senderSequenceNumber: bigint,
-    function: MoveFunctionId,
-    functionTypeArgs: Array<TypeArgument>,
-    functionArgs: Array<SimpleEntryFunctionArgumentTypes>,
-    optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
-    abi?: MoveModule,
-    senderAccount?: SupraAccount,
-}, config: NetworkConfig): Promise<TxnBuilderTypes.RawTransaction> {
-    let { functionArguments, typeArguments } = await generateTransactionPayload({
-        function: args.function,
-        functionTypeArgs: args.functionTypeArgs,
-        functionArgs: args.functionArgs,
-        abi: args.abi
-    }, config);
-
-    return await buildWithResolvedMaxGasInternal({
-        senderAddress: args.senderAddress,
-        senderAccount: args.senderAccount,
-        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs,
-        buildRawTxn: (optionalTransactionPayloadArgs) => rawTxnObjectInternal({
-            senderAddress: args.senderAddress,
-            senderSequenceNumber: args.senderSequenceNumber,
+export async function simpleInternal(
+    args: {
+        senderAddress: AccountAddressInput;
+        senderSequenceNumber: bigint;
+        function: MoveFunctionId;
+        functionTypeArgs: Array<TypeArgument>;
+        functionArgs: Array<SimpleEntryFunctionArgumentTypes>;
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
+        abi?: MoveModule;
+        senderAccount?: SupraAccount;
+        /** The reservation of `senderSequenceNumber`, when the number came from the client's counter. */
+        reservation?: SequenceNumberReservation | undefined;
+    },
+    config: NetworkConfig,
+): Promise<TxnBuilderTypes.RawTransaction> {
+    let { functionArguments, typeArguments } = await generateTransactionPayload(
+        {
             function: args.function,
-            functionTypeArgs: typeArguments as TxnBuilderTypes.TypeTag[],
-            functionArgs: functionArguments,
-            optionalTransactionPayloadArgs,
-        }, config),
-    }, config);
+            functionTypeArgs: args.functionTypeArgs,
+            functionArgs: args.functionArgs,
+            abi: args.abi,
+        },
+        config,
+    );
+
+    return await buildWithResolvedMaxGasInternal(
+        {
+            senderAddress: args.senderAddress,
+            senderAccount: args.senderAccount,
+            reservation: args.reservation,
+            optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs,
+            buildRawTxn: (optionalTransactionPayloadArgs) =>
+                rawTxnObjectInternal(
+                    {
+                        senderAddress: args.senderAddress,
+                        senderSequenceNumber: args.senderSequenceNumber,
+                        function: args.function,
+                        functionTypeArgs: typeArguments as TxnBuilderTypes.TypeTag[],
+                        functionArgs: functionArguments,
+                        optionalTransactionPayloadArgs,
+                    },
+                    config,
+                ),
+        },
+        config,
+    );
 }
 
 /**
@@ -107,31 +148,78 @@ export async function simpleInternal(args: {
  */
 export async function buildWithResolvedMaxGasInternal(
     args: {
-        senderAddress: AccountAddressInput,
-        senderAccount?: SupraAccount | undefined,
-        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs | undefined,
-        buildRawTxn: (optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction,
+        senderAddress: AccountAddressInput;
+        senderAccount?: SupraAccount | undefined;
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs | undefined;
+        buildRawTxn: (optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction;
+        /** The reservation of the transaction's sequence number, when the number came from the client's counter. */
+        reservation?: SequenceNumberReservation | undefined;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<TxnBuilderTypes.RawTransaction> {
     const options = args.optionalTransactionPayloadArgs ?? {};
-    const maxGas = await resolveMaxGasInternal({
-        senderAddress: args.senderAddress,
-        senderAccount: args.senderAccount,
-        optionalTransactionPayloadArgs: options,
-        buildRawTxn: (candidate) => args.buildRawTxn({ ...options, maxGas: candidate }),
-    }, config);
-    return args.buildRawTxn({ ...options, maxGas });
+    const resolved = await resolveMaxGasInternal(
+        {
+            senderAddress: args.senderAddress,
+            senderAccount: args.senderAccount,
+            reservation: args.reservation,
+            optionalTransactionPayloadArgs: options,
+            buildRawTxn: (candidate) => args.buildRawTxn({ ...options, maxGas: candidate }),
+        },
+        config,
+    );
+    const rawTxn = args.buildRawTxn({ ...options, maxGas: resolved.maxGas });
+    // The estimate gave the reservation a lower number that has no submission of this client.
+    return resolved.sequenceNumber === undefined ? rawTxn : withSequenceNumber(rawTxn, resolved.sequenceNumber);
+}
+
+/** `rawTxn` with another sequence number and the same sender, payload, max gas, gas unit price, expiry and chain ID. */
+export function withSequenceNumber(
+    rawTxn: TxnBuilderTypes.RawTransaction,
+    sequenceNumber: bigint,
+): TxnBuilderTypes.RawTransaction {
+    return new TxnBuilderTypes.RawTransaction(
+        rawTxn.sender,
+        sequenceNumber,
+        rawTxn.payload,
+        rawTxn.max_gas_amount,
+        rawTxn.gas_unit_price,
+        rawTxn.expiration_timestamp_secs,
+        rawTxn.chain_id,
+    );
+}
+
+/** Returns `value` when it is an integer from 1 to `MAX_TX_EXPIRATION_DURATION`, and throws a `RangeError` otherwise. */
+export function validateTxExpirySecs(value: number): number {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > MAX_TX_EXPIRATION_DURATION) {
+        throw new RangeError(
+            `txExpirySecs must be an integer from 1 to ${MAX_TX_EXPIRATION_DURATION}, got ${String(value)}`,
+        );
+    }
+    return value;
+}
+
+/**
+ * The expiration time of a transaction built without `txExpiryTime`: `SupraConfig.txExpirySecs` (default
+ * `DEFAULT_TX_EXPIRATION_DURATION`) seconds after the client's clock in whole seconds (rounded down), at most
+ * `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS` seconds after it.
+ */
+export function defaultTxExpiryTime(config: NetworkConfig): bigint {
+    const secs = Math.min(
+        config.txExpirySecs ?? DEFAULT_TX_EXPIRATION_DURATION,
+        MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS,
+    );
+    return BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + secs);
 }
 
 export function rawTxnObjectInnerInternal(
     args: {
-        senderAddress: AccountAddressInput,
-        senderSequenceNumber: bigint,
-        payload: TxnBuilderTypes.TransactionPayload,
-        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+        senderAddress: AccountAddressInput;
+        senderSequenceNumber: bigint;
+        payload: TxnBuilderTypes.TransactionPayload;
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
     return new TxnBuilderTypes.RawTransaction(
         new TxnBuilderTypes.AccountAddress(addressToBytes(args.senderAddress)),
@@ -142,52 +230,46 @@ export function rawTxnObjectInnerInternal(
         // Without a `gasUnitPrice` on the call, the price is `SupraConfig.minGasUnitPrice` (`DEFAULT_GAS_PRICE` when
         // the client sets none); the node's current minimum is not read.
         args.optionalTransactionPayloadArgs?.gasUnitPrice ?? config.minGasUnitPrice ?? DEFAULT_GAS_PRICE,
-        args.optionalTransactionPayloadArgs?.txExpiryTime ??
-        BigInt(
-            Math.ceil(Date.now() / MILLISECONDS_PER_SECOND) +
-            DEFAULT_TX_EXPIRATION_DURATION,
-        ),
+        args.optionalTransactionPayloadArgs?.txExpiryTime ?? defaultTxExpiryTime(config),
         new TxnBuilderTypes.ChainId(config.chainId),
     );
 }
 
-
 export function rawTxnObjectInternal(
     args: {
-        senderAddress: AccountAddressInput,
-        senderSequenceNumber: bigint,
-        function: MoveFunctionId,
-        functionTypeArgs: TxnBuilderTypes.TypeTag[],
-        functionArgs: Uint8Array[],
-        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+        senderAddress: AccountAddressInput;
+        senderSequenceNumber: bigint;
+        function: MoveFunctionId;
+        functionTypeArgs: TxnBuilderTypes.TypeTag[];
+        functionArgs: Uint8Array[];
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
-
     let payload = new TxnBuilderTypes.TransactionPayloadEntryFunction(
         buildEntryFunctionInternal({
             function: args.function,
             functionTypeArgs: args.functionTypeArgs,
-            functionArgs: args.functionArgs
-        })
+            functionArgs: args.functionArgs,
+        }),
     );
 
-    return rawTxnObjectInnerInternal({
-        senderAddress: args.senderAddress,
-        senderSequenceNumber: args.senderSequenceNumber,
-        payload: payload,
-        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-    }, config);
+    return rawTxnObjectInnerInternal(
+        {
+            senderAddress: args.senderAddress,
+            senderSequenceNumber: args.senderSequenceNumber,
+            payload: payload,
+            optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+        },
+        config,
+    );
 }
 
-
-export function buildEntryFunctionInternal(
-    args: {
-        function: MoveFunctionId,
-        functionTypeArgs: TxnBuilderTypes.TypeTag[],
-        functionArgs: Uint8Array[],
-    }
-): TxnBuilderTypes.EntryFunction {
+export function buildEntryFunctionInternal(args: {
+    function: MoveFunctionId;
+    functionTypeArgs: TxnBuilderTypes.TypeTag[];
+    functionArgs: Uint8Array[];
+}): TxnBuilderTypes.EntryFunction {
     let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
     return new TxnBuilderTypes.EntryFunction(
         new TxnBuilderTypes.ModuleId(
@@ -200,26 +282,22 @@ export function buildEntryFunctionInternal(
     );
 }
 
-
 export async function signedTransactionInternal(
     args: {
-        senderAccount: SupraAccount,
-        rawTxn: TxnBuilderTypes.RawTransaction,
+        senderAccount: SupraAccount;
+        rawTxn: TxnBuilderTypes.RawTransaction;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<TxnBuilderTypes.SignedTransaction> {
     const signature = await signTransactionInternal({ senderAccount: args.senderAccount, rawTxn: args.rawTxn }, config);
     return new TxnBuilderTypes.SignedTransaction(
         args.rawTxn,
         new TxnBuilderTypes.AccountAuthenticatorEd25519(
-            new TxnBuilderTypes.Ed25519PublicKey(
-                args.senderAccount.pubKey().toUint8Array(),
-            ),
+            new TxnBuilderTypes.Ed25519PublicKey(args.senderAccount.pubKey().toUint8Array()),
             new TxnBuilderTypes.Ed25519Signature(signature.toUint8Array()),
         ),
     );
 }
-
 
 export function getTransactionPayloadJSONInternal(
     txPayload: TxnBuilderTypes.TransactionPayload,
@@ -228,9 +306,7 @@ export function getTransactionPayloadJSONInternal(
         return {
             EntryFunction: {
                 module: {
-                    address: txPayload.value.module_name.address
-                        .toHexString()
-                        .toString(),
+                    address: txPayload.value.module_name.address.toHexString().toString(),
                     name: txPayload.value.module_name.name.value,
                 },
                 function: txPayload.value.function_name.value,
@@ -246,41 +322,26 @@ export function getTransactionPayloadJSONInternal(
                 args: parseScriptArgs(txPayload.value.args),
             },
         };
-    } else if (
-        txPayload instanceof
-        TxnBuilderTypes.TransactionPayloadAutomationRegistration
-    ) {
-        if (
-            txPayload.value instanceof
-            TxnBuilderTypes.AutomationRegistrationParamsV1
-        ) {
+    } else if (txPayload instanceof TxnBuilderTypes.TransactionPayloadAutomationRegistration) {
+        if (txPayload.value instanceof TxnBuilderTypes.AutomationRegistrationParamsV1) {
             return {
                 AutomationRegistration: {
                     V1: {
                         automated_function: {
                             module: {
-                                address:
-                                    txPayload.value.value.automated_function.module_name.address
-                                        .toHexString()
-                                        .toString(),
-                                name: txPayload.value.value.automated_function.module_name
-                                    .name.value,
+                                address: txPayload.value.value.automated_function.module_name.address
+                                    .toHexString()
+                                    .toString(),
+                                name: txPayload.value.value.automated_function.module_name.name.value,
                             },
-                            function:
-                                txPayload.value.value.automated_function.function_name.value,
-                            ty_args: parseFunctionTypeArgs(
-                                txPayload.value.value.automated_function.ty_args,
-                            ),
-                            args: fromUint8ArrayToJSArray(
-                                txPayload.value.value.automated_function.args,
-                            ),
+                            function: txPayload.value.value.automated_function.function_name.value,
+                            ty_args: parseFunctionTypeArgs(txPayload.value.value.automated_function.ty_args),
+                            args: fromUint8ArrayToJSArray(txPayload.value.value.automated_function.args),
                         },
                         max_gas_amount: txPayload.value.value.max_gas_amount,
                         gas_price_cap: txPayload.value.value.gas_price_cap,
-                        automation_fee_cap_for_epoch:
-                            txPayload.value.value.automation_fee_cap_for_epoch,
-                        expiration_timestamp_secs:
-                            txPayload.value.value.expiration_timestamp_secs,
+                        automation_fee_cap_for_epoch: txPayload.value.value.automation_fee_cap_for_epoch,
+                        expiration_timestamp_secs: txPayload.value.value.expiration_timestamp_secs,
                         aux_data: fromUint8ArrayToJSArray(txPayload.value.value.aux_data),
                     },
                 },
@@ -288,12 +349,8 @@ export function getTransactionPayloadJSONInternal(
         } else {
             throw new Error("Unknown variant of `AutomationRegistrationParams`");
         }
-    } else if (
-        txPayload instanceof TxnBuilderTypes.TransactionPayloadMultisig
-    ) {
-        let multisig_address = txPayload.value.multisig_address
-            .toHexString()
-            .toString();
+    } else if (txPayload instanceof TxnBuilderTypes.TransactionPayloadMultisig) {
+        let multisig_address = txPayload.value.multisig_address.toHexString().toString();
         let payload = txPayload.value.transaction_payload?.transaction_payload;
 
         if (!payload) {
@@ -321,7 +378,6 @@ export function getTransactionPayloadJSONInternal(
     }
 }
 
-
 /**
  * The `u64` fields are passed through as `bigint` rather than coerced with
  * `Number()`. `post` serializes them to exact JSON number literals, so the body
@@ -341,19 +397,20 @@ export function getRawTxnJSONInternal(rawTxn: TxnBuilderTypes.RawTransaction): R
     };
 }
 
-
 export async function sendTxnPayloadInternal(
     args: {
-        senderAccount: SupraAccount,
-        rawTxn: TxnBuilderTypes.RawTransaction,
+        senderAccount: SupraAccount;
+        rawTxn: TxnBuilderTypes.RawTransaction;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SendTxnPayload> {
-    let signature = await signTransactionInternal({
-        senderAccount: args.senderAccount,
-        rawTxn: args.rawTxn
-    }, config);
-
+    let signature = await signTransactionInternal(
+        {
+            senderAccount: args.senderAccount,
+            rawTxn: args.rawTxn,
+        },
+        config,
+    );
 
     return {
         Move: {
@@ -370,53 +427,53 @@ export async function sendTxnPayloadInternal(
 
 export function scriptRawTxnObjectInternal(
     args: {
-        senderAddress: AccountAddressInput,
-        senderSequenceNumber: bigint,
-        scriptCode: Uint8Array,
-        scriptTypeArgs: TxnBuilderTypes.TypeTag[],
-        scriptArgs: TxnBuilderTypes.TransactionArgument[],
-        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+        senderAddress: AccountAddressInput;
+        senderSequenceNumber: bigint;
+        scriptCode: Uint8Array;
+        scriptTypeArgs: TxnBuilderTypes.TypeTag[];
+        scriptArgs: TxnBuilderTypes.TransactionArgument[];
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
     let payload = new TxnBuilderTypes.TransactionPayloadScript(
         new TxnBuilderTypes.Script(args.scriptCode, args.scriptTypeArgs, args.scriptArgs),
     );
 
-    return rawTxnObjectInnerInternal({
-        senderAddress: args.senderAddress,
-        senderSequenceNumber: args.senderSequenceNumber,
-        payload: payload,
-        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-    }, config);
-
+    return rawTxnObjectInnerInternal(
+        {
+            senderAddress: args.senderAddress,
+            senderSequenceNumber: args.senderSequenceNumber,
+            payload: payload,
+            optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+        },
+        config,
+    );
 }
-
 
 export function automationRegistrationRawTxnObjectInternal(
     args: {
-        senderAddress: AccountAddressInput,
-        senderSequenceNumber: bigint,
-        function: MoveFunctionId,
-        functionTypeArgs: TxnBuilderTypes.TypeTag[],
-        functionArgs: Uint8Array[],
-        automationMaxGasAmount: bigint,
-        automationGasPriceCap: bigint,
-        automationFeeCapForEpoch: bigint,
-        automationExpirationTimestampSecs: bigint,
-        automationAuxData: Uint8Array[],
-        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+        senderAddress: AccountAddressInput;
+        senderSequenceNumber: bigint;
+        function: MoveFunctionId;
+        functionTypeArgs: TxnBuilderTypes.TypeTag[];
+        functionArgs: Uint8Array[];
+        automationMaxGasAmount: bigint;
+        automationGasPriceCap: bigint;
+        automationFeeCapForEpoch: bigint;
+        automationExpirationTimestampSecs: bigint;
+        automationAuxData: Uint8Array[];
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
-
     let payload = new TxnBuilderTypes.TransactionPayloadAutomationRegistration(
         new TxnBuilderTypes.AutomationRegistrationParamsV1(
             new TxnBuilderTypes.AutomationRegistrationParamsV1Data(
                 buildEntryFunctionInternal({
                     function: args.function,
                     functionTypeArgs: args.functionTypeArgs,
-                    functionArgs: args.functionArgs
+                    functionArgs: args.functionArgs,
                 }),
                 args.automationMaxGasAmount,
                 args.automationGasPriceCap,
@@ -426,27 +483,28 @@ export function automationRegistrationRawTxnObjectInternal(
             ),
         ),
     );
-    return rawTxnObjectInnerInternal({
-        senderAddress: args.senderAddress,
-        senderSequenceNumber: args.senderSequenceNumber,
-        payload: payload,
-        optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-    }, config);
-
+    return rawTxnObjectInnerInternal(
+        {
+            senderAddress: args.senderAddress,
+            senderSequenceNumber: args.senderSequenceNumber,
+            payload: payload,
+            optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
+        },
+        config,
+    );
 }
-
 
 export function multisigRawTxnObjectInternal(
     args: {
-        senderAddress: AccountAddressInput,
-        senderSequenceNumber: bigint,
-        multisigAddress: AccountAddressInput,
-        function: MoveFunctionId,
-        functionTypeArgs: TxnBuilderTypes.TypeTag[],
-        functionArgs: Uint8Array[],
-        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+        senderAddress: AccountAddressInput;
+        senderSequenceNumber: bigint;
+        multisigAddress: AccountAddressInput;
+        function: MoveFunctionId;
+        functionTypeArgs: TxnBuilderTypes.TypeTag[];
+        functionArgs: Uint8Array[];
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
     let payload = new TxnBuilderTypes.TransactionPayloadMultisig(
         new TxnBuilderTypes.MultiSig(
@@ -455,8 +513,8 @@ export function multisigRawTxnObjectInternal(
                 buildEntryFunctionInternal({
                     function: args.function,
                     functionTypeArgs: args.functionTypeArgs,
-                    functionArgs: args.functionArgs
-                })
+                    functionArgs: args.functionArgs,
+                }),
             ),
         ),
     );
@@ -466,33 +524,31 @@ export function multisigRawTxnObjectInternal(
             senderSequenceNumber: args.senderSequenceNumber,
             payload: payload,
             optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-        }, config);
-
+        },
+        config,
+    );
 }
-
 
 export function multisigProposalTxRawTxnObjectInternal(
     args: {
-        senderAddress: AccountAddressInput,
-        senderSequenceNumber: bigint,
-        multisigAddress: AccountAddressInput,
-        function: MoveFunctionId,
-        functionTypeArgs: TxnBuilderTypes.TypeTag[],
-        functionArgs: Uint8Array[],
-        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs,
+        senderAddress: AccountAddressInput;
+        senderSequenceNumber: bigint;
+        multisigAddress: AccountAddressInput;
+        function: MoveFunctionId;
+        functionTypeArgs: TxnBuilderTypes.TypeTag[];
+        functionArgs: Uint8Array[];
+        optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
     let multisigPayload = new TxnBuilderTypes.MultiSigTransactionPayload(
         buildEntryFunctionInternal({
             function: args.function,
             functionTypeArgs: args.functionTypeArgs,
-            functionArgs: args.functionArgs
-        })
+            functionArgs: args.functionArgs,
+        }),
     );
-    let multisigPayloadHash = new HexString(
-        sha3.sha3_256(BCS.bcsToBytes(multisigPayload)),
-    );
+    let multisigPayloadHash = new HexString(sha3.sha3_256(BCS.bcsToBytes(multisigPayload)));
 
     return rawTxnObjectInternal(
         {
@@ -505,10 +561,10 @@ export function multisigProposalTxRawTxnObjectInternal(
                 BCS.bcsSerializeBytes(multisigPayloadHash.toUint8Array()),
             ],
             optionalTransactionPayloadArgs: args.optionalTransactionPayloadArgs ?? {},
-        }, config
+        },
+        config,
     );
 }
-
 
 export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     constructor(
@@ -542,10 +598,13 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * node's (see `SupraConfig.verifyChainId`)
      */
     signedTransaction(senderAccount: SupraAccount): Promise<TxnBuilderTypes.SignedTransaction> {
-        return signedTransactionInternal({
-            senderAccount,
-            rawTxn: this
-        }, this.config)
+        return signedTransactionInternal(
+            {
+                senderAccount,
+                rawTxn: this,
+            },
+            this.config,
+        );
     }
 
     /**
@@ -556,10 +615,13 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * node's (see `SupraConfig.verifyChainId`)
      */
     sendTxnPayload(senderAccount: SupraAccount): Promise<SendTxnPayload> {
-        return sendTxnPayloadInternal({
-            senderAccount,
-            rawTxn: this
-        }, this.config)
+        return sendTxnPayloadInternal(
+            {
+                senderAccount,
+                rawTxn: this,
+            },
+            this.config,
+        );
     }
 
     /**
@@ -571,21 +633,28 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * chain ID is not the node's (see `SupraConfig.verifyChainId`)
      */
     async simulate(senderAccountOrAuthenticator: SupraAccount | MoveInnerAuthenticator): Promise<TransactionResponse> {
-
         if (senderAccountOrAuthenticator instanceof SupraAccount) {
-            return simulateTxnInternal({
-                sendTxPayload: await sendTxnPayloadInternal({
-                    senderAccount: senderAccountOrAuthenticator,
-                    rawTxn: this
-                }, this.config)
-            }, this.config)
+            return simulateTxnInternal(
+                {
+                    sendTxPayload: await sendTxnPayloadInternal(
+                        {
+                            senderAccount: senderAccountOrAuthenticator,
+                            rawTxn: this,
+                        },
+                        this.config,
+                    ),
+                },
+                this.config,
+            );
         }
 
-        return simulateSerializedTxnInternal({
-            txAuthenticator: senderAccountOrAuthenticator,
-            serializedRawTransaction: BCS.bcsToBytes(this)
-        }, this.config)
-
+        return simulateSerializedTxnInternal(
+            {
+                txAuthenticator: senderAccountOrAuthenticator,
+                serializedRawTransaction: BCS.bcsToBytes(this),
+            },
+            this.config,
+        );
     }
 
     /**
@@ -596,14 +665,17 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * node's (see `SupraConfig.verifyChainId`)
      */
     submitTransaction(args: {
-        senderAccount: SupraAccount,
-        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        senderAccount: SupraAccount;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
     }): Promise<SubmitTransactionResponse> {
-        return submitSerializedRawTransactionInternal({
-            senderAccount: args.senderAccount,
-            serializedRawTransaction: BCS.bcsToBytes(this),
-            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
-        }, this.config)
+        return submitSerializedRawTransactionInternal(
+            {
+                senderAccount: args.senderAccount,
+                serializedRawTransaction: BCS.bcsToBytes(this),
+                enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
+            },
+            this.config,
+        );
     }
 
     /**
@@ -613,16 +685,19 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      */
     submitTransactionAndSignature(args: {
-        senderPubkey: HexString,
-        signature: HexString,
-        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        senderPubkey: HexString;
+        signature: HexString;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
     }): Promise<SubmitTransactionResponse> {
-        return submitSerializedRawTransactionAndSignatureInternal({
-            serializedRawTransaction: BCS.bcsToBytes(this),
-            senderPubkey: args.senderPubkey,
-            signature: args.signature,
-            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
-        }, this.config)
+        return submitSerializedRawTransactionAndSignatureInternal(
+            {
+                serializedRawTransaction: BCS.bcsToBytes(this),
+                senderPubkey: args.senderPubkey,
+                signature: args.signature,
+                enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
+            },
+            this.config,
+        );
     }
 
     /**
@@ -634,25 +709,26 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      */
-    submitSponsorTransaction(
-        args: {
-            feePayerAddress: AccountAddressInput,
-            secondarySignersAccountAddress: Array<string>,
-            senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-            feePayerAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-            secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
-            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
-        return submitSponsorTransactionInternal({
-            feePayerAddress: args.feePayerAddress,
-            secondarySignersAccountAddress: args.secondarySignersAccountAddress,
-            senderAuthenticator: args.senderAuthenticator,
-            feePayerAuthenticator: args.feePayerAuthenticator,
-            secondarySignersAuthenticator: args.secondarySignersAuthenticator,
-            rawTxn: this,
-            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
-        }, this.config)
+    submitSponsorTransaction(args: {
+        feePayerAddress: AccountAddressInput;
+        secondarySignersAccountAddress: Array<string>;
+        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        feePayerAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+    }): Promise<SubmitTransactionResponse> {
+        return submitSponsorTransactionInternal(
+            {
+                feePayerAddress: args.feePayerAddress,
+                secondarySignersAccountAddress: args.secondarySignersAccountAddress,
+                senderAuthenticator: args.senderAuthenticator,
+                feePayerAuthenticator: args.feePayerAuthenticator,
+                secondarySignersAuthenticator: args.secondarySignersAuthenticator,
+                rawTxn: this,
+                enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
+            },
+            this.config,
+        );
     }
 
     /**
@@ -662,21 +738,22 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.secondarySignersAuthenticator - Secondary signers authenticator
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      */
-    submitMultiAgentTransaction(
-        args: {
-            secondarySignersAccountAddress: Array<string>,
-            senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-            secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
-            enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
-        return submitMultiAgentTransactionInternal({
-            secondarySignersAccountAddress: args.secondarySignersAccountAddress,
-            senderAuthenticator: args.senderAuthenticator,
-            secondarySignersAuthenticator: args.secondarySignersAuthenticator,
-            rawTxn: this,
-            enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {}
-        }, this.config)
+    submitMultiAgentTransaction(args: {
+        secondarySignersAccountAddress: Array<string>;
+        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+    }): Promise<SubmitTransactionResponse> {
+        return submitMultiAgentTransactionInternal(
+            {
+                secondarySignersAccountAddress: args.secondarySignersAccountAddress,
+                senderAuthenticator: args.senderAuthenticator,
+                secondarySignersAuthenticator: args.secondarySignersAuthenticator,
+                rawTxn: this,
+                enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
+            },
+            this.config,
+        );
     }
 
     /**
@@ -687,14 +764,20 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * node's (see `SupraConfig.verifyChainId`)
      */
     signTransaction(senderAccount: SupraAccount): Promise<HexString> {
-        return signTransactionInternal({
-            senderAccount: senderAccount,
-            rawTxn: this
-        }, this.config)
+        return signTransactionInternal(
+            {
+                senderAccount: senderAccount,
+                rawTxn: this,
+            },
+            this.config,
+        );
     }
 }
 
-export function extendedRawTransaction(args: { rawTxn: TxnBuilderTypes.RawTransaction }, config: NetworkConfig): ExtendedRawTransaction {
+export function extendedRawTransaction(
+    args: { rawTxn: TxnBuilderTypes.RawTransaction },
+    config: NetworkConfig,
+): ExtendedRawTransaction {
     return new ExtendedRawTransaction(
         config,
         args.rawTxn.sender,
@@ -704,5 +787,5 @@ export function extendedRawTransaction(args: { rawTxn: TxnBuilderTypes.RawTransa
         args.rawTxn.gas_unit_price,
         args.rawTxn.expiration_timestamp_secs,
         args.rawTxn.chain_id,
-    )
+    );
 }

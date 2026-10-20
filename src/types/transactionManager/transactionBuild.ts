@@ -7,8 +7,10 @@ import type { MoveInnerAuthenticator } from "../move";
  * - `maxGas`: max gas of the transaction, in gas units. When absent, the client's `maxGas` applies; when that is absent
  *   too, the max gas is estimated (see `estimateMaxGas`).
  * - `gasUnitPrice`: gas unit price, in quants. Default the client's `minGasUnitPrice`, else `DEFAULT_GAS_PRICE`.
- * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch. Default 300 seconds after the
- *   transaction is built.
+ * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
+ *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole
+ *   seconds when the transaction is built, at most 595 seconds after it (`MAX_TX_EXPIRATION_DURATION -
+ *   TX_EXPIRATION_MARGIN_SECS`).
  * - `estimateMaxGas`: when no `maxGas` is set, estimate it (`true`) or use `DEFAULT_MAX_GAS_UNITS` (`false`). Default
  *   the client's `estimateMaxGas`, else `true`.
  *
@@ -27,10 +29,19 @@ import type { MoveInnerAuthenticator } from "../move";
  *   balance pays for when that is known.
  *
  * The simulation runs against committed state. When an earlier transaction of the sender has not committed, the
- * simulation reports the sequence number as too new; the transaction is then simulated with the sender's sequence
- * number on the chain, and submitted with its own. A transaction that depends on an earlier one that has not committed
- * (for example one that uses a resource the earlier one creates) fails its estimate and throws
- * `SupraSimulationFailedError`; set `maxGas` for such a transaction.
+ * simulation reports the sequence number as too new, and the account and the latest block are read. When every number
+ * from the sender's sequence number on the chain up to the transaction's has a record of a transaction this client
+ * submitted that can still commit (see `SupraConfig`), the transaction is simulated with the chain's number and
+ * submitted with its own. Otherwise a helper that took the number from the client's counter builds and signs the
+ * transaction again with the lowest number that has no record, without giving up its place in the order of the
+ * calls, and a call with an explicit `sequenceNumber` throws the `SupraSimulationFailedError`. A failed read of the
+ * account is thrown and nothing is submitted. A transaction that depends on an
+ * earlier one that has not committed (for example one that uses a resource the earlier one creates) fails its estimate
+ * and throws `SupraSimulationFailedError`; set `maxGas` for such a transaction.
+ *
+ * A helper call without `maxGas` holds the sender's account while its max gas is estimated, and the calls of the same
+ * client from that account wait; a call with `maxGas` waits only until the calls ahead of it have been submitted or
+ * have failed (see `SupraConfig`).
  *
  * `transaction.build.simple` has no signing account to simulate with: its max gas is `DEFAULT_MAX_GAS_UNITS`, at most
  * the number of gas units the sender's balance pays for. The builders that make no request (`rawTxnObject`,
@@ -48,13 +59,13 @@ export interface OptionalTransactionPayloadArgs {
      * The sequence number of the transaction. Used by the helpers that build and submit the transaction
      * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
      * `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI`). When it is set,
-     * the helper uses it as given and does not use or change the client's counter. When it is absent, the helper takes
-     * the next number of the client's counter. The builders of `transaction.build` take `senderSequenceNumber` and
-     * ignore this field.
+     * the helper uses it as given and does not wait for the other calls of the account; the client's counter records
+     * the submitted transaction like its own and does not hand out its number while the transaction can commit. When
+     * it is absent, the helper takes the next number of the client's counter. The builders of `transaction.build`
+     * take `senderSequenceNumber` and ignore this field.
      */
     sequenceNumber?: bigint | number;
 }
-
 
 export interface SendTxnPayload {
     Move: {
@@ -62,7 +73,6 @@ export interface SendTxnPayload {
         authenticator: MoveInnerAuthenticator;
     };
 }
-
 
 /**
  * JSON form of a raw transaction, as sent to the submit and simulate endpoints.
@@ -82,13 +92,11 @@ export interface RawTxnJSON {
     chain_id: number;
 }
 
-
 export type TransactionPayloadJSON =
     | EntryFunctionPayloadJSON
     | ScriptPayloadJSON
     | AutomationRegistrationPayloadJSON
     | MultisigPayloadJSON;
-
 
 export interface EntryFunctionPayloadJSON {
     EntryFunction: EntryFunctionJSON;
@@ -153,7 +161,6 @@ export type ScriptArgumentJson =
     | { U8Vector: Array<number> }
     | { Bool: boolean };
 
-
 export interface AutomationRegistrationPayloadJSON {
     AutomationRegistration: AutomationRegistrationParamV1JSON;
 }
@@ -169,5 +176,3 @@ export interface AutomationRegistrationParamV1JSON {
         aux_data: Array<Array<number>>;
     };
 }
-
-

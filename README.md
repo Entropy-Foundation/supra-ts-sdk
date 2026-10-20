@@ -247,6 +247,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraGoneError` (extends `SupraAPIError`) | HTTP 410: the node has pruned the data | |
 | `SupraRateLimitError` (extends `SupraAPIError`) | HTTP 429 | `retryAfterSeconds` |
 | `SupraServiceUnavailableError` (extends `SupraAPIError`) | HTTP 503 | |
+| `SupraAccountQueueFullError` (extends `SupraAPIError`) | HTTP 400 for a submission beyond the sequence numbers the node queues for the account | `sequenceNumber` |
 | `SupraTimeoutError` | a request exceeds the timeout | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers | `url`, `cause` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
@@ -320,7 +321,9 @@ Every submit helper (`transaction.submit.*`, the submit methods of a built trans
 transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handles the outcome the same way:
 
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws
-  `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too.
+  `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too. Behind pending transactions of the
+  same client, the simulation uses the account's sequence number on the chain, as the max gas estimate does, and a
+  failed read of the account during that check is thrown (see [Sequence numbers](#sequence-numbers)).
 - With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed
   and failed, for example a Move abort or `Out of gas`) and `Invalid` (discarded) throw `SupraTransactionFailedError`,
   unless `checkSuccess: false` is passed. `Pending` and `PendingAfterExecution` are not final, and neither is a 404
@@ -373,38 +376,95 @@ account's next number. `transferSupraCoin`, `transferCoin`, `transferSupraFungib
 `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the number from a
 counter that the `SupraClient` keeps for each account:
 
-- The first use reads the account's sequence number from the chain. Each transaction the node accepts advances the
-  counter, so transactions sent without waiting for the previous one to commit get consecutive numbers, also when they
-  are sent concurrently (`Promise.all`).
-- A transaction the node refuses for another reason (for example an insufficient balance) gives its number back.
-- When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or a refusal of a
-  number beyond what it queues for the account, or a number that already has a pending transaction), the client reads the number from the chain again and the helper sends
-  the transaction once more. A second refusal is thrown. A transaction with an explicit number is not retried.
-- `supra.resetSequenceNumber(address)` forgets the counter of an account. Call it after the account has sent
-  transactions by other means, or after a `SupraTransactionTimeoutError` for a transaction that will not commit.
-- `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given, without using or
-  changing the counter. The builders of `supra.transaction.build` always take the number as `senderSequenceNumber`.
+- The counter records every transaction the client submits: those the node accepted, and those whose submission
+  request failed without an answer (a timeout, a lost connection, a 5xx other than 503), which the node may have
+  accepted. Each record keeps the transaction's expiration time. A transaction the node accepted either commits or, once
+  the timestamp of the latest block has reached its expiration time, can no longer commit.
+- A record is dropped when the account's sequence number on the chain passes it, when the timestamp of a latest block
+  the client reads (`GET /rpc/v3/block`) has reached its expiration time, or when a read of the transaction through
+  the client returns `Invalid`. Reads of a block by height or by hash do not drop records. An HTTP 404 does not drop a
+  record: an RPC node answers 404 for a pending transaction that another RPC node behind the same URL received.
+- A submission whose outcome is unknown holds its number until its expiration time or `resetSequenceNumber`, including
+  when its expiration time was beyond what a node accepts.
+- The number handed out is the lowest number at or above the account's sequence number on the chain that has no
+  record. So transactions sent without waiting for the previous one to commit get consecutive numbers, also when they
+  are sent concurrently (`Promise.all`), and a number whose transaction can no longer commit is used again.
+- The first use reads the account and the latest block (two requests). So does the next call after a refusal for a
+  stale number or a full queue, and every call while the client's estimate of the chain's time has passed the
+  expiration time of a record by two seconds and no latest block read has reached it (a call makes at most one such
+  read). The estimate is the newest latest block's timestamp read plus the time elapsed since that read, measured with
+  a monotonic clock, so it does not depend on the client's wall clock and does not move backwards when a read returns
+  an older block. Before any latest block has been read it is the client's wall clock. A read updates
+  the chain's number and time and drops the records they show dead; it keeps the others.
+- A transaction that fails before the node accepts it (its estimate or signing throws, or the node refuses it for
+  another reason, for example an insufficient balance) has no record, and the next call uses its number.
+- When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the
+  account's, or a number that already has a pending transaction, for example one sent by another client), the helper
+  sends the transaction once more with the next number. A second refusal is thrown. A transaction with an explicit
+  number is not retried.
+- When the node refuses a number because its queue for the account is full, `SupraAccountQueueFullError` is thrown and
+  the transaction is not sent again.
+- After a submission whose outcome is unknown and that the node did not in fact accept, later transactions wait in the
+  node behind its number until the chain's time reaches its expiration time (`txExpirySecs` after the client's clock,
+  60 seconds by default); the next call after that takes the number, and the waiting transactions commit if they have
+  not expired.
+- `supra.resetSequenceNumber(address)` forgets the counter and the records of an account, including those of this
+  client's pending transactions: the next call takes the account's number on the chain, and while a pending
+  transaction of this client holds it the node refuses the call. Call it only when no transaction of this client from
+  the account is pending, or when the expiration times of those that are have passed. Transactions sent by other
+  means (another client or process, a wallet) need no reset: the refusal of a stale number makes the next call read
+  the chain.
+- `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given. The counter records
+  that transaction like its own and does not hand out its number while it can commit. The builders of
+  `supra.transaction.build` always take the number as `senderSequenceNumber`.
 
-The counter lives in one `SupraClient`. Two clients, or two processes, that send from the same account each keep their
-own counter and recover from each other's transactions through the refusal and re-read described above.
+Calls of one client from one account are submitted one after another. A call holds the account from the moment it
+takes its number until the node answers its submission (accepted, refused, or the request fails); building, the max gas
+estimate, signing and the simulation before submission (`enableTransactionSimulation`) happen in that time. The wait
+for the final status (`enableWaitForTransaction`) comes after it and does not hold the account. So:
+
+- A call without `maxGas` holds the account while its max gas is estimated: a balance read and a simulation, and behind
+  pending transactions of the account a read of the account, a read of the latest block and a second simulation.
+- A call with `maxGas` (on the call or in `SupraConfig`) waits only until the calls ahead of it have been submitted or
+  have failed, then signs and submits.
+- To submit faster from one account, set `maxGas`; to submit in parallel, send from several accounts, which do not wait
+  for each other.
+
+A call with an explicit `sequenceNumber` does not take part in this order. The counter and the order live in one
+`SupraClient`. Two clients, or two processes, that send from the same account each keep their own counter and recover
+from each other's transactions through the refusal and re-read described above.
 
 The max gas estimate simulates against committed state. For a transaction sent while an earlier transaction of the
 account has not committed, the node reports the number as too new; the SDK then simulates the same transaction with the
 account's number on the chain and submits it with the counter's number, so pipelined transfers work with the default
-gas settings. A transaction that depends on an earlier one that has not committed (for example a call to a module that
-the earlier transaction publishes) fails that simulation and throws `SupraSimulationFailedError`, and nothing is
-submitted. Pass `maxGas` for such a transaction, or wait for the earlier transaction to commit.
+gas settings. Before that simulation the SDK reads the account and the latest block, and it simulates at the chain's
+number only when every number between the chain's and the transaction's has a record of a transaction this client
+submitted. Otherwise (one of them expired or was discarded, or another client or wallet used a number) the
+transaction is built and signed again with the lowest number that has no record, and keeps its place in the order of
+the calls. The simulation before submission (`enableTransactionSimulation`) handles the number the same way. When the
+read of the account fails, its error is thrown and nothing is submitted, in the estimate and in the simulation before
+submission alike; a failed read of the block is ignored. A transaction that depends on an earlier one that has not
+committed (for example a call to a module that the earlier transaction publishes) fails that simulation and throws
+`SupraSimulationFailedError`, and nothing is submitted. Pass `maxGas` for such a transaction, or wait for the earlier
+transaction to commit.
 
 A node accepts a transaction whose number is ahead of the account's next number and holds it until the numbers before
-it have been sent. The node holds at most 25 numbers per account by default (the refusal message names the highest
-number the node accepts), so at most about 25 transactions of one account can be in flight; wait for commits
-(`enableWaitForTransaction: true`) when sending more than that. A transaction expires at `txExpiryTime`, which defaults
-to five minutes after the transaction was built.
+it have been sent. The node holds at most 25 numbers per account by default and refuses a number beyond them
+(`SupraAccountQueueFullError`), so at most about 25 transactions of one account can be in flight; wait for commits
+(`enableWaitForTransaction: true`) when sending more than that.
+
+A transaction expires at `txExpiryTime` (seconds since the Unix epoch, used as given). Without it, a transaction expires
+`SupraConfig.txExpirySecs` seconds (default 60) after the client's clock in whole seconds, at most 595 seconds after
+it: the node refuses an expiration time more than 600 seconds after its own clock, and the 5 seconds left cover a
+node clock that is up to 5 seconds behind the client's, so `txExpirySecs: 600` is accepted. The node also refuses a
+transaction whose expiration time is not after its clock, so a client whose clock is far from the node's has its
+transactions refused (as expired, or as too far in the future); these refusals are thrown as they are. Set
+`txExpirySecs` or `txExpiryTime` for a transaction that is signed or submitted later.
 
 ```ts
 const supra = new SupraClient({ network: Network.TESTNET });
 
-// Ten transfers from one account, all accepted without waiting for each other.
+// Ten transfers from one account, submitted one after another without waiting for the earlier ones to commit.
 const responses = await Promise.all(
   Array.from({ length: 10 }, () =>
     supra.coin.transferSupraCoin({ senderAccount: sender, receiverAccountAddress: "0x1234", amount: 100n }),
@@ -416,8 +476,8 @@ const responses = await Promise.all(
 
 Each transaction has a max gas (`max_gas_amount`, in gas units), a gas unit price (in quants) and an expiration time.
 `optionalTransactionPayloadArgs` sets them per transaction (`maxGas`, `gasUnitPrice`, `txExpiryTime`) on every method
-that builds a transaction, and `SupraConfig` sets `maxGas` and `minGasUnitPrice` for every transaction of the client.
-A per-call setting replaces the client's. The SDK does not modify the options objects it is given.
+that builds a transaction, and `SupraConfig` sets `maxGas`, `minGasUnitPrice` and `txExpirySecs` (see
+[Sequence numbers](#sequence-numbers)) for every transaction of the client. A per-call setting replaces the client's. The SDK does not modify the options objects it is given.
 
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas
 used. When neither the call nor the client sets `maxGas`:

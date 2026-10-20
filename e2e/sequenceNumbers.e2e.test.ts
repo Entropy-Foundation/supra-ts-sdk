@@ -1,10 +1,10 @@
 import type { MoveModule, SubmitTransactionResponse, SupraAccount } from "../src/index";
-import { SupraClient, SupraSimulationFailedError, TypeTagParser } from "../src/index";
+import { SupraAccountQueueFullError, SupraClient, SupraSimulationFailedError, TypeTagParser } from "../src/index";
 import { isStaleSequenceNumberError } from "../src/internal/sequenceNumber";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
-import { pollUntil, rawGet, rawWaitForCommit, type RawTransaction } from "./helpers/raw";
+import { pollUntil, rawGet, rawSupraBalance, rawWaitForCommit, type RawTransaction } from "./helpers/raw";
 import { fixtureModuleFor, fixturePackageMetadata } from "./helpers/fixturePackage";
 import { explicitGas } from "./helpers/transfers";
 
@@ -152,14 +152,72 @@ describeE2E("sequence numbers", () => {
         const supra = newClient();
         await transfer(supra, sender, { wait: true });
 
-        // An explicit number does not touch the counter, which stays at 1 while the chain moves to 2.
-        const committed = await transfer(supra, sender, { sequenceNumber: 1n, wait: true });
+        // Another client sends 1; the counter of `supra` still hands out 1 until it reads the chain.
+        const committed = await transfer(newClient(), sender, { wait: true });
         expect(committed.status).toBe("Success");
         supra.resetSequenceNumber(sender.address());
         const afterReset = await transfer(supra, sender, { wait: true });
 
         expect(afterReset.status).toBe("Success");
         expect(await chainSequenceNumber(sender)).toBe(3n);
+    });
+
+    test("a number beyond the node's queue for the account is refused with SupraAccountQueueFullError", async () => {
+        const sender = await createFundedAccount(ctx);
+        const supra = newClient();
+        const beyond = (await chainSequenceNumber(sender)) + 100n;
+
+        const error = await transfer(supra, sender, { sequenceNumber: beyond }).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(SupraAccountQueueFullError);
+        expect((error as SupraAccountQueueFullError).sequenceNumber).toBe(beyond);
+        expect(isStaleSequenceNumberError(error)).toBe(false);
+    });
+
+    test("a transfer the helpers build expires 60 seconds after the client's clock", async () => {
+        const sender = await createFundedAccount(ctx);
+        const supra = newClient();
+
+        const before = Math.floor(Date.now() / 1_000);
+        const response = await transfer(supra, sender, { wait: true });
+        const after = Math.floor(Date.now() / 1_000);
+
+        const raw = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${response.hash}`);
+        const expiration =
+            Number(raw.body.header?.expiration_timestamp.microseconds_since_unix_epoch ?? 0) / 1_000_000;
+        expect(expiration).toBeGreaterThanOrEqual(before + 60);
+        expect(expiration).toBeLessThanOrEqual(after + 60);
+    });
+
+    test("transfers with txExpirySecs 600 are accepted", async () => {
+        const sender = await createFundedAccount(ctx);
+        const gas = await explicitGas(ctx);
+        const supra = new SupraClient({
+            rpcUrl: ctx.rpcUrl,
+            chainId: ctx.chainId,
+            txExpirySecs: 600,
+            maxGas: gas.maxGas,
+        });
+        const first = await chainSequenceNumber(sender);
+
+        const responses: SubmitTransactionResponse[] = [];
+        for (let index = 0; index < 12; index += 1) {
+            responses.push(
+                await supra.coin.transferSupraCoin({
+                    senderAccount: sender,
+                    receiverAccountAddress: createUnfundedAccount().address().toString(),
+                    amount: AMOUNT,
+                    optionalTransactionArgs: {
+                        optionalTransactionPayloadArgs: { gasUnitPrice: gas.gasUnitPrice },
+                        enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+                    },
+                }),
+            );
+            // Submissions at different fractions of a second.
+            await new Promise((resolve) => setTimeout(resolve, 173));
+        }
+
+        expectConsecutive(await commitAll(responses), first);
     });
 
     test("an explicit sequence number is used as given", async () => {
@@ -210,6 +268,131 @@ describeE2E("sequence numbers", () => {
             );
 
             expectConsecutive(await commitAll(responses), first);
+        });
+
+        test.each([
+            ["the estimate", undefined],
+            ["the simulation before submission (explicit max gas)", 5_000n],
+        ])(
+            "of three transfers issued together, the two others are committed when %s of the middle one aborts",
+            async (_name, maxGas) => {
+                const sender = await createFundedAccount(ctx);
+                const supra = newClient();
+                const first = await chainSequenceNumber(sender);
+                const tooMuch = (await rawSupraBalance(ctx, sender.address().toString())) * 10n;
+                const send = (amount: bigint) =>
+                    supra.coin.transferSupraCoin({
+                        senderAccount: sender,
+                        receiverAccountAddress: createUnfundedAccount().address().toString(),
+                        amount,
+                        optionalTransactionArgs: {
+                            ...(maxGas === undefined ? {} : { optionalTransactionPayloadArgs: { maxGas } }),
+                            enableTransactionWaitAndSimulationArgs: {
+                                enableWaitForTransaction: false,
+                                enableTransactionSimulation: maxGas !== undefined,
+                            },
+                        },
+                    });
+
+                const [one, aborting, three] = await Promise.allSettled([send(AMOUNT), send(tooMuch), send(AMOUNT)]);
+
+                expect(aborting.status === "rejected" && aborting.reason).toBeInstanceOf(SupraSimulationFailedError);
+                if (one.status !== "fulfilled" || three.status !== "fulfilled") {
+                    throw new Error(`a transfer was not submitted: ${JSON.stringify([one.status, three.status])}`);
+                }
+                expectConsecutive(await commitAll([one.value, three.value]), first);
+                await pollUntil(
+                    "the account's sequence number to advance",
+                    () => chainSequenceNumber(sender),
+                    (value) => value === first + 2n,
+                );
+            },
+        );
+
+        test("transfers with enableTransactionSimulation issued one after another are all accepted and committed", async () => {
+            const sender = await createFundedAccount(ctx);
+            const supra = newClient();
+            const first = await chainSequenceNumber(sender);
+
+            const responses: SubmitTransactionResponse[] = [];
+            for (let index = 0; index < 3; index += 1) {
+                responses.push(
+                    await supra.coin.transferSupraCoin({
+                        senderAccount: sender,
+                        receiverAccountAddress: createUnfundedAccount().address().toString(),
+                        amount: AMOUNT,
+                        optionalTransactionArgs: {
+                            enableTransactionWaitAndSimulationArgs: {
+                                enableTransactionSimulation: true,
+                                enableWaitForTransaction: false,
+                            },
+                        },
+                    }),
+                );
+            }
+
+            expectConsecutive(await commitAll(responses), first);
+        });
+
+        test("a transfer after an accepted transaction that the node discarded is sent with the chain's number", async () => {
+            const sender = await createFundedAccount(ctx);
+            const supra = newClient();
+            const price = await ctx.supra.getMinGasUnitPrice();
+            const balance = await rawSupraBalance(ctx, sender.address().toString());
+            const send = (amount: bigint, maxGas: bigint, txExpiryTime?: bigint) =>
+                supra.coin.transferSupraCoin({
+                    senderAccount: sender,
+                    receiverAccountAddress: createUnfundedAccount().address().toString(),
+                    amount,
+                    optionalTransactionArgs: {
+                        optionalTransactionPayloadArgs: {
+                            maxGas,
+                            gasUnitPrice: price,
+                            ...(txExpiryTime === undefined ? {} : { txExpiryTime }),
+                        },
+                        enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+                    },
+                });
+            // The first transfer (0) leaves less than 5,000 gas units' worth of SUPRA. The second (1), with max gas
+            // 5,000, is accepted while the first is pending; it cannot execute after the first, and the node holds it
+            // as Pending until it expires 30 seconds later and then no longer reports it.
+            const first = await send(balance - 2_000n * price - 3_000n * price, 2_000n);
+            const expiration = BigInt(Math.floor(Date.now() / 1000) + 30);
+            const second = await send(AMOUNT, 5_000n, expiration);
+            expect((await rawWaitForCommit(ctx, first.hash)).status).toBe("Success");
+            await pollUntil(
+                "the second transfer to be discarded",
+                async () => {
+                    const response = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${second.hash}`);
+                    return response.status === 200 ? response.body.status : `HTTP ${response.status}`;
+                },
+                (status) => status === "Invalid" || status === "HTTP 404",
+            );
+            await pollUntil(
+                "a block at the second transfer's expiration time",
+                async () =>
+                    (
+                        await rawGet<{ header: { timestamp: { microseconds_since_unix_epoch: number } } }>(
+                            ctx,
+                            "/rpc/v3/block",
+                        )
+                    ).body.header.timestamp.microseconds_since_unix_epoch,
+                (micros) => BigInt(micros) >= expiration * 1_000_000n,
+            );
+
+            // 1 can no longer commit: the counter reads the chain, finds the block past 1's expiration time and
+            // sends the transfer with 1.
+            const third = await supra.coin.transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: createUnfundedAccount().address().toString(),
+                amount: AMOUNT,
+                optionalTransactionArgs: {
+                    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+                },
+            });
+
+            expect(third.status).toBe("Success");
+            expect(await commitAll([third])).toEqual([1n]);
         });
 
         describe("a call that depends on a transaction that has not committed", () => {

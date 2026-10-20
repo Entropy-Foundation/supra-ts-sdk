@@ -23,6 +23,8 @@ The changes that most programs meet first:
 - The max gas of the transfers, `publishPackage` and contract entry functions is estimated, and the default max gas
   is 20,000 units ([Gas](#gas)).
 - The helpers take sequence numbers from a counter in the client ([Sequence numbers](#sequence-numbers)).
+- A transaction built without `txExpiryTime` expires 60 seconds after the client's clock, not 300 seconds
+  ([Transaction expiration time](#transaction-expiration-time)).
 
 ## Networks and faucet
 
@@ -313,9 +315,12 @@ async function senderOf(transactionHash: string): Promise<string | undefined> {
 ### `standardizeAddress` lower-cases and throws `RangeError`
 
 `standardizeAddress` returns the hex digits in lower case. Code that compares its result with an upper-case address
-must lower-case the other side. An address of more than 64 hex digits throws a `RangeError`; it threw a
-`SupraAPIError` with status 400 and an empty `url`. Code that caught the `SupraAPIError` of an invalid address must
-catch `RangeError`.
+must lower-case the other side. It accepts a `0x` or `0X` prefix. A value that is not 1 to 64 hex digits after the
+optional prefix throws a `RangeError`: an address of more than 64 hex digits threw a `SupraAPIError` with status 400
+and an empty `url`, and other malformed values (`"0XA"`, `"0xzz"`, `""`) were returned with the prefix doubled or the
+invalid characters kept. Code that caught the `SupraAPIError` of an invalid address must catch `RangeError`.
+`fundAccountWithFaucet`, `getFaucetTransaction`, `resetSequenceNumber` and the builders of `transaction.build` throw
+this `RangeError` for a malformed address before any request.
 
 ## Gas
 
@@ -327,11 +332,14 @@ functions of `Contract.fromABI` read the sender's SUPRA balance, simulate the tr
 balance read and a simulation request before the submission. `transaction.build.simple` makes a balance read and uses
 `DEFAULT_MAX_GAS_UNITS`, at most what the balance pays for.
 
-The simulation runs against committed state. When an earlier transaction of the same account has not committed, the
-SDK simulates the transaction with the account's sequence number on the chain and submits it with the counter's number,
-so transfers sent one after another without waiting work with the default gas settings. A transaction that depends on an
-earlier one that has not committed (for example a call to a module that the earlier one publishes) fails its estimate
-and throws `SupraSimulationFailedError`; set `maxGas` for such a transaction.
+The simulation runs against committed state. When earlier transactions of the same account that this client submitted
+have not committed, the SDK simulates the transaction with the account's sequence number on the chain and submits it
+with the counter's number, so transfers sent one after another without waiting work with the default gas settings. It
+does so only when every number between the chain's and the transaction's has a record of a transaction this client
+submitted that can still commit ([Sequence numbers](#sequence-numbers)); otherwise the transaction is built and signed
+again with the lowest number without a record. A transaction that depends on an earlier one that has not committed
+(for example a call to a module that the earlier one publishes) fails its estimate and throws
+`SupraSimulationFailedError`; set `maxGas` for such a transaction.
 
 To submit with a fixed max gas, set `maxGas` on the client or on the call; `estimateMaxGas: false` uses
 `DEFAULT_MAX_GAS_UNITS` without a request:
@@ -388,20 +396,39 @@ const transfer = supra.transaction.build.rawTxnObject({
 ## Sequence numbers
 
 The transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the
-sequence number from a counter in the client instead of reading it from the chain on every call. Concurrent sends from
-one account in a process get distinct consecutive numbers. A refusal for a stale number reads the number from the chain
-again and sends the transaction once more.
+sequence number from a counter in the client instead of reading it from the chain on every call. The counter records
+each transaction the client submitted, with its expiration time, until the chain's number passes it, a latest block the
+client reads has reached its expiration time, or a read of it returns `Invalid`, and hands out the lowest number at or above
+the chain's that has no record. A refusal for a stale number reads the chain again and sends the transaction once
+more. A refusal because the node's queue for the account is full (25 numbers ahead of the chain's by default) throws
+`SupraAccountQueueFullError`.
 
-When the account also sends transactions by other means (another client or process, a wallet, a builder of
-`transaction.build` with an explicit number), reset the counter, or set the number of one transaction:
+Calls of one client from one account are submitted one after another: a call holds the account from taking its number
+until the node answers its submission (accepted, refused, or the request fails), so concurrent sends get consecutive
+numbers, and a number that a failed call did not use is the next one handed out. The wait for the final status
+(`enableWaitForTransaction`) comes after the submission and does not hold the account. A call without `maxGas` holds the
+account while its max gas is estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted
+or have failed. To submit faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A
+call with an explicit `sequenceNumber` does not take part in this order.
+
+When the account also sends transactions by other means (another client or process, a wallet), the node refuses a
+helper call whose number such a transaction holds, and the next call reads the chain again; a call made after those
+transactions have committed takes the next number. Transactions submitted through the client's submit methods,
+including those built with an explicit number by `transaction.build`, are recorded like the helpers' own.
+
+`resetSequenceNumber` forgets the counter and its records, including those of this client's pending transactions:
+while such a transaction holds the account's number on the chain, the node refuses the next helper call. Reset only
+when no transaction of this client from the account is pending, or when the expiration times of those that are have
+passed. A number can also be set for one transaction:
 
 ```typescript
 import { SupraAccount } from "supra-ts-sdk";
 
-// The next helper call reads the sequence number from the chain.
+// No transaction of this client from the account is pending: the next helper call reads the sequence number from the
+// chain.
 supra.resetSequenceNumber(account.address());
 
-// This transaction uses the given number and leaves the counter unchanged.
+// This transaction uses the given number; the counter does not hand it out while the transaction can commit.
 const { sequence_number } = await supra.account.getAccountInfo({ accountAddress: account.address() });
 await supra.coin.transferSupraCoin({
     senderAccount: account,
@@ -411,7 +438,29 @@ await supra.coin.transferSupraCoin({
 });
 ```
 
-After a `SupraTransactionTimeoutError` for a transaction that will not commit, call `resetSequenceNumber`.
+A transaction that will not commit keeps its number until the timestamp of a latest block the client reads reaches its
+expiration time.
+
+## Transaction expiration time
+
+A transaction built without `txExpiryTime` expires 60 seconds (`DEFAULT_TX_EXPIRATION_DURATION`) after the client's
+clock in whole seconds; 1.2.0 used 300 seconds. `SupraConfig.txExpirySecs` sets another window, from 1 to 600 seconds;
+the expiration time is at most 595 seconds after the client's clock, so that a node whose clock is up to 5 seconds
+behind the client's accepts `txExpirySecs: 600`. The node refuses a transaction whose expiration time is not after its
+clock or is more than 600 seconds after it, so a client whose clock is far from the node's has its transactions
+refused. This applies to every builder, including those of `transaction.build`. For a transaction that is signed or
+submitted later (for example after a wallet's confirmation), set a longer window for the client or an absolute time
+for the transaction:
+
+```typescript
+import { Network, SupraClient } from "supra-ts-sdk";
+
+// Transactions of this client expire 300 seconds after the client's clock (at most 595).
+const patient = new SupraClient({ network: Network.TESTNET, txExpirySecs: 300 });
+
+// This transaction expires at the given time, in seconds since the Unix epoch.
+const expiry = { optionalTransactionPayloadArgs: { txExpiryTime: BigInt(Math.floor(Date.now() / 1000) + 300) } };
+```
 
 ## Chain ID
 

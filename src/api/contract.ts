@@ -20,35 +20,31 @@ interface EntryProxyArgs {
     enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
 }
 
-
 /**
  * The Contract class provides methods for interacting with the Supra network.
- * @beta 
+ * @beta
  * @group Contract
  */
 export class Contract {
-
     /**
-   * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-   */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
 
-
     /**
-    * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
-    * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
-    * @example
-    * ```typescript
-    * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
-    * const supra = new SupraClient({ network: Network.TESTNET });
-    * ```  
-    * @group Contract
-    */
+     * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
+     * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     * ```
+     * @group Contract
+     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * The fromABI function takes an array of MoveModule (Contract ABI) objects as input.
@@ -57,8 +53,8 @@ export class Contract {
      * TypeScript values. `contracts.<module name>.entry.<function>(args)` builds, signs and submits an entry function
      * transaction: the `&signer` argument is the sender's `SupraAccount`, `optionalTransactionPayloadArgs` and
      * `enableTransactionWaitAndSimulationArgs` are optional, the sequence number comes from the client's counter unless
-     * `optionalTransactionPayloadArgs.sequenceNumber` is set, and the client checks the chain ID of its node before it
-     * signs; see {@link SupraConfig}. Without a `maxGas` the max gas is estimated (see
+     * `optionalTransactionPayloadArgs.sequenceNumber` is set, the client submits its calls from one account one after
+     * another, and the client checks the chain ID of its node before it signs; see {@link SupraConfig}. Without a `maxGas` the max gas is estimated (see
      * {@link OptionalTransactionPayloadArgs}).
      * @beta
      * @param abis - An array of MoveModule (Contract ABI) objects.
@@ -96,71 +92,63 @@ export class Contract {
      *    })
      *    console.log("Balance:", balance[0]);
      * }
-     * 
+     *
      * runExample().catch(console.error);
-     * 
-     * ```  
+     *
+     * ```
      * @group Contract
      */
     fromABI<T extends DeepReadonly<MoveModule[]>>(abis: T) {
         return {
             contracts: new Proxy(abis as ContractsFromABI<T>, {
-
                 get: (_, prop: string) => {
-
-                    let abi = abis.find(a => a.name === prop);
+                    let abi = abis.find((a) => a.name === prop);
 
                     if (!abi) throw new Error(`Contract ${prop} not found in ABI`);
 
                     return {
                         view: new Proxy(abi, {
                             get: (target, prop: string) => {
-
                                 return async (args: ViewProxyArgs = {}) => {
-
                                     const functionId = `${target.address}::${target.name}::${prop}` as MoveFunctionId;
                                     validateFunctionId(functionId, "function");
 
-                                    return await viewInternal({
-                                        function: functionId,
-                                        typeArguments: args.typeArguments ?? [],
-                                        functionArguments: args.functionArguments ?? [],
-                                        abi: abi as MoveModule
-                                    }, this.networkInformation);
-
+                                    return await viewInternal(
+                                        {
+                                            function: functionId,
+                                            typeArguments: args.typeArguments ?? [],
+                                            functionArguments: args.functionArguments ?? [],
+                                            abi: abi as MoveModule,
+                                        },
+                                        this.networkInformation,
+                                    );
                                 };
-
-                            }
+                            },
                         }),
                         entry: new Proxy(abi, {
                             get: (target, prop: string) => {
-
                                 return async (args: EntryProxyArgs) => {
-
                                     const functionId = `${target.address}::${target.name}::${prop}` as MoveFunctionId;
                                     validateFunctionId(functionId, "function");
 
                                     return await retryWithFreshSequenceNumber(
                                         args.optionalTransactionPayloadArgs?.sequenceNumber,
-                                        () => callContractInternal({
-                                            ...args,
-                                            function: functionId,
-                                            abi: abi as MoveModule
-                                        }, this.networkInformation),
+                                        () =>
+                                            callContractInternal(
+                                                {
+                                                    ...args,
+                                                    function: functionId,
+                                                    abi: abi as MoveModule,
+                                                },
+                                                this.networkInformation,
+                                            ),
                                     );
-
                                 };
-
-                            }
-                        })
-
-                    }
-
-
-                }
-            })
-        }
-
-    };
-
+                            },
+                        }),
+                    };
+                },
+            }),
+        };
+    }
 }

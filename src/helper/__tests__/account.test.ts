@@ -1,3 +1,4 @@
+import { HexString } from "supra-l1-sdk-core";
 import { addressToBytes, standardizeAddress } from "../account";
 import { validateAddress } from "../validation";
 import { SupraAPIError } from "../../errors/apiError";
@@ -36,6 +37,41 @@ describe("standardizeAddress", () => {
         expect(standardizeAddress("0xA")).toBe("0x" + "0".repeat(63) + "a");
         expect(standardizeAddress("0xAB" + "CD".repeat(31))).toBe("0xab" + "cd".repeat(31));
         expect(standardizeAddress("ABC")).toBe("0x" + "0".repeat(61) + "abc");
+    });
+
+    it("accepts an upper-case 0X prefix", () => {
+        expect(standardizeAddress("0XA")).toBe("0x" + "0".repeat(63) + "a");
+        expect(standardizeAddress("0XAB")).toBe("0x" + "0".repeat(62) + "ab");
+        expect(standardizeAddress("0X" + "F".repeat(64))).toBe("0x" + "f".repeat(64));
+    });
+
+    it("accepts digits without a prefix", () => {
+        expect(standardizeAddress("ab")).toBe("0x" + "0".repeat(62) + "ab");
+        expect(standardizeAddress("F".repeat(64))).toBe("0x" + "f".repeat(64));
+    });
+
+    it("standardizes a HexString", () => {
+        expect(standardizeAddress(new HexString("0xAB"))).toBe("0x" + "0".repeat(62) + "ab");
+        expect(standardizeAddress(new HexString("ab"))).toBe("0x" + "0".repeat(62) + "ab");
+    });
+
+    it.each([
+        ["an empty string", ""],
+        ["a prefix without digits", "0x"],
+        ["an upper-case prefix without digits", "0X"],
+        ["a value that is not hex", "0xzz"],
+        ["a second prefix", "0x0xab"],
+        ["65 digits", "0x" + "f".repeat(65)],
+        ["65 digits after an upper-case prefix", "0X" + "F".repeat(65)],
+        ["a space", "0x ab"],
+        ["a sign", "-0x1"],
+    ])("throws a RangeError for %s", (_name, address) => {
+        expect(() => standardizeAddress(address)).toThrow(RangeError);
+    });
+
+    it("throws a RangeError for a HexString built from a value with an upper-case prefix", () => {
+        // `HexString` adds a `0x` prefix to `0XAB`, which gives `0x0XAB`.
+        expect(() => standardizeAddress(new HexString("0XAB"))).toThrow(RangeError);
     });
 });
 
