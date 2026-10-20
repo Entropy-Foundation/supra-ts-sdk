@@ -174,24 +174,24 @@ const HELPERS: Array<[string, Helper]> = [
             }),
     ],
     [
-        "fungibleAsset.transferSupraFungibleAsset",
+        "fungibleAsset.migrateCoinToFungibleStore",
         (supra, optionalTransactionPayloadArgs) =>
-            supra.fungibleAsset.transferSupraFungibleAsset({
+            supra.fungibleAsset.migrateCoinToFungibleStore({
                 senderAccount: new SupraAccount(),
-                receiverAccountAddress: receiver(),
-                amount: 1n,
                 optionalTransactionArgs:
                     optionalTransactionPayloadArgs === undefined ? {} : { optionalTransactionPayloadArgs },
             }),
     ],
     [
+        // Not the SUPRA fungible asset: a transfer of SUPRA reads the sender's balances first, which the request counts
+        // of these tests do not allow for. Its gas settings use the same path; see fungibleAsset.test.ts.
         "fungibleAsset.transferFungibleAsset",
         (supra, optionalTransactionPayloadArgs) =>
             supra.fungibleAsset.transferFungibleAsset({
                 senderAccount: new SupraAccount(),
                 receiverAccountAddress: receiver(),
                 amount: 1n,
-                assetAddress: "0x" + "0".repeat(63) + "a",
+                assetAddress: "0x" + "0".repeat(63) + "b",
                 optionalTransactionArgs:
                     optionalTransactionPayloadArgs === undefined ? {} : { optionalTransactionPayloadArgs },
             }),

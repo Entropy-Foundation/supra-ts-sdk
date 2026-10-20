@@ -14,10 +14,33 @@ import { account } from "./account.setup";
     console.log("Fungible Asset Metadata", fungibleAssetMetadata);
 
     // ---------------------------------------------------------------------------
+    // Migrate SUPRA from the coin store to the fungible asset store
+    // ---------------------------------------------------------------------------
+
+    // A fungible asset transfer moves only the balance of the fungible asset store. An account that received SUPRA
+    // as a coin migrates it first; without the migration the transfer below throws
+    // SupraInsufficientFungibleAssetBalanceError.
+    let balances = await supra.account.getAccountSupraBalance({ accountAddress: account.address() });
+    console.log("SUPRA balance:", balances);
+
+    if (balances.coin > 0n) {
+        let migration = await supra.fungibleAsset.migrateCoinToFungibleStore({
+            senderAccount: account,
+            optionalTransactionArgs: {
+                enableTransactionWaitAndSimulationArgs: {
+                    enableWaitForTransaction: true
+                }
+            }
+        });
+
+        console.log("Migration submitted:", migration);
+    }
+
+    // ---------------------------------------------------------------------------
     // Transfer Supra Fungible Asset
     // ---------------------------------------------------------------------------
 
-    let txn = await supra.fungibleAsset.transferSupraFungibleAsset({
+    let txn =await supra.fungibleAsset.transferSupraFungibleAsset({
         senderAccount: account,
         receiverAccountAddress: "0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5",
         amount: 10000,

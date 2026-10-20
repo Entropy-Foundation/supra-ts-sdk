@@ -42,6 +42,27 @@ const COIN_ABI = {
     structs: [],
 } as const satisfies MoveModule;
 
+/** The balance views that the SUPRA fungible asset transfers call before building the transaction. */
+function balanceViewAbi(name: "coin" | "primary_fungible_store"): MoveModule {
+    return {
+        address: "0x1",
+        name,
+        friends: [],
+        exposed_functions: [
+            {
+                name: "balance",
+                visibility: "public",
+                is_entry: false,
+                is_view: true,
+                generic_type_params: [{ constraints: [] }],
+                params: name === "coin" ? ["address"] : ["address", "0x1::object::Object<T0>"],
+                return: ["u64"],
+            },
+        ],
+        structs: [],
+    };
+}
+
 interface RecordedRequest {
     method: string;
     path: string;
@@ -80,6 +101,11 @@ function stubFetch(): void {
         if (method === "GET" && /^\/accounts\/0x[0-9a-f]+$/.test(path)) {
             return respond({ sequence_number: 0, authentication_key: "0x" + "00".repeat(32) });
         }
+        const viewModule = /^\/accounts\/0x0{63}1\/modules\/(coin|primary_fungible_store)$/.exec(path)?.[1];
+        if (method === "GET" && viewModule !== undefined) {
+            return respond({ bytecode: "0x", abi: balanceViewAbi(viewModule as "coin" | "primary_fungible_store") });
+        }
+        if (method === "POST" && path === "/view") return respond({ result: ["1000000000"] });
         if (method === "POST" && path === "/transactions/simulate") return respond(SUCCESS);
         if (method === "POST" && path === "/transactions/submit") return respond(HASH);
         if (method === "GET" && path.startsWith("/transactions/")) return respond(SUCCESS);
@@ -100,8 +126,9 @@ function chainIdRequests(): RecordedRequest[] {
     return requests.filter((request) => request.path === "/transactions/chain_id");
 }
 
-function postRequests(): RecordedRequest[] {
-    return requests.filter((request) => request.method === "POST");
+/** Submissions and simulations; the balance views of the SUPRA fungible asset transfers are not counted. */
+function transactionPostRequests(): RecordedRequest[] {
+    return requests.filter((request) => request.method === "POST" && request.path !== "/view");
 }
 
 function client(chainId: number, extra: { verifyChainId?: boolean } = {}): SupraClient {
@@ -281,7 +308,7 @@ describe("chain ID check before signing", () => {
                 transactionChainId: undefined,
             });
             expect(signBuffer).not.toHaveBeenCalled();
-            expect(postRequests()).toHaveLength(0);
+            expect(transactionPostRequests()).toHaveLength(0);
         });
 
         it("signs when the configured chain ID is the node's", async () => {

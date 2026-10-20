@@ -1,8 +1,8 @@
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import type { AccountAddressInput, AccountData, PaginatedResponse } from "../types/account";
+import type { AccountAddressInput, AccountData, PaginatedResponse, SupraBalance } from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
 import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
-import { getAccountAutoTransactionsInternal, getAccountCoinBalanceInternal, getAccountCoinsCountInternal, getAccountCoinTransactionsInternal, getAccountInfoInternal, getAccountModuleInternal, getAccountModulesInternal, getAccountResourceInternal, getAccountResourcesInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../internal/account";
+import { getAccountAutoTransactionsInternal, getAccountCoinBalanceInternal, getAccountCoinsCountInternal, getAccountCoinTransactionsInternal, getAccountInfoInternal, getAccountModuleInternal, getAccountModulesInternal, getAccountResourceInternal, getAccountResourcesInternal, getAccountSupraBalanceInternal, getAccountTransactionsInternal, isAccountExistsInternal } from "../internal/account";
 import { SUPRA_COIN_TYPE } from "../utils/constants";
 import { validateAddress, validateMoveIdentifier, validatePaginationCount, validateStructId } from "../helper/validation";
 
@@ -336,10 +336,13 @@ export class Account {
 
 
     /**
-     * Queries the number of coins owned by an account.
+     * Queries the number of coin types an account holds: the legacy coins (`CoinStore` resources of the account) plus
+     * SUPRA when the account holds it as a fungible asset and has no `CoinStore<SupraCoin>` (an account that migrated
+     * its SUPRA with `migrateCoinToFungibleStore` has none), so SUPRA counts once.
+     * The node has no listing of an account's fungible asset stores, so fungible assets other than SUPRA are not
+     * counted.
      * @param args.accountAddress - The address of the account to query.
-     * @note This method is only available for legacy coins for now.
-     * @returns A Promise that resolves to the number of coins owned by the account.
+     * @returns A Promise that resolves to the number of legacy coins plus one when SUPRA is held as a fungible asset only.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -364,9 +367,13 @@ export class Account {
     }
 
     /**
-     * Queries the balance of SupraCoin owned by an account.
+     * Queries the total SUPRA balance of an account in quants: the `CoinStore<SupraCoin>` balance plus the balance of the
+     * account's SUPRA fungible asset store (`0x1::coin::balance`, which includes the paired fungible asset). The value
+     * is the SUPRA the account owns whichever form it is held in; {@link getAccountSupraBalance} reports the two
+     * forms separately. A fungible asset transfer (`transferSupraFungibleAsset`) moves only the fungible asset
+     * part.
      * @param args.accountAddress - The address of the account to query.
-     * @returns A Promise that resolves to the balance of SupraCoin owned by the account.
+     * @returns A Promise that resolves to the total SUPRA balance of the account.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -391,10 +398,47 @@ export class Account {
 
 
     /**
-     * Queries the balance of a coin owned by an account.
+     * Queries the SUPRA balance of an account in quants, in total and by the form in which it is held: as a legacy coin
+     * (`CoinStore<SupraCoin>`) and as a fungible asset (the primary store of the SUPRA fungible asset `0xa`).
+     * `total` is `0x1::coin::balance`, which already includes the fungible asset balance, so the two parts are not
+     * added twice. The two values are read by separate requests.
      * @param args.accountAddress - The address of the account to query.
-     * @param args.asset - The address of the coin to query wether it is a legacy coin or fungible asset.
-     * @returns A Promise that resolves to the balance of the coin owned by the account.
+     * @returns A Promise that resolves to `{ total, coin, fungibleAsset }`.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    const accountAddress = "0x1";
+     *    const { total, coin, fungibleAsset } = await supra.account.getAccountSupraBalance({ accountAddress: accountAddress });
+     *    console.log(total, coin, fungibleAsset);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group Account
+     */
+    async getAccountSupraBalance(args: {
+        accountAddress: AccountAddressInput;
+    }): Promise<SupraBalance> {
+        validateAddress(args.accountAddress, "accountAddress");
+        return getAccountSupraBalanceInternal(args, this.networkInformation);
+    }
+
+
+    /**
+     * Queries the balance of a coin or fungible asset owned by an account. What the balance covers depends on `asset`:
+     *
+     * - A coin type (`0x1::supra_coin::SupraCoin`): `0x1::coin::balance`, the `CoinStore` balance plus the balance of
+     *   the paired fungible asset store.
+     * - A fungible asset address (`0xa` for SUPRA): `0x1::primary_fungible_store::balance`, the account's primary store
+     *   of that asset only. SUPRA held in a `CoinStore` is not included, so the balance of `0xa` is 0 for an account
+     *   that has not migrated its SUPRA.
+     * @param args.accountAddress - The address of the account to query.
+     * @param args.asset - The coin type or the address of the fungible asset to query.
+     * @returns A Promise that resolves to the balance of the coin or fungible asset owned by the account.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";

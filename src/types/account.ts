@@ -16,6 +16,20 @@ export interface AccountData{
 
 
 /**
+ * The SUPRA balance of an account in quants, in total and by the form in which it is held. SUPRA is held as a legacy
+ * coin (a `CoinStore` resource), as a fungible asset (the account's primary store of the SUPRA fungible asset), or both.
+ */
+export interface SupraBalance {
+    /** The SUPRA the account owns in either form: `coin + fungibleAsset`. */
+    total: bigint;
+    /** The SUPRA held in the account's `CoinStore<SupraCoin>` resource. */
+    coin: bigint;
+    /** The SUPRA held in the account's primary store of the SUPRA fungible asset. */
+    fungibleAsset: bigint;
+}
+
+
+/**
  * The address of an account. which can be a string or a HexString
  */
 export type AccountAddressInput = string | HexString;

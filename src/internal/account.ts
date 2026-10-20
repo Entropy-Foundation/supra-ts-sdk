@@ -1,11 +1,11 @@
 import { get } from "../client/get";
 import { standardizeAddress } from "../helper/account";
 import { isMoveStruct } from "../helper/general";
-import type { AccountAddressInput, AccountData, PaginatedResponse } from "../types/account";
+import type { AccountAddressInput, AccountData, PaginatedResponse, SupraBalance } from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
 import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import { OBJECT_CORE } from "../utils/constants";
+import { OBJECT_CORE, SUPRA_COIN_TYPE, SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
 import { viewInternal } from "./methods";
 
 export function getAccountLegacyCoins(resources: MoveResource[]) {
@@ -180,6 +180,7 @@ export async function getAccountCoinsCountInternal(
 ): Promise<number> {
     let cursor: string | undefined = "";
     let legacyTokensCount = 0;
+    let hasSupraCoinStore = false;
 
     while (cursor !== undefined) {
 
@@ -195,10 +196,47 @@ export async function getAccountCoinsCountInternal(
         }
 
         legacyTokensCount += Object.keys(tokens).length;
+        hasSupraCoinStore ||= `0x1::coin::CoinStore<${SUPRA_COIN_TYPE}>` in tokens;
 
     }
 
+    // The SUPRA primary fungible store counts as SUPRA once an account has no SUPRA coin store (migrated accounts).
+    if (!hasSupraCoinStore && (await getAccountHasSupraFungibleStoreInternal(args, config))) {
+        legacyTokensCount += 1;
+    }
+
     return legacyTokensCount;
+}
+
+
+async function getAccountHasSupraFungibleStoreInternal(
+    args: { accountAddress: AccountAddressInput },
+    config: NetworkConfig
+): Promise<boolean> {
+    return await viewInternal<[boolean]>({
+        function: "0x1::primary_fungible_store::primary_store_exists",
+        functionArguments: [args.accountAddress.toString(), SUPRA_FUNGIBLE_ASSET_ADDRESS],
+        typeArguments: [OBJECT_CORE]
+    }, config).then(res => res[0]);
+}
+
+
+/**
+ * Reads the SUPRA balance of an account in both forms. `0x1::coin::balance` returns the sum of the `CoinStore`
+ * balance and the balance of the paired fungible asset store; `0x1::primary_fungible_store::balance` returns the
+ * fungible asset store only.
+ */
+export async function getAccountSupraBalanceInternal(
+    args: { accountAddress: AccountAddressInput },
+    config: NetworkConfig
+): Promise<SupraBalance> {
+    const [total, fungibleAsset] = await Promise.all([
+        getAccountCoinBalanceInternal({ accountAddress: args.accountAddress, asset: SUPRA_COIN_TYPE }, config),
+        getAccountCoinBalanceInternal({ accountAddress: args.accountAddress, asset: SUPRA_FUNGIBLE_ASSET_ADDRESS }, config),
+    ]);
+    // The two reads can straddle a block; the coin part is never reported as negative.
+    const coin = total > fungibleAsset ? total - fungibleAsset : BigInt(0);
+    return { total, coin, fungibleAsset };
 }
 
 

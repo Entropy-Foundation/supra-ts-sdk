@@ -1,4 +1,4 @@
-import { SupraAccount } from "../../src/index";
+import { SupraAccount, TransactionStatus } from "../../src/index";
 import { DEFAULT_FAUCET_PATH, type E2EContext } from "./env";
 import { pollUntil, rawGet, rawSupraBalance } from "./raw";
 
@@ -10,6 +10,22 @@ import { pollUntil, rawGet, rawSupraBalance } from "./raw";
 export async function createFundedAccount(ctx: E2EContext): Promise<SupraAccount> {
     const account = new SupraAccount();
     await fundFromFaucet(ctx, account.address().toString());
+    return account;
+}
+
+/**
+ * Creates a funded account and moves its SUPRA from the coin store to the fungible asset store with the SDK's
+ * migration helper, waiting for the commit.
+ */
+export async function createMigratedAccount(ctx: E2EContext): Promise<SupraAccount> {
+    const account = await createFundedAccount(ctx);
+    const txn = await ctx.supra.fungibleAsset.migrateCoinToFungibleStore({
+        senderAccount: account,
+        optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+    });
+    if (txn.status !== TransactionStatus.Success) {
+        throw new Error(`Migration of ${account.address().toString()} ended with status ${txn.status}`);
+    }
     return account;
 }
 
