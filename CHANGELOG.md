@@ -50,9 +50,14 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   transaction with the largest max gas that balance pays for (at most `MAX_GAS_UNITS_PER_TRANSACTION`), and submit it
   with `ceil(gas used × 1.5)`, at least `MIN_ESTIMATED_MAX_GAS_UNITS` (1,500) and at most what the balance pays for.
   `SupraConfig.maxGasEstimateMultiplier` replaces the factor (`DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`). The simulation
-  runs against committed state: for a transaction sent while an earlier transaction of the account has not committed,
-  it uses the account's sequence number on the chain, so pipelined transactions work with the default gas settings; a
-  transaction that depends on an earlier uncommitted one fails its estimate and needs `maxGas`.
+  runs against committed state: for a transaction sent while earlier transactions of the account that this client
+  submitted have not committed, it uses the account's sequence number on the chain, so pipelined transactions work
+  with the default gas settings; a transaction that depends on an earlier uncommitted one fails its estimate and needs
+  `maxGas`. The estimate uses the chain's number only when every number between it and the transaction's belongs to a
+  transaction that the node accepted from this client and the one at the chain's number is still pending (one read of
+  that transaction); otherwise the transaction's number is stale, and the helper reads the number from the chain and
+  sends the transaction once more. A concurrent call waits until the calls with lower numbers have been submitted or
+  have failed before it makes that check.
 - **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
   without a request.
 - **Per-account sequence-number counter.** Each `SupraClient` keeps the next sequence number of every account that its
@@ -184,7 +189,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   process, a wallet, a transaction built with an explicit number) make the counter stale; the next helper call then
   costs one refused submission and a read of the chain, and succeeds. After a `SupraTransactionTimeoutError` for a
   transaction that will not commit, call `resetSequenceNumber`. A transaction the node discarded after accepting it
-  (`Invalid` final status) also resets the counter.
+  also resets the counter, when any read of it through the client (`waitForTransaction`, `getTransactionByHash`,
+  `isPendingTransaction`, a submission's wait or read-back) returns `Invalid`.
 - **Breaking:** `signTransaction`, `transaction.build.signedTransaction`, `transaction.build.sendTxnPayload` and the
   `signTransaction`, `signedTransaction` and `sendTxnPayload` methods of a built transaction return promises, since a
   client's first signature reads the node's chain ID. Code that already awaits them is unaffected.

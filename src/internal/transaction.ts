@@ -12,23 +12,29 @@ import { sleep } from "../utils/functions";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSubmit";
 import { checkChainIdBeforeSigningInternal } from "./chainId";
+import { sequenceNumberTrackerOf } from "./sequenceNumber";
 import sha3 from 'js-sha3';
 
 /**
  * Queries on-chain transactions by their transaction hash, returning both pending and committed transactions.
+ *
+ * The status read is reported to the client's sequence-number counter: `Invalid` for a transaction that the node
+ * accepted from this client makes the counter of its sender read the chain again on the next use.
  */
 export async function getTransactionByHashInternal(
     args: { transactionHash: string, type?: TransactionQueryType, exclude_uncommitted?: boolean },
     config: NetworkConfig
 ): Promise<TransactionResponse> {
-
-    return await get<TransactionResponse>({
-        path: `/transactions/${standardizeAddress(args.transactionHash)}`,
+    const transactionHash = standardizeAddress(args.transactionHash);
+    const transaction = await get<TransactionResponse>({
+        path: `/transactions/${transactionHash}`,
         query: {
             type: args.type,
             exclude_uncommitted: args.exclude_uncommitted
         }
     }, config).then(res => res.data);
+    sequenceNumberTrackerOf(config).observeTransaction(transactionHash, transaction.status);
+    return transaction;
 }
 
 

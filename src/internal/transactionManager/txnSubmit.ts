@@ -61,8 +61,12 @@ export async function submitTxnInternal(
         }
         throw error;
     }
+    // The record of the accepted number lets a later transaction of the sender be estimated behind this one.
+    const rawTxn = args.sendTxJsonPayload.Move.raw_txn;
+    const tracker = sequenceNumberTrackerOf(config);
+    tracker.recordAccepted(rawTxn.sender, rawTxn.sequence_number, txHash);
     if (reservation !== undefined) {
-        sequenceNumberTrackerOf(config).accepted(reservation);
+        tracker.accepted(reservation);
     }
 
     // From here on the node has accepted the transaction: the errors of the wait carry `txHash`, and a failed read

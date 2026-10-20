@@ -4,7 +4,7 @@ import { isStaleSequenceNumberError } from "../src/internal/sequenceNumber";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
-import { pollUntil, rawGet, rawWaitForCommit, type RawTransaction } from "./helpers/raw";
+import { pollUntil, rawGet, rawSupraBalance, rawWaitForCommit, type RawTransaction } from "./helpers/raw";
 import { fixtureModuleFor, fixturePackageMetadata } from "./helpers/fixturePackage";
 import { explicitGas } from "./helpers/transfers";
 
@@ -210,6 +210,49 @@ describeE2E("sequence numbers", () => {
             );
 
             expectConsecutive(await commitAll(responses), first);
+        });
+
+        test("a transfer after an accepted transaction that the node discarded is sent with the chain's number", async () => {
+            const sender = await createFundedAccount(ctx);
+            const supra = newClient();
+            const price = await ctx.supra.getMinGasUnitPrice();
+            const balance = await rawSupraBalance(ctx, sender.address().toString());
+            const send = (amount: bigint, maxGas: bigint) =>
+                supra.coin.transferSupraCoin({
+                    senderAccount: sender,
+                    receiverAccountAddress: createUnfundedAccount().address().toString(),
+                    amount,
+                    optionalTransactionArgs: {
+                        optionalTransactionPayloadArgs: { maxGas, gasUnitPrice: price },
+                        enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+                    },
+                });
+            // The first transfer (0) leaves less than 5,000 gas units' worth of SUPRA. The second (1), with max gas
+            // 5,000, is accepted while the first is pending and is discarded when it executes after it.
+            const first = await send(balance - 2_000n * price - 3_000n * price, 2_000n);
+            const second = await send(AMOUNT, 5_000n);
+            expect((await rawWaitForCommit(ctx, first.hash)).status).toBe("Success");
+            await pollUntil(
+                "the second transfer to be discarded",
+                async () => {
+                    const response = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${second.hash}`);
+                    return response.status === 200 ? response.body.status : `HTTP ${response.status}`;
+                },
+                (status) => status === "Invalid" || status === "HTTP 404",
+            );
+
+            // The counter is at 2; nothing holds 1. The transfer is sent with 1 and commits.
+            const third = await supra.coin.transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: createUnfundedAccount().address().toString(),
+                amount: AMOUNT,
+                optionalTransactionArgs: {
+                    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+                },
+            });
+
+            expect(third.status).toBe("Success");
+            expect(await commitAll([third])).toEqual([1n]);
         });
 
         describe("a call that depends on a transaction that has not committed", () => {

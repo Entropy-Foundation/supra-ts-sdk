@@ -6,6 +6,7 @@ import { TransactionStatus } from "../../types/transaction";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import {
+    MAX_ACCEPTED_RECORDS_PER_ACCOUNT,
     SequenceNumberTracker,
     bindReservation,
     reservationOf,
@@ -245,6 +246,114 @@ describe("SequenceNumberTracker", () => {
         await expect(tracker.reserve("0x1", async () => Promise.reject(new Error("offline")))).rejects.toThrow("offline");
 
         expect(await next(tracker, "0x1", fetchSeven)).toBe(7n);
+    });
+});
+
+describe("SequenceNumberTracker records of accepted transactions", () => {
+    const ADDRESS = "0x" + "0".repeat(63) + "1";
+    const hashOf = (n: number) => "0x" + n.toString(16).padStart(64, "0");
+
+    it("records the hash of an accepted number, with the address and hash standardized", () => {
+        const tracker = new SequenceNumberTracker();
+
+        tracker.recordAccepted("0x1", 7, "0X" + "AB".repeat(32));
+
+        expect(tracker.acceptedHash(ADDRESS, 7n)).toBe("0x" + "ab".repeat(32));
+        expect(tracker.acceptedCount(ADDRESS)).toBe(1);
+    });
+
+    it("records nothing for a hash that is not hex", () => {
+        const tracker = new SequenceNumberTracker();
+
+        tracker.recordAccepted(ADDRESS, 7n, "not a hash");
+
+        expect(tracker.acceptedCount(ADDRESS)).toBe(0);
+    });
+
+    it(`keeps at most ${MAX_ACCEPTED_RECORDS_PER_ACCOUNT} records per account and drops the lowest number`, () => {
+        const tracker = new SequenceNumberTracker();
+
+        for (let n = 0; n <= MAX_ACCEPTED_RECORDS_PER_ACCOUNT; n += 1) {
+            tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n + 1));
+        }
+
+        expect(tracker.acceptedCount(ADDRESS)).toBe(MAX_ACCEPTED_RECORDS_PER_ACCOUNT);
+        expect(tracker.acceptedHash(ADDRESS, 0n)).toBeUndefined();
+        expect(tracker.acceptedHash(ADDRESS, BigInt(MAX_ACCEPTED_RECORDS_PER_ACCOUNT))).toBeDefined();
+    });
+
+    it("drops the records below the chain's number", () => {
+        const tracker = new SequenceNumberTracker();
+        [3, 4, 5].forEach((n) => tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n)));
+
+        tracker.observeChainSequenceNumber(ADDRESS, 5n);
+
+        expect(tracker.acceptedHash(ADDRESS, 4n)).toBeUndefined();
+        expect(tracker.acceptedHash(ADDRESS, 5n)).toBe(hashOf(5));
+    });
+
+    it("drops the records up to a transaction that reads Success or Fail", () => {
+        const tracker = new SequenceNumberTracker();
+        [3, 4, 5].forEach((n) => tracker.recordAccepted(ADDRESS, BigInt(n), hashOf(n)));
+
+        tracker.observeTransaction(hashOf(4), TransactionStatus.Fail);
+
+        expect(tracker.acceptedCount(ADDRESS)).toBe(1);
+        expect(tracker.acceptedHash(ADDRESS, 5n)).toBe(hashOf(5));
+    });
+
+    it("invalidates the counter and its records when a recorded transaction reads Invalid", async () => {
+        const tracker = new SequenceNumberTracker();
+        await tracker.reserve(ADDRESS, async () => 3n);
+        tracker.recordAccepted(ADDRESS, 3n, hashOf(3));
+        const fetchChain = jest.fn(async () => 3n);
+
+        tracker.observeTransaction(hashOf(3), TransactionStatus.Invalid);
+
+        expect(tracker.acceptedCount(ADDRESS)).toBe(0);
+        expect((await tracker.reserve(ADDRESS, fetchChain)).sequenceNumber).toBe(3n);
+        expect(fetchChain).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([TransactionStatus.Pending, TransactionStatus.PendingAfterExecution])(
+        "keeps the records when a recorded transaction reads %s",
+        (status) => {
+            const tracker = new SequenceNumberTracker();
+            tracker.recordAccepted(ADDRESS, 3n, hashOf(3));
+
+            tracker.observeTransaction(hashOf(3), status);
+
+            expect(tracker.acceptedHash(ADDRESS, 3n)).toBe(hashOf(3));
+        },
+    );
+
+    it("waits for the lower reservations to be accepted, released or dropped", async () => {
+        const tracker = new SequenceNumberTracker();
+        const [three, four, five, six] = await Promise.all(
+            Array.from({ length: 4 }, () => tracker.reserve(ADDRESS, async () => 3n)),
+        );
+        let settled = false;
+        const waiting = tracker.settledBelow(ADDRESS, six!.sequenceNumber).then(() => {
+            settled = true;
+        });
+
+        tracker.accepted(three!);
+        tracker.release(four!);
+        await Promise.resolve();
+        expect(settled).toBe(false);
+
+        tracker.invalidate(ADDRESS);
+        await waiting;
+        expect(settled).toBe(true);
+        // The reservation at 5 was dropped without a settlement of its own.
+        expect(five!.sequenceNumber).toBe(5n);
+    });
+
+    it("does not wait for reservations at or above the number", async () => {
+        const tracker = new SequenceNumberTracker();
+        const three = await tracker.reserve(ADDRESS, async () => 3n);
+
+        await expect(tracker.settledBelow(ADDRESS, three.sequenceNumber)).resolves.toBeUndefined();
     });
 });
 

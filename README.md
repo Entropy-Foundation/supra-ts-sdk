@@ -391,9 +391,12 @@ own counter and recover from each other's transactions through the refusal and r
 The max gas estimate simulates against committed state. For a transaction sent while an earlier transaction of the
 account has not committed, the node reports the number as too new; the SDK then simulates the same transaction with the
 account's number on the chain and submits it with the counter's number, so pipelined transfers work with the default
-gas settings. A transaction that depends on an earlier one that has not committed (for example a call to a module that
-the earlier transaction publishes) fails that simulation and throws `SupraSimulationFailedError`, and nothing is
-submitted. Pass `maxGas` for such a transaction, or wait for the earlier transaction to commit.
+gas settings. It does so only when every number between the chain's and the transaction's belongs to a transaction
+that the node accepted from this client and the one at the chain's number is still pending; otherwise the counter is
+read from the chain and the transaction sent once more. A transaction that depends on an earlier one that has not
+committed (for example a call to a module that the earlier transaction publishes) fails that simulation and throws
+`SupraSimulationFailedError`, and nothing is submitted. Pass `maxGas` for such a transaction, or wait for the earlier
+transaction to commit.
 
 A node accepts a transaction whose number is ahead of the account's next number and holds it until the numbers before
 it have been sent. The node holds at most 25 numbers per account by default (the refusal message names the highest

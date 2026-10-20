@@ -33,7 +33,13 @@ let accountReads: number;
 let balances: string[];
 /** Answers a simulation at a number that matches the chain's. */
 let simulateAtChainNumber: () => Answer;
-let simulate: (sequenceNumber: number, chainSequenceNumber: number) => Answer;
+let simulate: (sequenceNumber: number, chainSequenceNumber: number, body: string) => Answer;
+/** The hash the node returns for each submission, in order. */
+let submittedHashes: string[];
+/** The hashes of the transaction reads, in order. */
+let transactionReads: string[];
+/** Answers a read of a transaction by its hash; the default is `Pending`. */
+let readTransaction: (hash: string) => Answer;
 /** Answers of the chain-ID reads in order; once they are used up, the reads answer 255. */
 let chainIdAnswers: Answer[];
 let chainIdReads: number;
@@ -104,6 +110,9 @@ beforeEach(() => {
     balances = [String(1_000n * 100_000_000n)];
     chainIdAnswers = [];
     chainIdReads = 0;
+    submittedHashes = [];
+    transactionReads = [];
+    readTransaction = () => json(moveTxn(TransactionStatus.Pending, "", 0));
     simulateAtChainNumber = () => gasUsed(2_000);
     simulate = (sequenceNumber, chainSequenceNumber) => {
         if (sequenceNumber > chainSequenceNumber) {
@@ -131,18 +140,22 @@ beforeEach(() => {
             simulations.push(record);
             // The node's number is the one the latest account read returned.
             const read = Math.min(Math.max(accountReads - 1, 0), chainSequenceNumbers.length - 1);
-            return respond(simulate(record.sequenceNumber, chainSequenceNumbers[read] ?? 0));
+            return respond(simulate(record.sequenceNumber, chainSequenceNumbers[read] ?? 0, String(init?.body)));
         }
         if (method === "POST" && path === "/transactions/submit") {
             submissions.push(recordOf(init));
-            return respond(json(HASH));
+            const hash = "0x" + (submittedHashes.length + 1).toString(16).padStart(64, "0");
+            submittedHashes.push(hash);
+            return respond(json(hash));
         }
         if (method === "GET" && path === "/transactions/chain_id") {
             chainIdReads += 1;
             return respond(chainIdAnswers.shift() ?? json(255));
         }
         if (method === "GET" && path.startsWith("/transactions/")) {
-            return respond(json(moveTxn(TransactionStatus.Success, "Executed successfully", 7)));
+            const hash = path.slice("/transactions/".length);
+            transactionReads.push(hash);
+            return respond(readTransaction(hash));
         }
         return respond(json({ message: `unexpected ${method} ${path}` }, 500));
     }) as typeof fetch;
@@ -190,6 +203,8 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         });
         expect(submissions[1]?.maxGas).toBe(3_000);
         expect(submissions[1]?.expiration).toBe(first.expiration);
+        // The estimate read transaction 3 to check that it is pending: one read besides the two read-backs.
+        expect(transactionReads.filter((hash) => hash === submittedHashes[0])).toHaveLength(2);
     });
 
     it("makes one simulation when the numbers are equal", async () => {
@@ -227,11 +242,13 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
     it("reads the number and simulates once more when the chain moved, and uses the second result", async () => {
         const supra = newClient();
         const sender = new SupraAccount();
+        // Transactions 3 and 4 are accepted and pending.
+        await transfer(supra, sender);
         await transfer(supra, sender);
         simulations = [];
         submissions = [];
-        // The simulation at the first number read is stale (the chain moved after the read); the second read and
-        // simulation succeed.
+        // The third transaction (5) is too new. The simulation at the first number read (3) is stale because
+        // transaction 3 committed after the read; the second read (4) and simulation succeed.
         let calls = 0;
         simulate = (sequenceNumber) => {
             calls += 1;
@@ -241,15 +258,15 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
             if (calls === 2) {
                 return tooOld();
             }
-            return sequenceNumber === 3 ? gasUsed(4_000) : tooNew();
+            return sequenceNumber === 4 ? gasUsed(4_000) : tooNew();
         };
-        chainSequenceNumbers = [2, 3];
+        chainSequenceNumbers = [3, 4];
         accountReads = 0;
 
         await transfer(supra, sender);
 
-        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 2, 3]);
-        expect(submissions.at(-1)).toMatchObject({ sequenceNumber: 4, maxGas: 6_000 });
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([5, 3, 4]);
+        expect(submissions.at(-1)).toMatchObject({ sequenceNumber: 5, maxGas: 6_000 });
     });
 
     it("simulates at the transaction's own number when the chain reached it after the first simulation", async () => {
@@ -365,6 +382,153 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         await transfer(supra, sender);
 
         expect(submissions[0]).toMatchObject({ sequenceNumber: 4, maxGas: Number(DEFAULT_MAX_GAS_UNITS) });
+    });
+
+    it("numbers concurrent transfers consecutively and estimates each behind the earlier ones", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        await Promise.all([transfer(supra, sender), transfer(supra, sender), transfer(supra, sender)]);
+
+        expect(submissions.map((s) => s.sequenceNumber).sort()).toEqual([3, 4, 5]);
+        expect(submissions.every((s) => s.maxGas === 3_000)).toBe(true);
+        // Transactions 4 and 5 were simulated at 3, the chain's number.
+        expect(simulations.filter((s) => s.sequenceNumber === 3)).toHaveLength(3);
+    });
+
+    it("sends the transfer again with the chain's number when a concurrent call's estimate failed and its number was freed", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        // The transfer of 0x0102030405 aborts in its simulation (its amount serialises as these bytes).
+        simulate = (sequenceNumber, chain, body) => {
+            if (body.includes("[5,4,3,2,1,0,0,0]")) {
+                return json(
+                    moveTxn(TransactionStatus.Fail, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)", 5),
+                );
+            }
+            return sequenceNumber > chain ? tooNew() : sequenceNumber < chain ? tooOld() : gasUsed(2_000);
+        };
+        const aborting = supra.coin.transferSupraCoin({
+            senderAccount: sender,
+            receiverAccountAddress: "0x" + "ab".repeat(32),
+            amount: 0x0102030405n,
+            optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false } },
+        });
+
+        const [first, second] = await Promise.allSettled([aborting, transfer(supra, sender)]);
+
+        expect(first.status).toBe("rejected");
+        expect(second.status).toBe("fulfilled");
+        // The second call had 4; nothing holds 3, so 4 would not commit. It is sent with 3, read from the chain.
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
+        expect(accountReads).toBe(3);
+    });
+
+    it.each([
+        ["Invalid", () => json(moveTxn(TransactionStatus.Invalid, "SEQUENCE_NUMBER_TOO_OLD", 0))],
+        ["HTTP 404", () => json({ message: "not found" }, 404)],
+    ])(
+        "sends the transfer again with the chain's number when the earlier transaction reads %s",
+        async (_name, answer) => {
+            const supra = newClient();
+            const sender = new SupraAccount();
+            await transfer(supra, sender);
+            simulations = [];
+            submissions = [];
+            // Transaction 3 was accepted and then discarded; the chain stays at 3.
+            readTransaction = (hash) =>
+                hash === submittedHashes[0] ? answer() : json(moveTxn(TransactionStatus.Pending, "", 0));
+
+            await transfer(supra, sender);
+
+            expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 3]);
+            expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
+        },
+    );
+
+    it("throws SEQUENCE_NUMBER_TOO_NEW for an explicit number with no pending transaction before it", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        const error: unknown = await supra.coin
+            .transferSupraCoin({
+                senderAccount: sender,
+                receiverAccountAddress: "0x" + "ab".repeat(32),
+                amount: 1n,
+                optionalTransactionArgs: {
+                    optionalTransactionPayloadArgs: { sequenceNumber: 4n },
+                    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+                },
+            })
+            .catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(SupraSimulationFailedError);
+        expect((error as SupraSimulationFailedError).major_status).toBe("SEQUENCE_NUMBER_TOO_NEW");
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4]);
+        expect(submissions).toHaveLength(0);
+    });
+
+    it("estimates an explicit number behind a pending transaction of this client", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        simulations = [];
+
+        await supra.coin.transferSupraCoin({
+            senderAccount: sender,
+            receiverAccountAddress: "0x" + "ab".repeat(32),
+            amount: 1n,
+            optionalTransactionArgs: {
+                optionalTransactionPayloadArgs: { sequenceNumber: 4n },
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: false },
+            },
+        });
+
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 3]);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3, 4]);
+    });
+});
+
+describe("a read of a transaction this client submitted", () => {
+    it.each([
+        [
+            "getTransactionByHash",
+            (supra: SupraClient, hash: string) => supra.getTransactionByHash({ transactionHash: hash }),
+        ],
+        [
+            "waitForTransaction",
+            (supra: SupraClient, hash: string) =>
+                supra.waitForTransaction({ transactionHash: hash, options: { checkSuccess: false, timeoutMs: 1_000 } }),
+        ],
+    ])("makes the counter read the chain again when %s reads Invalid", async (_name, read) => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        readTransaction = () => json(moveTxn(TransactionStatus.Invalid, "SEQUENCE_NUMBER_TOO_OLD", 0));
+        await read(supra, submittedHashes[0] as string);
+        readTransaction = () => json(moveTxn(TransactionStatus.Pending, "", 0));
+        const readsBefore = accountReads;
+
+        await transfer(supra, sender);
+
+        expect(accountReads).toBe(readsBefore + 1);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3, 3]);
+    });
+
+    it("leaves the counter alone when another transaction reads Invalid", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        readTransaction = () => json(moveTxn(TransactionStatus.Invalid, "SEQUENCE_NUMBER_TOO_OLD", 0));
+        await supra.getTransactionByHash({ transactionHash: "0x" + "77".repeat(32) });
+        readTransaction = () => json(moveTxn(TransactionStatus.Pending, "", 0));
+        const readsBefore = accountReads;
+
+        await transfer(supra, sender);
+
+        // No chain read for the counter; the estimate of 4 reads the chain once behind pending transaction 3.
+        expect(accountReads).toBe(readsBefore + 1);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3, 4]);
     });
 });
 

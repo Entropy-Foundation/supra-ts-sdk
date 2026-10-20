@@ -27,8 +27,12 @@ import type { MoveInnerAuthenticator } from "../move";
  *   balance pays for when that is known.
  *
  * The simulation runs against committed state. When an earlier transaction of the sender has not committed, the
- * simulation reports the sequence number as too new; the transaction is then simulated with the sender's sequence
- * number on the chain, and submitted with its own. A transaction that depends on an earlier one that has not committed
+ * simulation reports the sequence number as too new. When every number from the sender's sequence number on the chain
+ * up to the transaction's belongs to a transaction that the node accepted from this client, and the one at the chain's
+ * number is still pending, the transaction is simulated with the chain's number and submitted with its own. Otherwise
+ * the transaction's number is stale: a helper that took it from the client's counter reads the number from the chain
+ * and sends the transaction once more, and a call with an explicit `sequenceNumber` throws the
+ * `SupraSimulationFailedError`. A transaction that depends on an earlier one that has not committed
  * (for example one that uses a resource the earlier one creates) fails its estimate and throws
  * `SupraSimulationFailedError`; set `maxGas` for such a transaction.
  *

@@ -13,8 +13,9 @@ import {
 } from "../../utils/constants";
 import { standardizeAddress } from "../../helper/account";
 import { SupraSimulationFailedError } from "../../errors/transactionError";
-import { getAccountInfoInternal } from "../account";
 import { viewRawInternal } from "../methods";
+import { sequenceNumberTrackerOf } from "../sequenceNumber";
+import { simulateBehindPendingInternal } from "./behindPending";
 import { simulateTxnInternal } from "./txnSimulate";
 import { sendTxnPayloadInternal } from "./txnBuild";
 
@@ -81,11 +82,15 @@ export async function affordableGasUnitsInternal(
  *
  * A simulation whose status is not `Success` (a `Fail` with an abort, `OUT_OF_GAS`, `PendingAfterExecution`,
  * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. When the transaction's sequence number
- * is ahead of the account's number on the chain, because an earlier transaction of the account has not committed, the
- * simulation reports `SEQUENCE_NUMBER_TOO_NEW`: the same transaction is then simulated with the chain's number, and
- * that result is used. If that simulation reports a stale sequence number again, the number is read and the
- * simulation made once more; if it is stale a second time, or the account cannot be read, the max gas is
- * `DEFAULT_MAX_GAS_UNITS`, at most `affordable`. When any simulation of the estimate reports
+ * is ahead of the account's number on the chain, the simulation reports `SEQUENCE_NUMBER_TOO_NEW`. When every number
+ * from the chain's up to the transaction's belongs to a transaction that the node accepted from this client, and the
+ * one at the chain's number is still pending (`simulateBehindPendingInternal`), the same transaction is simulated with
+ * the chain's number and that result is used. Otherwise the transaction's number is stale and the
+ * `SEQUENCE_NUMBER_TOO_NEW` failure is thrown, so that the helper reads the number from the chain and sends the
+ * transaction once more. If the simulation at the chain's number reports a stale sequence number, the number is read
+ * and the simulation made once more; if it is stale a second time, or the account or the pending transaction cannot
+ * be read, or the chain has passed the transaction's number, the max gas is `DEFAULT_MAX_GAS_UNITS`, at most
+ * `affordable`. When any simulation of the estimate reports
  * `INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE` because an earlier transaction committed after the balance was read, the
  * balance is read again (at most twice in one estimate) and the simulation is made with what the new balance pays
  * for; when the new balance still pays for the simulated max gas, the failure is thrown.
@@ -134,14 +139,28 @@ export async function resolveMaxGasInternal(
         affordable,
         config,
     );
+    const sender = standardizeAddress(simulations.rawTxn.sender.toHexString().toString());
+    const sequenceNumber = BigInt(simulations.rawTxn.sequence_number);
     let simulated: TransactionResponse | undefined;
     try {
         simulated = await simulations.simulate();
+        if (simulated !== undefined) {
+            // The simulation at the transaction's own number ran, so that number is the account's number on the chain.
+            sequenceNumberTrackerOf(config).observeChainSequenceNumber(sender, sequenceNumber);
+        }
     } catch (error) {
         if (!(error instanceof SupraSimulationFailedError) || !isSequenceNumberTooNew(error)) {
             throw error;
         }
-        simulated = await simulateAtChainSequenceNumber(simulations, config);
+        const outcome = await simulateBehindPendingInternal(
+            { address: sender, sequenceNumber, simulateAt: (chainNumber) => simulations.simulate(chainNumber) },
+            config,
+        );
+        if (outcome.kind === "gap") {
+            // The transaction's number is not behind pending transactions of this client: it is stale.
+            throw error;
+        }
+        simulated = outcome.kind === "simulated" ? outcome.result : undefined;
     }
     // A simulation may have lowered `affordable` after a new balance read; the fallback uses the lowest value.
     const gasUsed = simulated === undefined ? undefined : gasUsedOf(simulated);
@@ -262,52 +281,6 @@ function withSequenceNumber(
         rawTxn.expiration_timestamp_secs,
         rawTxn.chain_id,
     );
-}
-
-/**
- * Simulates the transaction again with the account's sequence number on the chain, for a transaction whose number is
- * ahead of the committed state because an earlier transaction of the account has not committed. The simulation runs
- * with the same payload, gas unit price, expiry and chain ID. When the chain moved between the read and the
- * simulation, the number is read again, once more. A shortfall of the balance is handled by
- * `EstimateSimulations.simulate`. Returns `undefined` when the result says nothing about the transaction (the chain's
- * number is above the transaction's, the sequence number is stale both times, the account or the balance cannot be
- * read, the request fails). A simulation that fails for another reason throws its `SupraSimulationFailedError`.
- */
-async function simulateAtChainSequenceNumber(
-    simulations: EstimateSimulations,
-    config: NetworkConfig,
-): Promise<TransactionResponse | undefined> {
-    let staleSimulations = 0;
-    while (staleSimulations < 2) {
-        let chainSequenceNumber: bigint;
-        try {
-            const account = await getAccountInfoInternal(
-                { accountAddress: simulations.rawTxn.sender.toHexString() },
-                config,
-            );
-            chainSequenceNumber = BigInt(account.sequence_number);
-        } catch {
-            return undefined;
-        }
-        if (chainSequenceNumber > BigInt(simulations.rawTxn.sequence_number)) {
-            // The chain has passed the transaction's number: a simulation says nothing about the transaction.
-            return undefined;
-        }
-        // At an equal number the transaction is the account's next one, and the simulation runs with its own number.
-        try {
-            return await simulations.simulate(chainSequenceNumber);
-        } catch (error) {
-            if (
-                error instanceof SupraSimulationFailedError &&
-                (error.major_status === "SEQUENCE_NUMBER_TOO_NEW" || error.major_status === "SEQUENCE_NUMBER_TOO_OLD")
-            ) {
-                staleSimulations += 1;
-            } else {
-                throw error;
-            }
-        }
-    }
-    return undefined;
 }
 
 function gasUsedOf(transaction: TransactionResponse): number | undefined {

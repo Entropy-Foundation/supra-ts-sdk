@@ -544,7 +544,7 @@ A transaction executes only when its sequence number is the account's next numbe
 - `supra.resetSequenceNumber(address)` forgets the counter of an account. Call it after the account sent transactions by other means.
 - `optionalTransactionPayloadArgs: { sequenceNumber }` makes a helper use that number as given, without using or changing the counter.
 
-The max gas estimate simulates against committed state. A transaction sent while an earlier one of the account has not committed is simulated with the account's number on the chain and submitted with the counter's number, so pipelined helper calls work with the default gas settings. A transaction that depends on an earlier uncommitted one (for example a call to a module that the earlier one publishes) fails the estimate and throws `SupraSimulationFailedError`; pass `maxGas` for it.
+The max gas estimate simulates against committed state. A transaction sent while an earlier one of the account has not committed is simulated with the account's number on the chain and submitted with the counter's number, so pipelined helper calls work with the default gas settings. This happens only when every number between the chain's and the transaction's belongs to a transaction that the node accepted from this client and the one at the chain's number is still pending; otherwise the counter is read from the chain and the transaction sent once more. A transaction that depends on an earlier uncommitted one (for example a call to a module that the earlier one publishes) fails the estimate and throws `SupraSimulationFailedError`; pass `maxGas` for it.
 
 A node holds at most 25 queued transactions per account by default, so wait for commits (`enableWaitForTransaction: true`) when sending more than that from one account.
 

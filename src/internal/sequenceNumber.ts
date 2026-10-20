@@ -2,6 +2,7 @@ import { standardizeAddress } from "../helper/account";
 import { SupraAPIError } from "../errors/apiError";
 import { SupraSimulationFailedError, SupraTransactionFailedError } from "../errors/transactionError";
 import type { AccountAddressInput } from "../types/account";
+import { TransactionStatus } from "../types/transaction";
 import type { SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { getAccountInfoInternal } from "./account";
@@ -32,13 +33,31 @@ export interface SequenceNumberReservation {
  */
 const SEQUENCE_NUMBER_MESSAGE = /\bsequence[ _]number\b|\balready (?:pending|scheduled)\b/i;
 
+/**
+ * The number of accepted transactions the tracker records per account. When a record is added beyond it, the record
+ * with the lowest number is dropped.
+ */
+export const MAX_ACCEPTED_RECORDS_PER_ACCOUNT = 256;
+
+/** A reservation handed out and not yet settled, with the promise that resolves when it is settled. */
+interface Outstanding {
+    reservation: SequenceNumberReservation;
+    settled: Promise<void>;
+    settle: () => void;
+}
+
 interface AccountState {
     /** The next number to hand out, or `undefined` when it has to be read from the chain. */
     next: bigint | undefined;
     /** Numbers below `next` that were handed out and not used by the node, ascending. They are handed out first. */
     freed: bigint[];
     /** Reservations handed out whose submission has not yet been accepted or refused, by number. */
-    reserved: Map<bigint, SequenceNumberReservation>;
+    reserved: Map<bigint, Outstanding>;
+    /**
+     * The hash of each transaction of the account that the node accepted from this client, by sequence number, for
+     * the numbers not yet known to be committed.
+     */
+    accepted: Map<bigint, string>;
     /** Incremented by every resynchronisation; a reservation of an earlier generation is ignored. */
     generation: number;
     /** Serialises the reads and increments of `next`. */
@@ -51,6 +70,11 @@ interface AccountState {
  * A number is taken from the counter when a helper builds a transaction (`reserve`) and is settled when the
  * submission ends: accepted (the number is used), refused (the number is handed out again) or unknown (the counter
  * is read from the chain again on the next use).
+ *
+ * The tracker also records the sequence number and hash of every transaction that the node accepted from this client
+ * (`recordAccepted`), until the counter is invalidated or a read shows the number committed.
+ *
+ * Every address is standardized (`standardizeAddress`); `recordAccepted` standardizes its own.
  */
 export class SequenceNumberTracker {
     private readonly accounts = new Map<string, AccountState>();
@@ -69,19 +93,127 @@ export class SequenceNumberTracker {
     /** The node accepted the transaction of this reservation. */
     accepted(reservation: SequenceNumberReservation): void {
         const state = this.accounts.get(reservation.address);
-        if (state?.reserved.get(reservation.sequenceNumber) === reservation) {
+        const outstanding = state?.reserved.get(reservation.sequenceNumber);
+        if (state !== undefined && outstanding?.reservation === reservation) {
             state.reserved.delete(reservation.sequenceNumber);
+            outstanding.settle();
         }
+    }
+
+    /**
+     * Records that the node accepted the transaction `hash` of `address` with `sequenceNumber` from this client,
+     * whether or not its number came from the counter. Nothing is recorded when the address, the number or the hash
+     * cannot be read.
+     */
+    recordAccepted(address: AccountAddressInput, sequenceNumber: bigint | number, hash: string): void {
+        let account: string;
+        let normalised: string;
+        let number: bigint;
+        try {
+            account = standardizeAddress(address);
+            normalised = standardizeAddress(hash);
+            number = BigInt(sequenceNumber);
+        } catch {
+            return;
+        }
+        const { accepted } = this.stateOf(account);
+        accepted.set(number, normalised);
+        if (accepted.size > MAX_ACCEPTED_RECORDS_PER_ACCOUNT) {
+            let lowest = number;
+            for (const recorded of accepted.keys()) {
+                if (recorded < lowest) {
+                    lowest = recorded;
+                }
+            }
+            accepted.delete(lowest);
+        }
+    }
+
+    /** The hash of the transaction of `address` with `sequenceNumber` that the node accepted from this client. */
+    acceptedHash(address: string, sequenceNumber: bigint): string | undefined {
+        return this.accounts.get(address)?.accepted.get(sequenceNumber);
+    }
+
+    /** The number of accepted transactions of `address` that the tracker records. */
+    acceptedCount(address: string): number {
+        return this.accounts.get(address)?.accepted.size ?? 0;
+    }
+
+    /**
+     * The account's sequence number on the chain is at least `chainSequenceNumber`: the transactions recorded with a
+     * lower number have committed, and their records are dropped.
+     */
+    observeChainSequenceNumber(address: string, chainSequenceNumber: bigint): void {
+        const accepted = this.accounts.get(address)?.accepted;
+        if (accepted === undefined) {
+            return;
+        }
+        for (const recorded of [...accepted.keys()]) {
+            if (recorded < chainSequenceNumber) {
+                accepted.delete(recorded);
+            }
+        }
+    }
+
+    /**
+     * A read of the transaction `hash` returned `status`. For a transaction recorded as accepted: `Invalid` (the
+     * transaction was discarded and did not use its number) invalidates the counter of its account; `Success` or
+     * `Fail` (the transaction committed) drops the records up to its number.
+     */
+    observeTransaction(hash: string, status: TransactionStatus): void {
+        if (
+            status !== TransactionStatus.Invalid &&
+            status !== TransactionStatus.Success &&
+            status !== TransactionStatus.Fail
+        ) {
+            return;
+        }
+        let normalised: string;
+        try {
+            normalised = standardizeAddress(hash);
+        } catch {
+            return;
+        }
+        for (const [address, state] of this.accounts) {
+            for (const [sequenceNumber, recorded] of state.accepted) {
+                if (recorded !== normalised) {
+                    continue;
+                }
+                if (status === TransactionStatus.Invalid) {
+                    this.invalidate(address);
+                } else {
+                    this.observeChainSequenceNumber(address, sequenceNumber + 1n);
+                }
+                return;
+            }
+        }
+    }
+
+    /**
+     * Resolves when every reservation of `address` with a number below `sequenceNumber` that is outstanding now has
+     * been accepted, refused or dropped by `invalidate`.
+     */
+    async settledBelow(address: string, sequenceNumber: bigint): Promise<void> {
+        const state = this.accounts.get(address);
+        if (state === undefined) {
+            return;
+        }
+        const pending = [...state.reserved.values()]
+            .filter((outstanding) => outstanding.reservation.sequenceNumber < sequenceNumber)
+            .map((outstanding) => outstanding.settled);
+        await Promise.all(pending);
     }
 
     /** The node did not accept the transaction of this reservation, so its number is handed out again. */
     release(reservation: SequenceNumberReservation): void {
         const { sequenceNumber } = reservation;
         const state = this.accounts.get(reservation.address);
-        if (state === undefined || state.reserved.get(sequenceNumber) !== reservation || state.next === undefined) {
+        const outstanding = state?.reserved.get(sequenceNumber);
+        if (state === undefined || outstanding?.reservation !== reservation || state.next === undefined) {
             return;
         }
         state.reserved.delete(sequenceNumber);
+        outstanding.settle();
         if (sequenceNumber + 1n === state.next) {
             state.next = sequenceNumber;
             while (state.freed.length > 0 && state.freed[state.freed.length - 1] === state.next - 1n) {
@@ -94,7 +226,10 @@ export class SequenceNumberTracker {
         state.freed.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     }
 
-    /** Forgets the counter of `address`; the next use reads the number from the chain. */
+    /**
+     * Forgets the counter of `address` and its records of accepted transactions; the next use reads the number from
+     * the chain. The outstanding reservations are dropped.
+     */
     invalidate(address: string): void {
         const state = this.accounts.get(address);
         if (state === undefined) {
@@ -102,7 +237,11 @@ export class SequenceNumberTracker {
         }
         state.next = undefined;
         state.freed = [];
+        for (const outstanding of state.reserved.values()) {
+            outstanding.settle();
+        }
         state.reserved.clear();
+        state.accepted.clear();
         state.generation += 1;
     }
 
@@ -113,6 +252,7 @@ export class SequenceNumberTracker {
                 next: undefined,
                 freed: [],
                 reserved: new Map(),
+                accepted: new Map(),
                 generation: 0,
                 tail: Promise.resolve(),
             };
@@ -136,6 +276,7 @@ export class SequenceNumberTracker {
                 }
                 next = fromChain;
                 state.next = next;
+                this.observeChainSequenceNumber(address, fromChain);
             }
             const freed = state.freed.shift();
             let sequenceNumber: bigint;
@@ -146,7 +287,11 @@ export class SequenceNumberTracker {
                 state.next = next + 1n;
             }
             const reservation: SequenceNumberReservation = { address, sequenceNumber };
-            state.reserved.set(sequenceNumber, reservation);
+            let settle: () => void = () => undefined;
+            const settled = new Promise<void>((resolve) => {
+                settle = resolve;
+            });
+            state.reserved.set(sequenceNumber, { reservation, settled, settle });
             return reservation;
         }
     }

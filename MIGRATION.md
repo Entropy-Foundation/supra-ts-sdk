@@ -330,9 +330,12 @@ functions of `Contract.fromABI` read the sender's SUPRA balance, simulate the tr
 balance read and a simulation request before the submission. `transaction.build.simple` makes a balance read and uses
 `DEFAULT_MAX_GAS_UNITS`, at most what the balance pays for.
 
-The simulation runs against committed state. When an earlier transaction of the same account has not committed, the
-SDK simulates the transaction with the account's sequence number on the chain and submits it with the counter's number,
-so transfers sent one after another without waiting work with the default gas settings. A transaction that depends on an
+The simulation runs against committed state. When earlier transactions of the same account that this client submitted
+have not committed, the SDK simulates the transaction with the account's sequence number on the chain and submits it
+with the counter's number, so transfers sent one after another without waiting work with the default gas settings. It
+does so only when every number between the chain's and the transaction's belongs to a transaction that the node
+accepted from this client and the one at the chain's number is still pending; otherwise the counter is read from the
+chain and the transaction sent once more. A transaction that depends on an
 earlier one that has not committed (for example a call to a module that the earlier one publishes) fails its estimate
 and throws `SupraSimulationFailedError`; set `maxGas` for such a transaction.
 
