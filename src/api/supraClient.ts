@@ -14,6 +14,7 @@ import { Block } from "./block";
 import { FungibleAsset } from "./fungibleAsset";
 import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS } from "../utils/constants";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
+import { validateWaitTimeoutMs } from "../internal/transaction";
 
 
 /**
@@ -135,6 +136,9 @@ export class SupraClient {
         }
         if (config.retry !== undefined) {
             this.networkInformation.retry = resolveRetry(config.retry);
+        }
+        if (config.waitTimeoutMs !== undefined) {
+            this.networkInformation.waitTimeoutMs = validateWaitTimeoutMs(config.waitTimeoutMs, "waitTimeoutMs");
         }
 
 

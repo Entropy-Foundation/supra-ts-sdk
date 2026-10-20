@@ -1,45 +1,44 @@
 import { BCS, TxnBuilderTypes } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
 import type { Ed25519Signature, MoveInnerAuthenticator, MultiAgentSignature } from "../../types/move";
-import { TransactionStatus, type MoveTransactionOutput, type TransactionResponse } from "../../types/transaction";
+import { TransactionStatus, type TransactionResponse } from "../../types/transaction";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { getRawTxnJSONInternal } from "./txnBuild";
-import { SupraAPIError } from "../../errors/apiError";
+import { SupraSimulationFailedError } from "../../errors/transactionError";
 
+/**
+ * Simulates a transaction and returns the simulated transaction when its status is `Success`.
+ *
+ * The request carries a copy of the payload whose signatures are zero; the caller's payload is not modified.
+ * A simulation with any other status throws `SupraSimulationFailedError` carrying the simulated transaction.
+ */
 export async function simulateTxnInternal(
     args: { sendTxPayload: SendTxnPayload },
     config: NetworkConfig
 ): Promise<TransactionResponse> {
-    let txAuthenticatorWithValidSignatures = args.sendTxPayload.Move.authenticator;
-    let txAuthenticatorClone = JSON.parse(JSON.stringify(txAuthenticatorWithValidSignatures));
+    const authenticator = JSON.parse(JSON.stringify(args.sendTxPayload.Move.authenticator)) as MoveInnerAuthenticator;
+    unsetAuthenticatorSignatures(authenticator);
+    const simulationPayload: SendTxnPayload = {
+        ...args.sendTxPayload,
+        Move: { ...args.sendTxPayload.Move, authenticator },
+    };
 
-    args.sendTxPayload.Move.authenticator = txAuthenticatorClone;
-
-    unsetAuthenticatorSignatures(args.sendTxPayload.Move.authenticator);
-
-    let simulatedTxnResponse = await post<SendTxnPayload, TransactionResponse>({
+    const simulatedTxnResponse = await post<SendTxnPayload, TransactionResponse>({
         path: "/transactions/simulate",
-        data: args.sendTxPayload,
+        data: simulationPayload,
     }, config);
 
-    // Converted authenticator to original format
-    args.sendTxPayload.Move.authenticator = txAuthenticatorWithValidSignatures;
-
-    // added as simulation api does not return error
-    if (simulatedTxnResponse.status == TransactionStatus.Fail) {
-        throw new SupraAPIError({
-            status: 400,
-            statusText: (simulatedTxnResponse.output as MoveTransactionOutput).Move.vm_status,
-            url: "",
-            data: simulatedTxnResponse
-        })
+    // The node answers a simulation with HTTP 200 whatever the simulated status.
+    if (simulatedTxnResponse.status !== TransactionStatus.Success) {
+        throw new SupraSimulationFailedError(simulatedTxnResponse);
     }
 
     return simulatedTxnResponse;
 }
 
 
+/** Replaces every signature of the authenticator with zeros, in place. */
 export function unsetAuthenticatorSignatures(txAuthenticator: MoveInnerAuthenticator) {
     let nullSignature = "0x" + "0".repeat(128);
     if ("Ed25519" in txAuthenticator) {

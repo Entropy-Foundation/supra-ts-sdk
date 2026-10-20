@@ -436,7 +436,7 @@ const txn = await supra.transaction.submit.submitSerializedRawTransactionAndSign
 // Wait for transaction confirmation
 const committed: CommittedTransactionResponse = await supra.transaction.waitForTransaction({
     transactionHash: txn.hash,
-    options: { timeoutSecs: 30, checkSuccess: true },
+    options: { timeoutMs: 30_000, checkSuccess: true },
 });
 
 // Check if pending

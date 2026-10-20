@@ -4,8 +4,7 @@ import type { FungibleAssetMetadata } from "../types/fungibleAsset";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_EXISTS, DEFAULT_MAX_GAS_FOR_SUPRA_TRANSFER_WHEN_RECEIVER_NOT_EXISTS, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
 import { getAccountInfoInternal, getAccountResourceInternal, isAccountExistsInternal } from "./account";
-import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
-import type { TransactionResponse } from "../types/transaction";
+import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { MoveFunctionId } from "../types/move";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
@@ -26,7 +25,7 @@ export async function transferFungibleAssetInternal(
         optionalTransactionArgs?: OptionalTransactionArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
+): Promise<SubmitTransactionResponse> {
 
     let receiverAccountAddress = typeof args.receiverAccountAddress === "string" ? new HexString(args.receiverAccountAddress.toString()) : args.receiverAccountAddress;
     let assetAddress = typeof args.assetAddress === "string" ? new HexString(args.assetAddress.toString()) : args.assetAddress;

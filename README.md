@@ -111,6 +111,9 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraTimeoutError` | a request exceeds the timeout | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers | `url`, `cause` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
+| `SupraSimulationFailedError` | a simulation returns a status other than `Success` | `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
+| `SupraTransactionFailedError` | a transaction the SDK waited for ends with `Fail` or `Invalid` | `hash`, `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
+| `SupraTransactionTimeoutError` | a transaction the SDK waited for has no final status within the wait timeout | `hash`, `timeoutMs`, `lastStatus`, `transaction`, `cause` |
 
 `SupraAPIError.message` is the node's `message` when the error body has one, otherwise the HTTP status text.
 `major_status` is the name of the Move VM status the message reports, for example `SEQUENCE_NUMBER_TOO_OLD`,
@@ -154,6 +157,58 @@ A GET is retried when the node answers 429 or 503 or the connection fails, up to
 retried after the wait the node asks for (`retry_after_seconds`, else `Retry-After`) and is thrown at once when that wait
 exceeds `maxDelayMs`; the other cases wait 250 ms, doubling on every retry, up to `maxDelayMs`. A timeout is not
 retried. POST requests (submit, simulate, view) are never retried.
+
+### Transaction outcomes
+
+Every submit helper (`transaction.submit.*`, the submit methods of a built transaction, the coin and fungible asset
+transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handles the outcome the same way:
+
+- With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws
+  `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too.
+- With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed
+  and failed, for example a Move abort or `Out of gas`) and `Invalid` (discarded) throw `SupraTransactionFailedError`,
+  unless `checkSuccess: false` is passed. `Pending` and `PendingAfterExecution` are not final, and neither is a 404
+  for a transaction the node has not seen yet: the call keeps waiting until `waitTimeoutMs` (per call, else
+  `SupraConfig.waitTimeoutMs`, else 60 seconds) and then throws `SupraTransactionTimeoutError`.
+- Without `enableWaitForTransaction`, the call returns the transaction as the node reports it right after the
+  submission. When that read fails, it returns `{ hash, status: "NotReadBack", readError }`: the node accepted the
+  transaction, and `hash` can be passed to `waitForTransaction`.
+
+```ts
+import {
+  SupraClient,
+  Network,
+  SupraAccount,
+  SupraSimulationFailedError,
+  SupraTransactionFailedError,
+  SupraTransactionTimeoutError,
+} from 'supra-ts-sdk';
+
+const supra = new SupraClient({ network: Network.TESTNET, waitTimeoutMs: 30_000 });
+const sender = new SupraAccount(); // a funded account
+
+try {
+  const txn = await supra.coin.transferSupraCoin({
+    senderAccount: sender,
+    receiverAccountAddress: "0x1234",
+    amount: 100n,
+    optionalTransactionArgs: {
+      enableTransactionWaitAndSimulationArgs: { enableTransactionSimulation: true, enableWaitForTransaction: true },
+    },
+  });
+  console.log(`Committed ${txn.hash}`);
+} catch (error) {
+  if (error instanceof SupraSimulationFailedError) {
+    console.log(`Not submitted: ${error.vm_status}`);
+  } else if (error instanceof SupraTransactionFailedError) {
+    console.log(`${error.hash} failed with status ${error.status}: ${error.vm_status}`);
+  } else if (error instanceof SupraTransactionTimeoutError) {
+    console.log(`${error.hash} has no final status after ${error.timeoutMs} ms (last status ${error.lastStatus})`);
+  } else {
+    throw error;
+  }
+}
+```
 
 ## 📚 More Examples
 

@@ -1,13 +1,37 @@
 import { BCS, type HexString, type SupraAccount, type TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import type { EnableTransactionWaitAndSimulationArgs } from "../../types/transactionManager/transactionSubmit";
-import type { TransactionResponse } from "../../types/transaction";
+import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
 import { submitMultiAgentTransactionInternal, submitSerializedRawTransactionAndSignatureInternal, submitSerializedRawTransactionInternal, submitSponsorTransactionInternal } from "../../internal/transactionManager/txnSubmit";
 import type { AccountAddressInput } from "../../types/account";
 
 
 /**
  * The Submit class provides methods for submitting transactions to the Supra network.
+ *
+ * Every submission in the SDK (the methods of this class, the submit methods of a built transaction, the coin and
+ * fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`) behaves as follows,
+ * controlled by `enableTransactionWaitAndSimulationArgs`:
+ *
+ * 1. With `enableTransactionSimulation`, the transaction is simulated first. A simulated status other than `Success`
+ *    throws `SupraSimulationFailedError` and nothing is submitted.
+ * 2. The transaction is submitted. An error status of the node throws `SupraAPIError`; the transaction was not
+ *    accepted. A submission that times out or fails before the node answers throws `SupraTimeoutError` or
+ *    `SupraNetworkError`; the node may have accepted the transaction.
+ * 3. With `enableWaitForTransaction`, the call waits until the transaction has a final status, as
+ *    `waitForTransaction` does:
+ *    - `Success`: the transaction is returned.
+ *    - `Fail` (executed and failed, for example a Move abort or `Out of gas`; the sequence number was incremented) or
+ *      `Invalid` (discarded; the sequence number was not incremented): `SupraTransactionFailedError` is thrown with
+ *      `hash`, `status`, `vm_status`, `major_status`, `sub_status` and `transaction`, unless `checkSuccess` is false.
+ *    - `Pending` (not executed yet) and `PendingAfterExecution` (executed with a status that may change in a later
+ *      execution) are not final; the call keeps reading the transaction, also while a read fails or returns 404.
+ *      Without a final status within `waitTimeoutMs` (default `SupraConfig.waitTimeoutMs`, else 60000 ms)
+ *      `SupraTransactionTimeoutError` is thrown with `hash` and `lastStatus`.
+ * 4. Without `enableWaitForTransaction`, the transaction is read once and returned as the node reports it (usually
+ *    `Pending`). When that read fails, the call returns `{ hash, status: "NotReadBack", readError }` instead of
+ *    throwing, because the node has accepted the transaction.
+ *
+ * Every error thrown after the node answered the submission with the transaction's hash carries that hash.
  * @group Transaction
  */
 export class Submit {
@@ -38,7 +62,7 @@ export class Submit {
      * @param args.senderAccount - The sender account
      * @param args.rawTransaction - The raw transaction to be submitted
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -69,7 +93,7 @@ export class Submit {
             rawTransaction: TxnBuilderTypes.RawTransaction,
             enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         return submitSerializedRawTransactionInternal({ ...args, serializedRawTransaction: BCS.bcsToBytes(args.rawTransaction) }, this.networkInformation);
     }
 
@@ -78,7 +102,7 @@ export class Submit {
      * @param args.senderAccount - The sender account
      * @param args.serializedRawTransaction - Serialized raw transaction data
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -116,7 +140,7 @@ export class Submit {
             serializedRawTransaction: Uint8Array,
             enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         return submitSerializedRawTransactionInternal(args, this.networkInformation);
     }
 
@@ -127,7 +151,7 @@ export class Submit {
      * @param args.signature - Ed25519 signature
      * @param args.serializedRawTransaction - Serialized raw transaction data
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -169,7 +193,7 @@ export class Submit {
             serializedRawTransaction: Uint8Array,
             enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         return submitSerializedRawTransactionAndSignatureInternal(args, this.networkInformation);
     }
 
@@ -184,7 +208,7 @@ export class Submit {
      * @param args.feePayerAuthenticator - The fee payer account authenticator
      * @param args.secondarySignersAuthenticator - An optional array of the secondary signers account authenticator
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
@@ -242,7 +266,7 @@ export class Submit {
             secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
             enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
 
         return submitSponsorTransactionInternal(args, this.networkInformation);
     }
@@ -256,7 +280,7 @@ export class Submit {
      * @param args.senderAuthenticator - The sender account authenticator
      * @param args.secondarySignersAuthenticator - List of the secondary signers account authenticator
      * @param args.enableTransactionWaitAndSimulationArgs - enable transaction wait and simulation arguments
-     * @returns `TransactionResponse`
+     * @returns `SubmitTransactionResponse`. The class description lists the statuses and errors of a submission.
      * @example
      * ```typescript
      * import {SupraClient,Network} from "supra-ts-sdk";
@@ -319,7 +343,7 @@ export class Submit {
             secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
             enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
         }
-    ): Promise<TransactionResponse> {
+    ): Promise<SubmitTransactionResponse> {
         return submitMultiAgentTransactionInternal(args, this.networkInformation);
     }
 }

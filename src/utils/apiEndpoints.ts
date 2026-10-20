@@ -15,7 +15,9 @@ export interface NetworkConfig {
     /** Request timeout in milliseconds. */
     timeout?: number,
     /** Retry policy of idempotent GET requests; no retry when absent. */
-    retry?: { attempts: number, maxDelayMs: number }
+    retry?: { attempts: number, maxDelayMs: number },
+    /** Longest wait for a transaction's final status, in milliseconds, when the call sets none. */
+    waitTimeoutMs?: number
 }
 
 

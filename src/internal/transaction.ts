@@ -1,12 +1,13 @@
 import { BCS, HexString, SupraAccount, TxnBuilderTypes, type AnyRawTransaction } from "supra-l1-sdk-core";
 import { get } from "../client/get";
-import { SupraAPIError } from "../errors/apiError";
+import { SupraError } from "../errors/supraError";
+import { SupraTransactionFailedError, SupraTransactionTimeoutError } from "../errors/transactionError";
 import { standardizeAddress } from "../helper/account";
 import { TransactionStatus, type CommittedTransactionResponse, type TransactionQueryType, type TransactionResponse, type WaitForTransactionOptions } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import { DEFAULT_TXN_TIMEOUT_SEC, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
+import { DEFAULT_TXN_WAIT_TIMEOUT_MS, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
 import { sleep } from "../utils/functions";
-import type { OptionalTransactionArgs } from "../types/transactionManager/transactionSubmit";
+import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { rawTxnObjectInternal, sendTxnPayloadInternal } from "./transactionManager/txnBuild";
 import { getAccountInfoInternal } from "./account";
 import { submitTxnInternal } from "./transactionManager/txnSubmit";
@@ -31,13 +32,57 @@ export async function getTransactionByHashInternal<T extends TransactionResponse
 
 
 /**
- * Queries on-chain transactions by their transaction hash, returning both pending and committed transactions.
+ * Whether a transaction status is final. `Success`, `Fail` and `Invalid` are final; `Pending` (accepted by the RPC
+ * node, not executed yet) and `PendingAfterExecution` (executed with a status that may change in a later execution)
+ * are not.
  */
-export async function isPendingTransactionInternal(args: { transactionHash: string }, config: NetworkConfig): Promise<boolean> {
-    return (await getTransactionByHashInternal(args, config)).status === TransactionStatus.Pending
+export function isFinalTransactionStatus(status: TransactionStatus): boolean {
+    return status === TransactionStatus.Success || status === TransactionStatus.Fail || status === TransactionStatus.Invalid;
 }
 
 
+/**
+ * Whether the transaction has no final status yet: its status is `Pending` or `PendingAfterExecution`.
+ */
+export async function isPendingTransactionInternal(args: { transactionHash: string }, config: NetworkConfig): Promise<boolean> {
+    return !isFinalTransactionStatus((await getTransactionByHashInternal(args, config)).status);
+}
+
+
+/** Validates a wait timeout: a finite number of milliseconds, zero or more. */
+export function validateWaitTimeoutMs(timeoutMs: number, name: string): number {
+    if (typeof timeoutMs !== "number" || !Number.isFinite(timeoutMs) || timeoutMs < 0) {
+        throw new RangeError(`${name} must be a finite, non-negative number of milliseconds, got ${timeoutMs}`);
+    }
+    return timeoutMs;
+}
+
+
+/** The wait timeout of a call: `timeoutMs`, else `timeoutSecs`, else the client's `waitTimeoutMs`, else the default. */
+function waitTimeoutMsOf(options: WaitForTransactionOptions | undefined, config: NetworkConfig): number {
+    if (options?.timeoutMs !== undefined) {
+        return validateWaitTimeoutMs(options.timeoutMs, "timeoutMs");
+    }
+    if (options?.timeoutSecs !== undefined) {
+        return validateWaitTimeoutMs(options.timeoutSecs * 1000, "timeoutSecs");
+    }
+    return config.waitTimeoutMs ?? DEFAULT_TXN_WAIT_TIMEOUT_MS;
+}
+
+
+/**
+ * Reads the transaction until it has a final status or the timeout elapses.
+ *
+ * The transaction is read again while its status is `Pending` or `PendingAfterExecution` and while a read fails
+ * (including HTTP 404 for a transaction the node has not seen yet). The timeout is measured in wall-clock time from
+ * the start of the call; a read in progress when it elapses is not interrupted.
+ *
+ * - `Success`: the transaction is returned.
+ * - `Fail` or `Invalid`: `SupraTransactionFailedError` is thrown, or the transaction is returned when `checkSuccess`
+ *   is false.
+ * - No final status within the timeout: `SupraTransactionTimeoutError` is thrown with the hash, the last transaction
+ *   read, and the error of the last read as `cause` when that read failed.
+ */
 export async function waitForTransactionInternal(
     args: {
         transactionHash: string;
@@ -45,53 +90,48 @@ export async function waitForTransactionInternal(
     },
     config: NetworkConfig
 ): Promise<CommittedTransactionResponse> {
-    const timeoutSecs = args.options?.timeoutSecs ?? DEFAULT_TXN_TIMEOUT_SEC;
+    const timeoutMs = waitTimeoutMsOf(args.options, config);
     const checkSuccess = args.options?.checkSuccess ?? true;
+    const deadline = Date.now() + timeoutMs;
 
-    let isPending = true;
-    let timeElapsed = 0;
     let lastTxn: TransactionResponse | undefined;
+    let lastError: unknown;
     let backoffIntervalMs = 200;
     const backoffMultiplier = 1.5;
     const maxBackoffMs = 5000;
 
-    while (isPending && timeElapsed < timeoutSecs) {
-        let txn = await getTransactionByHashInternal({ transactionHash: args.transactionHash }, config);
-        lastTxn = txn;
-        isPending = txn.status === TransactionStatus.Pending;
-
-        if (isPending) {
-            await sleep(backoffIntervalMs);
-            timeElapsed += backoffIntervalMs / 1000;
-            backoffIntervalMs = Math.min(backoffIntervalMs * backoffMultiplier, maxBackoffMs);
+    for (; ;) {
+        try {
+            lastTxn = await getTransactionByHashInternal({ transactionHash: args.transactionHash }, config);
+            lastError = undefined;
+        } catch (error) {
+            // Every error of a request is a SupraError; anything else is not a failed read.
+            if (!(error instanceof SupraError)) {
+                throw error;
+            }
+            lastError = error;
         }
+
+        if (lastError === undefined && lastTxn !== undefined && isFinalTransactionStatus(lastTxn.status)) {
+            if (checkSuccess && lastTxn.status !== TransactionStatus.Success) {
+                throw new SupraTransactionFailedError(lastTxn);
+            }
+            return lastTxn as CommittedTransactionResponse;
+        }
+
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+            throw new SupraTransactionTimeoutError({
+                hash: args.transactionHash,
+                timeoutMs,
+                transaction: lastTxn,
+                cause: lastError,
+            });
+        }
+
+        await sleep(Math.min(backoffIntervalMs, remainingMs));
+        backoffIntervalMs = Math.min(backoffIntervalMs * backoffMultiplier, maxBackoffMs);
     }
-
-    if (isPending) {
-        throw new SupraAPIError({
-            status: 500,
-            statusText: "Transaction timed out",
-            url: `/transactions/${args.transactionHash}`,
-            data: lastTxn,
-
-        });
-    }
-
-    if (!checkSuccess) {
-        return lastTxn as CommittedTransactionResponse;
-    }
-
-    if (!lastTxn || lastTxn.status !== TransactionStatus.Success) {
-        throw new SupraAPIError({
-            status: 500,
-            statusText: "Transaction failed",
-            url: `/transactions/${args.transactionHash}`,
-            data: lastTxn,
-
-        });
-    }
-
-    return lastTxn as CommittedTransactionResponse;
 }
 
 
@@ -151,7 +191,7 @@ export async function publishPackageInternal(
         optionalTransactionArgs?: OptionalTransactionArgs,
     },
     config: NetworkConfig
-): Promise<TransactionResponse> {
+): Promise<SubmitTransactionResponse> {
     let codeSerializer = new BCS.Serializer();
     let modulesTypeCode: TxnBuilderTypes.Module[] = [];
 

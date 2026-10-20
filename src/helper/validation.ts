@@ -90,11 +90,15 @@ export function validateHexString(value: unknown, paramName = "value"): void {
 }
 
 /**
- * Validates a transaction hash (0x-prefixed hex string).
+ * Validates a transaction hash: `0x` followed by exactly 64 hex digits.
  * @throws Error if the hash is invalid
  */
 export function validateTransactionHash(hash: unknown, paramName = "transactionHash"): void {
-    validateHexString(hash, paramName);
+    if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+        throw new Error(
+            `Invalid ${paramName}: expected 0x followed by 64 hex digits, got ${JSON.stringify(hash)}`
+        );
+    }
 }
 
 /**

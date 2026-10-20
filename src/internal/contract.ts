@@ -4,9 +4,8 @@ import { simpleInternal } from "./transactionManager/txnBuild";
 import { getAccountInfoInternal } from "./account";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
 import { submitSerializedRawTransactionInternal } from "./transactionManager/txnSubmit";
-import type { TransactionResponse } from "../types/transaction";
 import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
-import type { EnableTransactionWaitAndSimulationArgs } from "../types/transactionManager/transactionSubmit";
+import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 
 export interface CallContractArgs {
     function: MoveFunctionId;
@@ -17,7 +16,7 @@ export interface CallContractArgs {
     abi?: MoveModule;
 }
 
-export async function callContractInternal(args: CallContractArgs, config: NetworkConfig): Promise<TransactionResponse> {
+export async function callContractInternal(args: CallContractArgs, config: NetworkConfig): Promise<SubmitTransactionResponse> {
 
     const signers: SupraAccount[] = [];
     const functionArguments: Array<Exclude<SimpleEntryFunctionArgumentTypes, Uint8Array>> = [];

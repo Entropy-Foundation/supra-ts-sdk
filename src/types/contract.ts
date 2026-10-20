@@ -1,9 +1,8 @@
 import type { SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { MoveFunction, MoveModule } from "./move";
-import type { TransactionResponse } from "./transaction";
 import type { AccountAddressInput } from "./account";
 import type { OptionalTransactionPayloadArgs } from "./transactionManager/transactionBuild";
-import type { EnableTransactionWaitAndSimulationArgs } from "./transactionManager/transactionSubmit";
+import type { EnableTransactionWaitAndSimulationArgs, SubmitTransactionResponse } from "./transactionManager/transactionSubmit";
 
 export type MoveModules = DeepReadonly<MoveModule[]>;
 
@@ -113,7 +112,7 @@ export type EntryArgs<FUNCTION extends { typeArguments?: readonly any[] | undefi
 export type EntryFunctionsFromABI<CONTRACT extends DeepReadonly<MoveModule>> = {
     [FUNCTION in CONTRACT['exposed_functions'][number]as FUNCTION['is_entry'] extends true
     ? FUNCTION['name']
-    : never]: (args: EntryArgs<{ functionArguments: FUNCTION['params'], typeArguments: ConvertGenerics<FUNCTION['generic_type_params']>, optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs, enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs }>) => Promise<TransactionResponse>;
+    : never]: (args: EntryArgs<{ functionArguments: FUNCTION['params'], typeArguments: ConvertGenerics<FUNCTION['generic_type_params']>, optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs, enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs }>) => Promise<SubmitTransactionResponse>;
 };
 
 

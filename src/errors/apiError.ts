@@ -22,8 +22,10 @@ export interface SupraAPIErrorOptions {
  * | {@link SupraRateLimitError} | HTTP 429, with `retryAfterSeconds` |
  * | {@link SupraServiceUnavailableError} | HTTP 503 |
  *
- * Errors that are not answers of the node derive from {@link SupraError}: {@link SupraTimeoutError} and
- * {@link SupraNetworkError} (a request that timed out or never reached the node) and the faucet errors.
+ * Errors that are not error statuses of the node derive from {@link SupraError}: {@link SupraTimeoutError} and
+ * {@link SupraNetworkError} (a request that timed out or never reached the node), the faucet errors, and the
+ * transaction outcome errors `SupraSimulationFailedError`, `SupraTransactionFailedError` and
+ * `SupraTransactionTimeoutError`.
  *
  * `message` is the node's `message` when the error body has one, otherwise the HTTP status text.
  * `major_status` and `sub_status` hold the Move VM status that the message reports, when it reports one.
@@ -34,7 +36,7 @@ export class SupraAPIError extends SupraError {
     readonly statusText: string;
 
     readonly url: string;
-    /** The parsed response body: the node's error body, the transaction of a failed simulation, or the raw text. */
+    /** The parsed response body: the node's error body, or the raw text when it is not JSON. */
     readonly data?: unknown;
 
     /**

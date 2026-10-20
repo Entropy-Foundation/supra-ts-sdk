@@ -9,6 +9,7 @@ import {
     SupraClient,
     SupraNetworkError,
     SupraNotFoundError,
+    SupraSimulationFailedError,
     SupraTimeoutError,
 } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
@@ -100,9 +101,9 @@ describeE2E("errors", () => {
     test("a simulated abort reports ABORTED, the abort code and the abort reason", async () => {
         const rawTxn = await transfer(sender, await nextSequenceNumber(sender), 10n ** 18n);
 
-        const error = (await rejection(rawTxn.simulate(sender))) as SupraAPIError;
+        const error = (await rejection(rawTxn.simulate(sender))) as SupraSimulationFailedError;
 
-        expect(error).toBeInstanceOf(SupraAPIError);
+        expect(error).toBeInstanceOf(SupraSimulationFailedError);
         expect(error.message).toContain("Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)");
         expect(error.major_status).toBe(MoveVmError.ABORTED);
         expect(error.sub_status).toBe(0x10006);

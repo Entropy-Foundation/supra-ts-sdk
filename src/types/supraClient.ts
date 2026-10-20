@@ -19,6 +19,9 @@ export interface RetryConfig {
  * You can set maxGas and minGasUnitPrice if you want to override global default values.
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`. `retry` turns on retries of GET requests; it is off by default.
+ * `waitTimeoutMs` sets how long a wait for a transaction's final status lasts (`waitForTransaction` and submissions
+ * with `enableWaitForTransaction`) when the call sets no timeout (default 60000 ms); a wait that exceeds it throws
+ * `SupraTransactionTimeoutError`.
  */
 export type SupraConfig =
     {
@@ -27,6 +30,7 @@ export type SupraConfig =
         minGasUnitPrice?: bigint;
         timeoutMs?: number;
         retry?: RetryConfig;
+        waitTimeoutMs?: number;
     }
     | {
         network?: Network.CUSTOM;
@@ -36,6 +40,7 @@ export type SupraConfig =
         minGasUnitPrice?: bigint;
         timeoutMs?: number;
         retry?: RetryConfig;
+        waitTimeoutMs?: number;
     };
 
 

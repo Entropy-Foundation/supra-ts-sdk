@@ -116,8 +116,15 @@ describe("validateMoveIdentifier", () => {
 
 describe("validateTransactionHash", () => {
     it("accepts valid transaction hashes", () => {
-        expect(() => validateTransactionHash("0xabc123")).not.toThrow();
         expect(() => validateTransactionHash("0x0000000000000000000000000000000000000000000000000000000000000001")).not.toThrow();
+        expect(() => validateTransactionHash("0x" + "aB".repeat(32))).not.toThrow();
+    });
+
+    it("rejects a hash that does not have exactly 64 hex digits", () => {
+        expect(() => validateTransactionHash("0xabc123")).toThrow("Invalid transactionHash");
+        expect(() => validateTransactionHash("0x" + "a".repeat(63))).toThrow("Invalid transactionHash");
+        expect(() => validateTransactionHash("0x" + "a".repeat(65))).toThrow("Invalid transactionHash");
+        expect(() => validateTransactionHash("0x" + "a".repeat(70))).toThrow("Invalid transactionHash");
     });
 
     it("rejects non-hex values", () => {
