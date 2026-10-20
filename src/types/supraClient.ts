@@ -77,39 +77,38 @@ export interface RetryConfig {
  * request, which allows signing offline.
  */
 export type SupraConfig =
-    {
-        network: Network.MAINNET | Network.TESTNET | Network.DEVNET;
-        maxGas?: bigint;
-        minGasUnitPrice?: bigint;
-        estimateMaxGas?: boolean;
-        maxGasEstimateMultiplier?: number;
-        timeoutMs?: number;
-        retry?: RetryConfig;
-        waitTimeoutMs?: number;
-        txExpirySecs?: number;
-        /** `false` signs with the network's chain ID without reading the node's. Default `true`. */
-        verifyChainId?: boolean;
-    }
     | {
-        network?: Network.CUSTOM;
-        rpcUrl: string;
-        chainId: number;
-        maxGas?: bigint;
-        minGasUnitPrice?: bigint;
-        estimateMaxGas?: boolean;
-        maxGasEstimateMultiplier?: number;
-        timeoutMs?: number;
-        retry?: RetryConfig;
-        waitTimeoutMs?: number;
-        txExpirySecs?: number;
-        /** `false` signs with `chainId` without reading the node's chain ID. Default `true`. */
-        verifyChainId?: boolean;
-    };
-
+          network: Network.MAINNET | Network.TESTNET | Network.DEVNET;
+          maxGas?: bigint;
+          minGasUnitPrice?: bigint;
+          estimateMaxGas?: boolean;
+          maxGasEstimateMultiplier?: number;
+          timeoutMs?: number;
+          retry?: RetryConfig;
+          waitTimeoutMs?: number;
+          txExpirySecs?: number;
+          /** `false` signs with the network's chain ID without reading the node's. Default `true`. */
+          verifyChainId?: boolean;
+      }
+    | {
+          network?: Network.CUSTOM;
+          rpcUrl: string;
+          chainId: number;
+          maxGas?: bigint;
+          minGasUnitPrice?: bigint;
+          estimateMaxGas?: boolean;
+          maxGasEstimateMultiplier?: number;
+          timeoutMs?: number;
+          retry?: RetryConfig;
+          waitTimeoutMs?: number;
+          txExpirySecs?: number;
+          /** `false` signs with `chainId` without reading the node's chain ID. Default `true`. */
+          verifyChainId?: boolean;
+      };
 
 export interface GasPrice {
-    mean_gas_price: number,
-    max_gas_price: number,
-    median_gas_price: number,
-    min_configured_gas_price: number
+    mean_gas_price: number;
+    max_gas_price: number;
+    median_gas_price: number;
+    min_configured_gas_price: number;
 }

@@ -285,7 +285,9 @@ describe("a transaction of this client that can no longer commit", () => {
 
         expect(mock.submitted).toEqual([5, 6, 7, 6, 8]);
         // The transfer that took 8 first was simulated at 8, then signed again with 6.
-        expect(mock.log.filter((line) => line.startsWith("SIMULATE"))).toContain("SIMULATE 8 (chain 5) -> PendingAfterExecution");
+        expect(mock.log.filter((line) => line.startsWith("SIMULATE"))).toContain(
+            "SIMULATE 8 (chain 5) -> PendingAfterExecution",
+        );
         mock.tick();
         expect(mock.chain).toBe(9);
     });

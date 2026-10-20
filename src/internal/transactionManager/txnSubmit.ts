@@ -13,13 +13,23 @@ import {
     type ReservationBinding,
 } from "../sequenceNumber";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
-import type { EnableTransactionWaitAndSimulationArgs, OptionalTransactionArgs, SubmitTransactionResponse } from "../../types/transactionManager/transactionSubmit";
+import type {
+    EnableTransactionWaitAndSimulationArgs,
+    OptionalTransactionArgs,
+    SubmitTransactionResponse,
+} from "../../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../../utils/constants";
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateTxnInternal } from "./txnSimulate";
-import { buildWithResolvedMaxGasInternal, getRawTxnJSONInternal, rawTxnObjectInternal, sendTxnPayloadInternal, withSequenceNumber } from "./txnBuild";
+import {
+    buildWithResolvedMaxGasInternal,
+    getRawTxnJSONInternal,
+    rawTxnObjectInternal,
+    sendTxnPayloadInternal,
+    withSequenceNumber,
+} from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
 
@@ -67,15 +77,28 @@ async function simulateBeforeSubmission(
             } catch {
                 throw error;
             }
-            const outcome = await resolveSequenceNumberTooNewInternal({
-                address,
-                sequenceNumber: BigInt(rawTxn.sequence_number),
-                reservation: binding?.reservation,
-                tooNew: error,
-                simulateAt: (chainSequenceNumber) => simulateTxnInternal({
-                    sendTxPayload: { ...signed, Move: { ...signed.Move, raw_txn: { ...rawTxn, sequence_number: chainSequenceNumber } } },
-                }, config),
-            }, config);
+            const outcome = await resolveSequenceNumberTooNewInternal(
+                {
+                    address,
+                    sequenceNumber: BigInt(rawTxn.sequence_number),
+                    reservation: binding?.reservation,
+                    tooNew: error,
+                    simulateAt: (chainSequenceNumber) =>
+                        simulateTxnInternal(
+                            {
+                                sendTxPayload: {
+                                    ...signed,
+                                    Move: {
+                                        ...signed.Move,
+                                        raw_txn: { ...rawTxn, sequence_number: chainSequenceNumber },
+                                    },
+                                },
+                            },
+                            config,
+                        ),
+                },
+                config,
+            );
             if (outcome.kind === "simulated") {
                 return current;
             }
@@ -89,10 +112,10 @@ async function simulateBeforeSubmission(
 
 export async function submitTxnInternal(
     args: {
-        sendTxJsonPayload: SendTxnPayload,
-        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        sendTxJsonPayload: SendTxnPayload;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     const options = args.enableTransactionWaitAndSimulationArgs ?? {};
     validateSubmitOptions(options);
@@ -119,10 +142,13 @@ export async function submitTxnInternal(
     const rawTxn = payload.Move.raw_txn;
     let txHash: string;
     try {
-        txHash = await post<SendTxnPayload, string>({
-            path: "/transactions/submit",
-            data: payload,
-        }, config);
+        txHash = await post<SendTxnPayload, string>(
+            {
+                path: "/transactions/submit",
+                data: payload,
+            },
+            config,
+        );
     } catch (error) {
         throw settleFailedSubmissionInternal({ rawTxn, reservation }, error, config);
     }
@@ -149,7 +175,6 @@ export async function submitTxnInternal(
     }
 }
 
-
 /**
  * Builds, signs and submits an entry function transaction of `senderAccount`, for the transfer, migration and publish
  * helpers.
@@ -165,11 +190,11 @@ export async function submitTxnInternal(
  */
 export async function buildAndSubmitEntryFunctionInternal(
     args: {
-        senderAccount: SupraAccount,
-        payload: Pick<Parameters<typeof rawTxnObjectInternal>[0], "function" | "functionTypeArgs" | "functionArgs">,
-        optionalTransactionArgs?: OptionalTransactionArgs | undefined,
+        senderAccount: SupraAccount;
+        payload: Pick<Parameters<typeof rawTxnObjectInternal>[0], "function" | "functionTypeArgs" | "functionArgs">;
+        optionalTransactionArgs?: OptionalTransactionArgs | undefined;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     const senderAddress = args.senderAccount.address();
     const optionalTransactionPayloadArgs = args.optionalTransactionArgs?.optionalTransactionPayloadArgs;
@@ -178,18 +203,25 @@ export async function buildAndSubmitEntryFunctionInternal(
         { address: senderAddress, sequenceNumber: optionalTransactionPayloadArgs?.sequenceNumber },
         config,
         async (senderSequenceNumber, reservation) => {
-            const rawTxn = await buildWithResolvedMaxGasInternal({
-                senderAddress,
-                senderAccount: args.senderAccount,
-                reservation,
-                optionalTransactionPayloadArgs,
-                buildRawTxn: (options) => rawTxnObjectInternal({
-                    ...args.payload,
+            const rawTxn = await buildWithResolvedMaxGasInternal(
+                {
                     senderAddress,
-                    senderSequenceNumber,
-                    optionalTransactionPayloadArgs: options,
-                }, config),
-            }, config);
+                    senderAccount: args.senderAccount,
+                    reservation,
+                    optionalTransactionPayloadArgs,
+                    buildRawTxn: (options) =>
+                        rawTxnObjectInternal(
+                            {
+                                ...args.payload,
+                                senderAddress,
+                                senderSequenceNumber,
+                                optionalTransactionPayloadArgs: options,
+                            },
+                            config,
+                        ),
+                },
+                config,
+            );
             const sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
             if (reservation !== undefined) {
                 bindReservation(sendTxPayload, reservation, (sequenceNumber) =>
@@ -199,31 +231,32 @@ export async function buildAndSubmitEntryFunctionInternal(
                     ),
                 );
             }
-            return await submitTxnInternal({
-                sendTxJsonPayload: sendTxPayload,
-                enableTransactionWaitAndSimulationArgs: args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
-            }, config);
+            return await submitTxnInternal(
+                {
+                    sendTxJsonPayload: sendTxPayload,
+                    enableTransactionWaitAndSimulationArgs:
+                        args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
+                },
+                config,
+            );
         },
     );
 }
 
-
 export async function submitSerializedRawTransactionInternal(
     args: {
-        senderAccount: SupraAccount,
-        serializedRawTransaction: Uint8Array,
-        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        senderAccount: SupraAccount;
+        serializedRawTransaction: Uint8Array;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     let sendTxPayload = await sendTxnPayloadInternal(
         {
             senderAccount: args.senderAccount,
-            rawTxn: TxnBuilderTypes.RawTransaction.deserialize(
-                new BCS.Deserializer(args.serializedRawTransaction),
-            )
+            rawTxn: TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction)),
         },
-        config
+        config,
     );
 
     return await submitTxnInternal(
@@ -231,26 +264,23 @@ export async function submitSerializedRawTransactionInternal(
             sendTxJsonPayload: sendTxPayload,
             enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
         },
-        config
+        config,
     );
 }
 
-
 export async function submitSerializedRawTransactionAndSignatureInternal(
     args: {
-        senderPubkey: HexString,
-        signature: HexString,
-        serializedRawTransaction: Uint8Array,
-        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        senderPubkey: HexString;
+        signature: HexString;
+        serializedRawTransaction: Uint8Array;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     let sendTxPayload = {
         Move: {
             raw_txn: getRawTxnJSONInternal(
-                TxnBuilderTypes.RawTransaction.deserialize(
-                    new BCS.Deserializer(args.serializedRawTransaction),
-                ),
+                TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction)),
             ),
             authenticator: {
                 Ed25519: {
@@ -266,28 +296,25 @@ export async function submitSerializedRawTransactionAndSignatureInternal(
             sendTxJsonPayload: sendTxPayload,
             enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
         },
-        config
+        config,
     );
 }
 
-
 export async function submitSponsorTransactionInternal(
     args: {
-        feePayerAddress: AccountAddressInput,
-        secondarySignersAccountAddress: Array<string>,
-        rawTxn: TxnBuilderTypes.RawTransaction,
-        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-        feePayerAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
-        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        feePayerAddress: AccountAddressInput;
+        secondarySignersAccountAddress: Array<string>;
+        rawTxn: TxnBuilderTypes.RawTransaction;
+        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        feePayerAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     let secondarySignersAuthenticatorJSON: Array<Ed25519Signature> = [];
     args.secondarySignersAuthenticator.forEach((authenticator) => {
-        secondarySignersAuthenticatorJSON.push(
-            getED25519AuthenticatorJSON(authenticator),
-        );
+        secondarySignersAuthenticatorJSON.push(getED25519AuthenticatorJSON(authenticator));
     });
 
     let sendTxPayload: SendTxnPayload = {
@@ -299,7 +326,7 @@ export async function submitSponsorTransactionInternal(
                     secondary_signer_addresses: args.secondarySignersAccountAddress,
                     secondary_signers: secondarySignersAuthenticatorJSON,
                     fee_payer_address: args.feePayerAddress.toString(),
-                    fee_payer_signer: getED25519AuthenticatorJSON(args.feePayerAuthenticator)
+                    fee_payer_signer: getED25519AuthenticatorJSON(args.feePayerAuthenticator),
                 },
             },
         },
@@ -310,26 +337,23 @@ export async function submitSponsorTransactionInternal(
             sendTxJsonPayload: sendTxPayload,
             enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
         },
-        config
+        config,
     );
 }
 
-
 export async function submitMultiAgentTransactionInternal(
     args: {
-        secondarySignersAccountAddress: Array<string>,
-        rawTxn: TxnBuilderTypes.RawTransaction,
-        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,
-        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>,
-        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs,
+        secondarySignersAccountAddress: Array<string>;
+        rawTxn: TxnBuilderTypes.RawTransaction;
+        senderAuthenticator: TxnBuilderTypes.AccountAuthenticatorEd25519;
+        secondarySignersAuthenticator: Array<TxnBuilderTypes.AccountAuthenticatorEd25519>;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     let secondarySignersAuthenticatorJSON: Array<Ed25519Signature> = [];
     args.secondarySignersAuthenticator.forEach((authenticator) => {
-        secondarySignersAuthenticatorJSON.push(
-            getED25519AuthenticatorJSON(authenticator)
-        );
+        secondarySignersAuthenticatorJSON.push(getED25519AuthenticatorJSON(authenticator));
     });
 
     let sendTxPayload: SendTxnPayload = {
@@ -349,10 +373,10 @@ export async function submitMultiAgentTransactionInternal(
         {
             sendTxJsonPayload: sendTxPayload,
             enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
-        }, config
+        },
+        config,
     );
 }
-
 
 export function getED25519AuthenticatorJSON(
     authenticator: TxnBuilderTypes.AccountAuthenticatorEd25519,

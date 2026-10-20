@@ -67,14 +67,12 @@ export interface OptionalTransactionPayloadArgs {
     sequenceNumber?: bigint | number;
 }
 
-
 export interface SendTxnPayload {
     Move: {
         raw_txn: RawTxnJSON;
         authenticator: MoveInnerAuthenticator;
     };
 }
-
 
 /**
  * JSON form of a raw transaction, as sent to the submit and simulate endpoints.
@@ -94,13 +92,11 @@ export interface RawTxnJSON {
     chain_id: number;
 }
 
-
 export type TransactionPayloadJSON =
     | EntryFunctionPayloadJSON
     | ScriptPayloadJSON
     | AutomationRegistrationPayloadJSON
     | MultisigPayloadJSON;
-
 
 export interface EntryFunctionPayloadJSON {
     EntryFunction: EntryFunctionJSON;
@@ -165,7 +161,6 @@ export type ScriptArgumentJson =
     | { U8Vector: Array<number> }
     | { Bool: boolean };
 
-
 export interface AutomationRegistrationPayloadJSON {
     AutomationRegistration: AutomationRegistrationParamV1JSON;
 }
@@ -181,5 +176,3 @@ export interface AutomationRegistrationParamV1JSON {
         aux_data: Array<Array<number>>;
     };
 }
-
-

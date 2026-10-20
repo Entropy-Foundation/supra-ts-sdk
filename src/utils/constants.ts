@@ -42,19 +42,17 @@ export const MAX_TX_EXPIRATION_DURATION = 600;
  */
 export const TX_EXPIRATION_MARGIN_SECS = 5;
 export const MILLISECONDS_PER_SECOND = 1000;
-export const SUPRA_FRAMEWORK_ADDRESS =
-    "0x0000000000000000000000000000000000000000000000000000000000000001";
+export const SUPRA_FRAMEWORK_ADDRESS = "0x0000000000000000000000000000000000000000000000000000000000000001";
 export const SUPRA_COIN_TYPE = "0x1::supra_coin::SupraCoin";
 /** The address of the SUPRA fungible asset: the fungible asset that `0x1::supra_coin::SupraCoin` is paired with. */
-export const SUPRA_FUNGIBLE_ASSET_ADDRESS =
-    "0x000000000000000000000000000000000000000000000000000000000000000a";
+export const SUPRA_FUNGIBLE_ASSET_ADDRESS = "0x000000000000000000000000000000000000000000000000000000000000000a";
 export const OBJECT_CORE = "0x1::object::ObjectCore";
 
 export const DEFAULT_ENABLE_SIMULATION = false;
 export const DEFAULT_WAIT_FOR_TX_COMPLETION = false;
 export const RAW_TRANSACTION_SALT = "SUPRA::RawTransaction";
 export const RAW_TRANSACTION_WITH_DATA_SALT = "SUPRA::RawTransactionWithData";
-export const DEFAULT_RPC_VERSION = "v3"
+export const DEFAULT_RPC_VERSION = "v3";
 /**
  * Longest time, in milliseconds, that a wait for a transaction's final status lasts when neither the call nor
  * `SupraConfig.waitTimeoutMs` sets one.

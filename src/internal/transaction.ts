@@ -5,15 +5,26 @@ import { get } from "../client/get";
 import { SupraError } from "../errors/supraError";
 import { SupraTransactionFailedError, SupraTransactionTimeoutError } from "../errors/transactionError";
 import { standardizeAddress } from "../helper/account";
-import { TransactionStatus, type CommittedTransactionResponse, type TransactionQueryType, type TransactionResponse, type WaitForTransactionOptions } from "../types/transaction";
+import {
+    TransactionStatus,
+    type CommittedTransactionResponse,
+    type TransactionQueryType,
+    type TransactionResponse,
+    type WaitForTransactionOptions,
+} from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import { DEFAULT_TXN_WAIT_TIMEOUT_MS, RAW_TRANSACTION_SALT, RAW_TRANSACTION_WITH_DATA_SALT, SUPRA_FRAMEWORK_ADDRESS } from "../utils/constants";
+import {
+    DEFAULT_TXN_WAIT_TIMEOUT_MS,
+    RAW_TRANSACTION_SALT,
+    RAW_TRANSACTION_WITH_DATA_SALT,
+    SUPRA_FRAMEWORK_ADDRESS,
+} from "../utils/constants";
 import { sleep } from "../utils/functions";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSubmit";
 import { checkChainIdBeforeSigningInternal } from "./chainId";
 import { sequenceNumberTrackerOf } from "./sequenceNumber";
-import sha3 from 'js-sha3';
+import sha3 from "js-sha3";
 
 /**
  * Queries on-chain transactions by their transaction hash, returning both pending and committed transactions.
@@ -23,21 +34,23 @@ import sha3 from 'js-sha3';
  * on the chain above its number.
  */
 export async function getTransactionByHashInternal(
-    args: { transactionHash: string, type?: TransactionQueryType, exclude_uncommitted?: boolean },
-    config: NetworkConfig
+    args: { transactionHash: string; type?: TransactionQueryType; exclude_uncommitted?: boolean },
+    config: NetworkConfig,
 ): Promise<TransactionResponse> {
     const transactionHash = standardizeAddress(args.transactionHash);
-    const transaction = await get<TransactionResponse>({
-        path: `/transactions/${transactionHash}`,
-        query: {
-            type: args.type,
-            exclude_uncommitted: args.exclude_uncommitted
-        }
-    }, config).then(res => res.data);
+    const transaction = await get<TransactionResponse>(
+        {
+            path: `/transactions/${transactionHash}`,
+            query: {
+                type: args.type,
+                exclude_uncommitted: args.exclude_uncommitted,
+            },
+        },
+        config,
+    ).then((res) => res.data);
     sequenceNumberTrackerOf(config).observeTransaction(transactionHash, transaction.status);
     return transaction;
 }
-
 
 /**
  * Whether a transaction status is final. `Success`, `Fail` and `Invalid` are final; `Pending` (accepted by the RPC
@@ -45,17 +58,22 @@ export async function getTransactionByHashInternal(
  * are not.
  */
 export function isFinalTransactionStatus(status: TransactionStatus): boolean {
-    return status === TransactionStatus.Success || status === TransactionStatus.Fail || status === TransactionStatus.Invalid;
+    return (
+        status === TransactionStatus.Success ||
+        status === TransactionStatus.Fail ||
+        status === TransactionStatus.Invalid
+    );
 }
-
 
 /**
  * Whether the transaction has no final status yet: its status is `Pending` or `PendingAfterExecution`.
  */
-export async function isPendingTransactionInternal(args: { transactionHash: string }, config: NetworkConfig): Promise<boolean> {
+export async function isPendingTransactionInternal(
+    args: { transactionHash: string },
+    config: NetworkConfig,
+): Promise<boolean> {
     return !isFinalTransactionStatus((await getTransactionByHashInternal(args, config)).status);
 }
-
 
 /** Validates a wait timeout: a finite number of milliseconds, zero or more. */
 export function validateWaitTimeoutMs(timeoutMs: number, name: string): number {
@@ -64,7 +82,6 @@ export function validateWaitTimeoutMs(timeoutMs: number, name: string): number {
     }
     return timeoutMs;
 }
-
 
 /** The wait timeout of a call: `timeoutMs`, else `timeoutSecs`, else the client's `waitTimeoutMs`, else the default. */
 function waitTimeoutMsOf(options: WaitForTransactionOptions | undefined, config: NetworkConfig): number {
@@ -76,7 +93,6 @@ function waitTimeoutMsOf(options: WaitForTransactionOptions | undefined, config:
     }
     return config.waitTimeoutMs ?? DEFAULT_TXN_WAIT_TIMEOUT_MS;
 }
-
 
 /**
  * Reads the transaction until it has a final status or the timeout elapses.
@@ -94,9 +110,9 @@ function waitTimeoutMsOf(options: WaitForTransactionOptions | undefined, config:
 export async function waitForTransactionInternal(
     args: {
         transactionHash: string;
-        options?: WaitForTransactionOptions
+        options?: WaitForTransactionOptions;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<CommittedTransactionResponse> {
     const timeoutMs = waitTimeoutMsOf(args.options, config);
     const checkSuccess = args.options?.checkSuccess ?? true;
@@ -108,7 +124,7 @@ export async function waitForTransactionInternal(
     const backoffMultiplier = 1.5;
     const maxBackoffMs = 5000;
 
-    for (; ;) {
+    for (;;) {
         try {
             lastTxn = await getTransactionByHashInternal({ transactionHash: args.transactionHash }, config);
             lastError = undefined;
@@ -142,12 +158,7 @@ export async function waitForTransactionInternal(
     }
 }
 
-
-export function getTransactionSignatureMessageInternal(
-    args: {
-        rawTxn: AnyRawTransaction,
-    }
-): Uint8Array {
+export function getTransactionSignatureMessageInternal(args: { rawTxn: AnyRawTransaction }): Uint8Array {
     let preHash = Uint8Array.from(
         sha3.sha3_256.array(
             args.rawTxn instanceof TxnBuilderTypes.RawTransaction
@@ -157,14 +168,11 @@ export function getTransactionSignatureMessageInternal(
     );
 
     let rawTxSerializedData = new Uint8Array(BCS.bcsToBytes(args.rawTxn));
-    let signatureMessage = new Uint8Array(
-        preHash.length + rawTxSerializedData.length,
-    );
+    let signatureMessage = new Uint8Array(preHash.length + rawTxSerializedData.length);
     signatureMessage.set(preHash);
     signatureMessage.set(rawTxSerializedData, preHash.length);
     return signatureMessage;
 }
-
 
 /**
  * Signs a raw, multi-agent or fee-payer transaction. Every signature of the SDK is made here, after
@@ -174,41 +182,44 @@ export function getTransactionSignatureMessageInternal(
  */
 export function signTransactionInternal(
     args: {
-        senderAccount: SupraAccount,
-        rawTxn: TxnBuilderTypes.RawTransaction,
+        senderAccount: SupraAccount;
+        rawTxn: TxnBuilderTypes.RawTransaction;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<HexString>;
 export function signTransactionInternal(
     args: {
-        senderAccount: SupraAccount,
-        rawTxn: TxnBuilderTypes.MultiAgentRawTransaction | TxnBuilderTypes.FeePayerRawTransaction,
+        senderAccount: SupraAccount;
+        rawTxn: TxnBuilderTypes.MultiAgentRawTransaction | TxnBuilderTypes.FeePayerRawTransaction;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<TxnBuilderTypes.AccountAuthenticatorEd25519>;
 export function signTransactionInternal(
     args: {
-        senderAccount: SupraAccount,
-        rawTxn: AnyRawTransaction,
+        senderAccount: SupraAccount;
+        rawTxn: AnyRawTransaction;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519>;
 export async function signTransactionInternal(
     args: {
-        senderAccount: SupraAccount,
-        rawTxn: AnyRawTransaction,
+        senderAccount: SupraAccount;
+        rawTxn: AnyRawTransaction;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519> {
     await checkChainIdBeforeSigningInternal(args.rawTxn, config);
 
-    let signatureBuffer = args.senderAccount.signBuffer(getTransactionSignatureMessageInternal({ rawTxn: args.rawTxn }));
+    let signatureBuffer = args.senderAccount.signBuffer(
+        getTransactionSignatureMessageInternal({ rawTxn: args.rawTxn }),
+    );
 
     // multi transaction
-    if (args.rawTxn instanceof TxnBuilderTypes.MultiAgentRawTransaction || args.rawTxn instanceof TxnBuilderTypes.FeePayerRawTransaction) {
-        const signerSignature = new TxnBuilderTypes.Ed25519Signature(
-            signatureBuffer.toUint8Array(),
-        );
+    if (
+        args.rawTxn instanceof TxnBuilderTypes.MultiAgentRawTransaction ||
+        args.rawTxn instanceof TxnBuilderTypes.FeePayerRawTransaction
+    ) {
+        const signerSignature = new TxnBuilderTypes.Ed25519Signature(signatureBuffer.toUint8Array());
         return new TxnBuilderTypes.AccountAuthenticatorEd25519(
             new TxnBuilderTypes.Ed25519PublicKey(args.senderAccount.signingKey.publicKey),
             signerSignature,
@@ -219,23 +230,20 @@ export async function signTransactionInternal(
     return signatureBuffer;
 }
 
-
 export async function publishPackageInternal(
     args: {
-        senderAccount: SupraAccount,
-        packageMetadata: Uint8Array,
-        modulesCode: Uint8Array[],
-        optionalTransactionArgs?: OptionalTransactionArgs,
+        senderAccount: SupraAccount;
+        packageMetadata: Uint8Array;
+        modulesCode: Uint8Array[];
+        optionalTransactionArgs?: OptionalTransactionArgs;
     },
-    config: NetworkConfig
+    config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
     let codeSerializer = new BCS.Serializer();
     let modulesTypeCode: TxnBuilderTypes.Module[] = [];
 
     args.modulesCode.map((module) => {
-        modulesTypeCode.push(
-            new TxnBuilderTypes.Module(Uint8Array.from(module)),
-        );
+        modulesTypeCode.push(new TxnBuilderTypes.Module(Uint8Array.from(module)));
     });
 
     BCS.serializeVector(modulesTypeCode, codeSerializer);
@@ -246,11 +254,12 @@ export async function publishPackageInternal(
         functionArgs: [BCS.bcsSerializeBytes(args.packageMetadata), codeSerializer.getBytes()],
     };
 
-    return await buildAndSubmitEntryFunctionInternal({
-        senderAccount: args.senderAccount,
-        payload: publishPayload,
-        optionalTransactionArgs: args.optionalTransactionArgs,
-    }, config);
+    return await buildAndSubmitEntryFunctionInternal(
+        {
+            senderAccount: args.senderAccount,
+            payload: publishPayload,
+            optionalTransactionArgs: args.optionalTransactionArgs,
+        },
+        config,
+    );
 }
-
-

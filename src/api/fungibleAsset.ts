@@ -4,7 +4,11 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { FungibleAssetMetadata } from "../types/fungibleAsset";
 import type { MoveFunctionId } from "../types/move";
-import { getFungibleAssetMetadataInternal, migrateCoinToFungibleStoreInternal, transferFungibleAssetInternal } from "../internal/fungibleAsset";
+import {
+    getFungibleAssetMetadataInternal,
+    migrateCoinToFungibleStoreInternal,
+    transferFungibleAssetInternal,
+} from "../internal/fungibleAsset";
 import { retryWithFreshSequenceNumber } from "../internal/sequenceNumber";
 import { validateAddress, validateAmount, validateStructId } from "../helper/validation";
 import { SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
@@ -14,29 +18,25 @@ import { SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
  * @group FungibleAsset
  */
 export class FungibleAsset {
-
-
     /**
-    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-    */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
 
-
     /**
-    * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
-    * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
-    * @example
-    * ```typescript
-    * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
-    * const supra = new SupraClient({ network: Network.TESTNET });
-    * ```  
-    * @group FungibleAsset
-    */
+     * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
+     * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     * ```
+     * @group FungibleAsset
+     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Get the metadata of a fungible asset: the `0x1::fungible_asset::Metadata` resource stored at the address of the
@@ -55,8 +55,8 @@ export class FungibleAsset {
      *    const fungibleAssetMetadata = await supra.fungibleAsset.getFungibleAssetMetadata({ assetAddress: assetAddress });
      *    console.log(fungibleAssetMetadata);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group FungibleAsset
      */
@@ -102,27 +102,29 @@ export class FungibleAsset {
      *    const transactionResponse = await supra.fungibleAsset.transferSupraFungibleAsset({ senderAccount: senderAccount, receiverAccountAddress: receiverAccountAddress, amount: amount });
      *    console.log(transactionResponse);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group FungibleAsset
      */
-    async transferSupraFungibleAsset(
-        args: {
-            senderAccount: SupraAccount,
-            receiverAccountAddress: AccountAddressInput,
-            amount: number | bigint,
-            optionalTransactionArgs?: OptionalTransactionArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async transferSupraFungibleAsset(args: {
+        senderAccount: SupraAccount;
+        receiverAccountAddress: AccountAddressInput;
+        amount: number | bigint;
+        optionalTransactionArgs?: OptionalTransactionArgs;
+    }): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
         return retryWithFreshSequenceNumber(
             args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
-            () => transferFungibleAssetInternal({
-                ...args,
-                assetAddress: SUPRA_FUNGIBLE_ASSET_ADDRESS,
-            }, this.networkInformation),
+            () =>
+                transferFungibleAssetInternal(
+                    {
+                        ...args,
+                        assetAddress: SUPRA_FUNGIBLE_ASSET_ADDRESS,
+                    },
+                    this.networkInformation,
+                ),
         );
     }
 
@@ -161,13 +163,11 @@ export class FungibleAsset {
      * ```
      * @group FungibleAsset
      */
-    async migrateCoinToFungibleStore(
-        args: {
-            senderAccount: SupraAccount,
-            coinType?: MoveFunctionId,
-            optionalTransactionArgs?: OptionalTransactionArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async migrateCoinToFungibleStore(args: {
+        senderAccount: SupraAccount;
+        coinType?: MoveFunctionId;
+        optionalTransactionArgs?: OptionalTransactionArgs;
+    }): Promise<SubmitTransactionResponse> {
         if (args.coinType !== undefined) {
             validateStructId(args.coinType, "coinType");
         }
@@ -211,20 +211,18 @@ export class FungibleAsset {
      *    const transactionResponse = await supra.fungibleAsset.transferFungibleAsset({ senderAccount: senderAccount, receiverAccountAddress: receiverAccountAddress, amount: amount, assetAddress: assetAddress });
      *    console.log(transactionResponse);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group FungibleAsset
      */
-    async transferFungibleAsset(
-        args: {
-            senderAccount: SupraAccount,
-            receiverAccountAddress: AccountAddressInput,
-            amount: number | bigint,
-            assetAddress: AccountAddressInput,
-            optionalTransactionArgs?: OptionalTransactionArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async transferFungibleAsset(args: {
+        senderAccount: SupraAccount;
+        receiverAccountAddress: AccountAddressInput;
+        amount: number | bigint;
+        assetAddress: AccountAddressInput;
+        optionalTransactionArgs?: OptionalTransactionArgs;
+    }): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
         validateAddress(args.assetAddress, "assetAddress");

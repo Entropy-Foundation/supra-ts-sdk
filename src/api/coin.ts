@@ -13,29 +13,25 @@ import { validateAddress, validateAmount, validateStructId } from "../helper/val
  * @group Coin
  */
 export class Coin {
-
-
     /**
-    * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
-    */
+     * The networkInformation property is A NetworkConfig object that contains information about the network on which the Supra client is running.
+     */
     protected readonly networkInformation: NetworkConfig;
 
-
     /**
-    * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
-    * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
-    * @example
-    * ```typescript
-    * import { SupraClient,Network } from "supra-ts-sdk";
-    * 
-    * const supra = new SupraClient({ network: Network.TESTNET });
-    * ```  
-    * @group Coin
-    */
+     * The constructor function takes a NetworkConfig object as a parameter and assigns it to the networkInformation property.
+     * @param networkInformation - A NetworkConfig object that contains information about the network on which the Supra client is running.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     * ```
+     * @group Coin
+     */
     constructor(networkInformation: NetworkConfig) {
         this.networkInformation = networkInformation;
     }
-
 
     /**
      * Reads the name, symbol and decimals of a coin type from the `0x1::coin::CoinInfo` resource that the account
@@ -46,16 +42,16 @@ export class Coin {
      * @example
      * ```typescript
      * import { SupraClient,Network } from "supra-ts-sdk";
-     * 
+     *
      * const supra = new SupraClient({ network: Network.TESTNET });
-     * 
+     *
      * async function runExample() {
      *    const coinType = "0x1::supra_coin::SupraCoin";
      *    const coinInfo = await supra.coin.getCoinInfo({ coinType: coinType });
      *    console.log(coinInfo);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Coin
      */
@@ -96,25 +92,30 @@ export class Coin {
      *    const transactionResponse = await supra.coin.transferSupraCoin({ senderAccount: senderAccount, receiverAccountAddress: receiverAccountAddress, amount: amount });
      *    console.log(transactionResponse);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Coin
      */
-    async transferSupraCoin(
-        args: {
-            senderAccount: SupraAccount,
-            receiverAccountAddress: AccountAddressInput,
-            amount: number | bigint,
-            optionalTransactionArgs?: OptionalTransactionArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async transferSupraCoin(args: {
+        senderAccount: SupraAccount;
+        receiverAccountAddress: AccountAddressInput;
+        amount: number | bigint;
+        optionalTransactionArgs?: OptionalTransactionArgs;
+    }): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
-        return retryWithFreshSequenceNumber(args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber, () => transferCoinInternal({
-            ...args,
-            coinType: "0x1::supra_coin::SupraCoin",
-        }, this.networkInformation));
+        return retryWithFreshSequenceNumber(
+            args.optionalTransactionArgs?.optionalTransactionPayloadArgs?.sequenceNumber,
+            () =>
+                transferCoinInternal(
+                    {
+                        ...args,
+                        coinType: "0x1::supra_coin::SupraCoin",
+                    },
+                    this.networkInformation,
+                ),
+        );
     }
 
     /**
@@ -149,20 +150,18 @@ export class Coin {
      *    const transactionResponse = await supra.coin.transferCoin({ senderAccount: senderAccount, receiverAccountAddress: receiverAccountAddress, amount: amount, coinType: coinType });
      *    console.log(transactionResponse);
      * }
-     * 
-     * runExample().catch(console.error); 
+     *
+     * runExample().catch(console.error);
      * ```
      * @group Coin
      */
-    async transferCoin(
-        args: {
-            senderAccount: SupraAccount,
-            receiverAccountAddress: AccountAddressInput,
-            amount: number | bigint,
-            coinType: MoveFunctionId,
-            optionalTransactionArgs?: OptionalTransactionArgs,
-        }
-    ): Promise<SubmitTransactionResponse> {
+    async transferCoin(args: {
+        senderAccount: SupraAccount;
+        receiverAccountAddress: AccountAddressInput;
+        amount: number | bigint;
+        coinType: MoveFunctionId;
+        optionalTransactionArgs?: OptionalTransactionArgs;
+    }): Promise<SubmitTransactionResponse> {
         validateAddress(args.receiverAccountAddress, "receiverAccountAddress");
         validateAmount(args.amount, "amount");
         validateStructId(args.coinType, "coinType");

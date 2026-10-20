@@ -50,7 +50,10 @@ function tooNew(): Answer {
 }
 
 function rejected(): Answer {
-    return json({ message: "General err: MoveTransactionValidationFailed(0x1, 0, INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE)" }, 400);
+    return json(
+        { message: "General err: MoveTransactionValidationFailed(0x1, 0, INSUFFICIENT_BALANCE_FOR_TRANSACTION_FEE)" },
+        400,
+    );
 }
 
 function transaction(status: TransactionStatus, vmStatus: string) {
@@ -90,7 +93,9 @@ beforeEach(() => {
         if (method === "GET" && /^\/accounts\/0x[0-9a-f]+$/.test(path)) {
             const index = Math.min(accountReads, chainSequenceNumbers.length - 1);
             accountReads += 1;
-            return respond(json({ sequence_number: chainSequenceNumbers[index], authentication_key: "0x" + "00".repeat(32) }));
+            return respond(
+                json({ sequence_number: chainSequenceNumbers[index], authentication_key: "0x" + "00".repeat(32) }),
+            );
         }
         if (method === "POST" && path === "/transactions/submit") {
             const body = JSON.parse(String(init?.body)) as { Move: { raw_txn: { sequence_number: number } } };
@@ -285,7 +290,9 @@ describe("SequenceNumberTracker", () => {
     it("releases the lock and keeps serving callers after a failed read of the chain", async () => {
         const tracker = new SequenceNumberTracker();
 
-        await expect(tracker.reserve(ADDRESS, async () => Promise.reject(new Error("offline")))).rejects.toThrow("offline");
+        await expect(tracker.reserve(ADDRESS, async () => Promise.reject(new Error("offline")))).rejects.toThrow(
+            "offline",
+        );
 
         expect(await next(tracker, fetchSeven)).toBe(7n);
     });
@@ -502,10 +509,26 @@ describe("SequenceNumberTracker records and chain time", () => {
 
 describe("refusals concerning the sequence number", () => {
     it.each([
-        ["v12 number above the queue", "Transaction validation failed: sequence number 30 is above 25, the highest sequence number this node can queue for the account", true],
-        ["v11.7.0 number above the expected one", "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 30 but the expected sequence number is 1.", true],
-        ["v11.7.0 number below the expected one", "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 3 but the expected sequence number is 7.", false],
-        ["v12 number below the account's", "Transaction validation failed: sequence number 3 is below the account's next sequence number 7", false],
+        [
+            "v12 number above the queue",
+            "Transaction validation failed: sequence number 30 is above 25, the highest sequence number this node can queue for the account",
+            true,
+        ],
+        [
+            "v11.7.0 number above the expected one",
+            "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 30 but the expected sequence number is 1.",
+            true,
+        ],
+        [
+            "v11.7.0 number below the expected one",
+            "Transaction validation failed: The transaction 0xab sent by AccountAddress::Move(0x1) has sequence number 3 but the expected sequence number is 7.",
+            false,
+        ],
+        [
+            "v12 number below the account's",
+            "Transaction validation failed: sequence number 3 is below the account's next sequence number 7",
+            false,
+        ],
     ])("classifies the %s", (_name, message, full) => {
         const error = apiError(400, message);
 
@@ -891,7 +914,9 @@ describe("withSequenceNumberInternal", () => {
         chainSequenceNumbers = [12];
         accountReads = 0;
 
-        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(12n);
+        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(
+            12n,
+        );
         expect(accountReads).toBe(1);
     });
 
@@ -900,7 +925,9 @@ describe("withSequenceNumberInternal", () => {
 
         await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber);
 
-        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(7n);
+        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(
+            7n,
+        );
     });
 
     it("keeps a record made by the run, and releases the lock after an error thrown later", async () => {
@@ -914,17 +941,23 @@ describe("withSequenceNumberInternal", () => {
             }),
         ).rejects.toThrow("wait failed");
 
-        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(8n);
+        expect(await withSequenceNumberInternal({ address }, config, async (sequenceNumber) => sequenceNumber)).toBe(
+            8n,
+        );
     });
 
     it("runs a call with an explicit number without the lock", async () => {
         const config = newConfig();
         const held = await sequenceNumberTrackerOf(config).reserve(address, async () => 7n);
 
-        const run = withSequenceNumberInternal({ address, sequenceNumber: 42 }, config, async (sequenceNumber, reservation) => ({
-            sequenceNumber,
-            reservation,
-        }));
+        const run = withSequenceNumberInternal(
+            { address, sequenceNumber: 42 },
+            config,
+            async (sequenceNumber, reservation) => ({
+                sequenceNumber,
+                reservation,
+            }),
+        );
 
         await expect(run).resolves.toEqual({ sequenceNumber: 42n, reservation: undefined });
         sequenceNumberTrackerOf(config).release(held);
