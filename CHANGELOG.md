@@ -53,30 +53,50 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   runs against committed state: for a transaction sent while earlier transactions of the account that this client
   submitted have not committed, it uses the account's sequence number on the chain, so pipelined transactions work
   with the default gas settings; a transaction that depends on an earlier uncommitted one fails its estimate and needs
-  `maxGas`. The estimate uses the chain's number only when every number between it and the transaction's belongs to a
-  transaction that the node accepted from this client and that is still pending (one read of each of those
-  transactions); otherwise the counter continues from the lowest of those numbers that has no pending transaction of
-  this client, and the helper sends the transaction once more with it.
+  `maxGas`. When the simulation reports the number as too new, the estimate reads the account and the latest block. It
+  uses the chain's number when every number between it and the transaction's has a record of a transaction this client
+  submitted (see the counter below); otherwise the transaction is built and signed again with the lowest number that
+  has no record, without giving up its place in the order of the calls. No transaction is read by hash. A failed read
+  of the account is thrown and nothing is submitted.
 - **`estimateMaxGas`** in `OptionalTransactionPayloadArgs` and `SupraConfig`: `false` uses `DEFAULT_MAX_GAS_UNITS`
   without a request.
-- **Per-account sequence-number counter.** Each `SupraClient` keeps the next sequence number of every account that its
-  helpers send from. The first use reads the number from the chain; each transaction the node accepts advances it. A
-  refusal for a stale number (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, or the nodes' refusal of a number
-  beyond what they queue for the account, or a number that already has a pending transaction) reads the number from
-  the chain again, and the helper sends the transaction once more with the fresh number. A transaction that fails
-  before the node accepts it for another reason gives its number back, and the next call uses it. Calls of one client
+- **Per-account sequence-number counter.** Each `SupraClient` keeps, for every account that its helpers send from, the
+  account's sequence number on the chain and a record of each transaction it submitted (accepted, or whose submission
+  request failed without an answer, so the node may have accepted it) with that transaction's expiration time. A
+  transaction the node accepted either commits or, once the timestamp of the latest block has reached its expiration
+  time, can no longer commit. A record is dropped when the chain's number passes it, when a block the client reads has
+  reached its expiration time, or when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it, since
+  an RPC node answers 404 for a pending transaction that another RPC node received. The next number is the lowest
+  number at or above the chain's that has no record. The first use reads the account and the latest block; so does the
+  next call after a refusal for a stale number or a full queue, and once the estimated chain time has passed the
+  expiration time of a record by two seconds. A read never drops a record that can still commit. A refusal for a stale number
+  (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the account's, or a number that already has a
+  pending transaction) makes the helper send the transaction once more with the next number. A transaction refused
+  for another reason has no record, and the next call uses its number. Transactions with an explicit
+  `sequenceNumber` are recorded as well. After a submission whose outcome is unknown that the node did not accept,
+  later calls wait behind its number in the node until the chain's time reaches its expiration time, at most
+  `txExpirySecs`, and the next call then takes that number. Calls of one client
   from one account are submitted one after another: a call holds the account from taking its number until the node
   answers its submission, and the wait for the final status comes after that. A call without `maxGas` holds the account
   while its max gas is estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted or
   have failed. Concurrent sends from one account get consecutive numbers. To submit faster, set `maxGas` or send from
   several accounts. A call with an explicit `sequenceNumber` does not take part in this order.
-- **`SupraClient.resetSequenceNumber(address)`** forgets the counter of an account; the next transaction reads its
-  number from the chain.
+- **`SupraClient.resetSequenceNumber(address)`** forgets the counter of an account and its records of the client's
+  transactions; the next transaction reads its number from the chain.
+- **`SupraAccountQueueFullError`** (extends `SupraAPIError`; carries `sequenceNumber`) is thrown when the node refuses a
+  submission whose sequence number is beyond the numbers it queues for the account ahead of the chain's (25 by
+  default). The helpers do not send it again; the next call reads the chain before it takes a number.
+- **`SupraConfig.txExpirySecs`** sets how many seconds after the estimated chain time a transaction built without
+  `txExpiryTime` expires: an integer from 1 to `MAX_TX_EXPIRATION_DURATION` (600), default
+  `DEFAULT_TX_EXPIRATION_DURATION` (60). The estimated chain time is the client's clock shifted by the difference
+  between the timestamp of the latest block the client has read (any block read, including the counter's) and the
+  client's clock at that read; before the client has read a block it is the client's clock.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
   `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage` and
   the entry functions of `Contract.fromABI`.
-  The helper uses it as given and does not use or change the counter.
+  The helper uses it as given and does not take part in the order of the calls; the counter records the submitted
+  transaction like its own and does not hand out its number while it can commit.
 - **Chain ID check before signing.** Before its first signature a client reads the chain ID of its node, from the
   `x-supra-chain-id` header of an earlier response or with `GET /rpc/v3/transactions/chain_id`, and keeps it for its
   lifetime; concurrent first signatures share one request. Every signing path (`signTransaction`, the signing methods
@@ -160,8 +180,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `PendingAfterExecution` (for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or `SEQUENCE_NUMBER_TOO_NEW`) and `Invalid`.
   It threw a `SupraAPIError` with status 400 for `Fail` only. With `enableTransactionSimulation: true`, a failed
   simulation means the transaction is not submitted. That simulation handles `SEQUENCE_NUMBER_TOO_NEW` as the max gas
-  estimate does: behind pending transactions that this client submitted, the transaction is simulated with the
-  account's sequence number on the chain and submitted with its own; otherwise the number is stale.
+  estimate does: behind numbers that have records of transactions this client submitted, the transaction is simulated
+  with the account's sequence number on the chain and submitted with its own; otherwise a helper's transaction is
+  signed again with the lowest number without a record, and a transaction with an explicit number throws the failure.
+  A failed read of the account during that check is thrown, as in the estimate, and nothing is submitted.
 - **Breaking:** `waitForTransaction` and submissions with `enableWaitForTransaction` keep waiting while the status is
   `Pending` or `PendingAfterExecution` and while a read fails (including HTTP 404 for a transaction the node has not
   seen yet), until the wait timeout measured in wall-clock time. A timeout throws `SupraTransactionTimeoutError`, and a
@@ -194,10 +216,15 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   reading it from the chain on every call, and the calls of one client from one account are submitted one after
   another (see the counter under Added); they ran independently of each other. Transactions sent by other means from the same account (another client or
   process, a wallet, a transaction built with an explicit number) make the counter stale; the next helper call then
-  costs one refused submission and a read of the chain, and succeeds. After a `SupraTransactionTimeoutError` for a
-  transaction that will not commit, call `resetSequenceNumber`. A transaction the node discarded after accepting it
-  also resets the counter, when any read of it through the client (`waitForTransaction`, `getTransactionByHash`,
-  `isPendingTransaction`, a submission's wait or read-back) returns `Invalid`.
+  costs one refused submission and a read of the chain, and succeeds. A transaction that will not commit keeps its
+  number until the chain's time reaches its expiration time; `resetSequenceNumber` frees it at once. A transaction the
+  node discarded after accepting it frees its number when any read of it through the client (`waitForTransaction`,
+  `getTransactionByHash`, `isPendingTransaction`, a submission's wait or read-back) returns `Invalid`.
+- **Breaking:** a transaction built without `txExpiryTime` expires `DEFAULT_TX_EXPIRATION_DURATION` (now 60) seconds
+  after the client's estimate of the chain's time, or `SupraConfig.txExpirySecs` seconds; it expired 300 seconds after
+  the client's clock. This applies to every builder, including `rawTxnObject` and the other builders of
+  `transaction.build`, which use the client's clock until the client has read a block. Set `txExpiryTime` (absolute,
+  used as given) or `txExpirySecs` for a transaction that is signed or submitted later.
 - **Breaking:** `signTransaction`, `transaction.build.signedTransaction`, `transaction.build.sendTxnPayload` and the
   `signTransaction`, `signedTransaction` and `sendTxnPayload` methods of a built transaction return promises, since a
   client's first signature reads the node's chain ID. Code that already awaits them is unaffected.
