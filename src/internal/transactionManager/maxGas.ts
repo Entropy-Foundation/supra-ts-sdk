@@ -88,8 +88,9 @@ export async function affordableGasUnitsInternal(
  * `DEFAULT_MAX_GAS_UNITS`, at most `affordable`. When an earlier transaction committed after the balance was read and
  * the balance no longer pays for the simulated max gas, the simulation is made with what the new balance pays for.
  * A transaction that depends on the state of an earlier one that has not
- * committed fails the simulation at the chain's number and throws. Signing the simulated transaction
- * throws what signing throws, for example `SupraChainIdMismatchError`, before the simulation is requested. When there
+ * committed fails the simulation at the chain's number and throws. Signing a simulated transaction throws what signing
+ * throws, for example `SupraChainIdMismatchError` or the error of a failed read of the chain ID, before the simulation
+ * is requested. When there
  * is no `senderAccount`, or the balance read fails, or the simulation fails for a reason that is not a simulation
  * result (a request error, a response without `gas_used`), the max gas is `DEFAULT_MAX_GAS_UNITS`, at most
  * `affordable` when that is known and not zero.
@@ -132,12 +133,10 @@ export async function resolveMaxGasInternal(
 
     // Signing checks the chain ID; its errors are thrown, as the signature of the submitted transaction would throw them.
     const rawTxn = args.buildRawTxn(affordable);
+    const sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
     let simulated: TransactionResponse;
     try {
-        simulated = await simulateTxnInternal(
-            { sendTxPayload: await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config) },
-            config,
-        );
+        simulated = await simulateTxnInternal({ sendTxPayload }, config);
     } catch (error) {
         if (error instanceof SupraSimulationFailedError) {
             if (!isSequenceNumberTooNew(error)) {
@@ -221,11 +220,10 @@ async function simulateAtChainSequenceNumber(
             rawTxn.expiration_timestamp_secs,
             rawTxn.chain_id,
         );
+        // Signing errors are thrown, as for the first simulation.
+        const sendTxPayload = await sendTxnPayloadInternal({ senderAccount, rawTxn: atChainNumber }, config);
         try {
-            const simulated = await simulateTxnInternal(
-                { sendTxPayload: await sendTxnPayloadInternal({ senderAccount, rawTxn: atChainNumber }, config) },
-                config,
-            );
+            const simulated = await simulateTxnInternal({ sendTxPayload }, config);
             return { simulated, affordable: BigInt(rawTxn.max_gas_amount) };
         } catch (error) {
             if (!(error instanceof SupraSimulationFailedError)) {

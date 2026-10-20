@@ -1,5 +1,6 @@
 import { SupraAccount } from "supra-l1-sdk-core";
 import { SupraClient } from "../../../api/supraClient";
+import { SupraServiceUnavailableError } from "../../../errors/apiError";
 import { SupraSimulationFailedError } from "../../../errors/transactionError";
 import { TransactionStatus } from "../../../types/transaction";
 import { DEFAULT_MAX_GAS_UNITS } from "../../../utils/constants";
@@ -33,6 +34,9 @@ let balances: string[];
 /** Answers a simulation at a number that matches the chain's. */
 let simulateAtChainNumber: () => Answer;
 let simulate: (sequenceNumber: number, chainSequenceNumber: number) => Answer;
+/** Answers of the chain-ID reads in order; once they are used up, the reads answer 255. */
+let chainIdAnswers: Answer[];
+let chainIdReads: number;
 const originalFetch = global.fetch;
 
 function json(body: unknown, status = 200): Answer {
@@ -98,6 +102,8 @@ beforeEach(() => {
     submissions = [];
     accountReads = 0;
     balances = [String(1_000n * 100_000_000n)];
+    chainIdAnswers = [];
+    chainIdReads = 0;
     simulateAtChainNumber = () => gasUsed(2_000);
     simulate = (sequenceNumber, chainSequenceNumber) => {
         if (sequenceNumber > chainSequenceNumber) {
@@ -132,7 +138,8 @@ beforeEach(() => {
             return respond(json(HASH));
         }
         if (method === "GET" && path === "/transactions/chain_id") {
-            return respond(json(255));
+            chainIdReads += 1;
+            return respond(chainIdAnswers.shift() ?? json(255));
         }
         if (method === "GET" && path.startsWith("/transactions/")) {
             return respond(json(moveTxn(TransactionStatus.Success, "Executed successfully", 7)));
@@ -358,5 +365,23 @@ describe("the max gas estimate of a transaction behind a pending one", () => {
         await transfer(supra, sender);
 
         expect(submissions[0]).toMatchObject({ sequenceNumber: 4, maxGas: Number(DEFAULT_MAX_GAS_UNITS) });
+    });
+});
+
+describe("the max gas estimate", () => {
+    it("throws the error of a failed chain-ID read made while signing the simulated transaction", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        chainIdAnswers = [json({ message: "unavailable" }, 503)];
+
+        const error: unknown = await transfer(supra, sender).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(SupraServiceUnavailableError);
+        expect(chainIdReads).toBe(1);
+        expect(simulations).toHaveLength(0);
+        expect(submissions).toHaveLength(0);
+        // The number was not used: the next transfer takes it.
+        await transfer(supra, sender);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
     });
 });
