@@ -1,250 +1,242 @@
-import { MILLISECONDS_PER_SECOND, BCS, HexString, TxnBuilderTypes, stringifyWithBigInt, type MoveFunctionId } from "supra-ts-sdk";
-import { account } from "./account.setup";
-import { createClient, fundAccountsIfRequested, usesCustomNode } from "./client.setup";
+import {
+    BCS,
+    HexString,
+    MILLISECONDS_PER_SECOND,
+    SupraAccount,
+    TxnBuilderTypes,
+    stringifyWithBigInt,
+    type MoveFunctionId,
+} from "supra-ts-sdk";
+import { assertSuccess, createClient, getFundedAccounts, runExample } from "./setup";
 
-(async () => {
+runExample(async () => {
     const supra = createClient();
-    await fundAccountsIfRequested(supra, [account]);
+    const [account] = await getFundedAccounts(supra, 1);
+    if (account === undefined) {
+        throw new Error("No account");
+    }
 
-    // const account = SupraAccount.fromSupraAccountObject({
-    //     address: "AccountAddress",
-    //     privateKeyHex: `${"PrivateKey"}${"PublicKey (Without 0x)"}`,
-    //     publicKeyHex: `0x${"PublicKey (Without 0x)"}`
-    // });
+    const receiverAddress = new SupraAccount().address();
+    const waitForCommit = { enableTransactionSimulation: true, enableWaitForTransaction: true };
 
+    // The builders take the sequence number of the transaction. Every transaction below waits for its commit and the
+    // account sends nothing else, so the account's sequence number on chain is the number of the first transaction
+    // and each transaction uses the next one.
+    let sequenceNumber = (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number;
+    const nextSequenceNumber = (): bigint => sequenceNumber++;
 
-    let receiverAddress = new HexString(
-        // "1000000000000000000000000000000000000000000000000000000000000000"
-        "0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5"
-    );
-
-    // The builders take the sequence number of the transaction. Every transaction below waits for its commit, so the
-    // account's sequence number on chain is the number of the next transaction.
-    const nextSequenceNumber = async () =>
-        (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number;
-
-    // Supra Coin Transfer Payload
-    const supraTransferPayload = async () => ({
+    // SUPRA transfer payload
+    const supraTransferPayload = () => ({
         senderAddress: account.address(),
-        senderSequenceNumber: await nextSequenceNumber(),
+        senderSequenceNumber: nextSequenceNumber(),
         function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
         functionTypeArgs: [],
-        functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000)]
+        functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10_000n)],
     });
 
     // ---------------------------------------------------------------------------
-    // Build serialized raw transaction object
+    // Build a raw transaction from a function and arguments given as plain values
     // ---------------------------------------------------------------------------
-
-    let supraCoinTransferSimpleTransaction = await supra.transaction.build.simple({
+    const supraCoinTransferSimpleTransaction = await supra.transaction.build.simple({
         senderAddress: account.address(),
-        senderSequenceNumber: await nextSequenceNumber(),
+        senderSequenceNumber: nextSequenceNumber(),
         function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer_coins",
         functionTypeArgs: ["0x1::supra_coin::SupraCoin"],
-        functionArgs: ["0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5", 10000],
+        functionArgs: [receiverAddress.toString(), 10_000],
+    });
 
-    })
-
-    // You use can above serialized payload to send transaction.
-    let txn = await supra.transaction.submit.submitRawTransaction({
+    // Use the raw transaction above to send the transaction.
+    const txn = await supra.transaction.submit.submitRawTransaction({
         senderAccount: account,
         rawTransaction: supraCoinTransferSimpleTransaction,
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn);
+    assertSuccess("submitRawTransaction", txn);
+    console.log("Transaction committed:", txn.hash);
 
     // ---------------------------------------------------------------------------
-    // Build non-serialized raw transaction object
+    // Build a raw transaction object from serialized arguments
     // ---------------------------------------------------------------------------
+    const supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload());
 
-    let supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(await supraTransferPayload())
-
-    // You use can above serialized payload to send transaction.
-    let txn2 = await supra.transaction.submit.submitSerializedRawTransaction({
+    const txn2 = await supra.transaction.submit.submitSerializedRawTransaction({
         senderAccount: account,
         serializedRawTransaction: supraCoinTransferRawTransaction.toBytes(),
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
+    });
+    assertSuccess("submitSerializedRawTransaction", txn2);
+    console.log("Transaction committed:", txn2.hash);
+
+    // ---------------------------------------------------------------------------
+    // Build the payload of a transaction submission request
+    // ---------------------------------------------------------------------------
+    const supraCoinTransferSendTxnPayload = await supra.transaction.build.sendTxnPayload({
+        senderAccount: account,
+        rawTxn: supra.transaction.build.rawTxnObject(supraTransferPayload()),
     });
 
-    console.log("Transaction submitted:", txn2);
-
-    // ---------------------------------------------------------------------------
-    // Build send transaction payload
-    // ---------------------------------------------------------------------------
-
-    let supraCoinTransferSendTxnPayload = await supra.transaction.build.sendTxnPayload({
-        senderAccount: account,
-        rawTxn: supra.transaction.build.rawTxnObject(await supraTransferPayload())
-    })
-
-    // You use can above payload to send the transaction with any HTTP client. The payload holds `bigint` values,
-    // which `JSON.stringify` rejects; `stringifyWithBigInt` writes them as exact JSON numbers.
-    let txn3 = await fetch(`${supra.networkInformation.rpcUrl}/rpc/v3/transactions/submit`, {
+    // Use the payload above to send the transaction with any HTTP client. The payload holds `bigint` values, which
+    // `JSON.stringify` rejects; `stringifyWithBigInt` writes them as exact JSON numbers.
+    const response = await fetch(`${supra.networkInformation.rpcUrl}/rpc/v3/transactions/submit`, {
         method: "POST",
         body: stringifyWithBigInt(supraCoinTransferSendTxnPayload),
         headers: {
-            "Content-Type": "application/json"
-        }
+            "Content-Type": "application/json",
+        },
     });
-
-    let txn3Hash = await txn3.json();
+    if (!response.ok) {
+        throw new Error(`The submission returned HTTP ${response.status}: ${await response.text()}`);
+    }
+    const txn3Hash = (await response.json()) as string;
     console.log("Transaction submitted:", txn3Hash);
-    console.log("Transaction committed:", await supra.transaction.waitForTransaction({ transactionHash: txn3Hash }));
-
-
-    // ---------------------------------------------------------------------------
-    // Build serialized raw transaction object
-    // ---------------------------------------------------------------------------
-
-    let supraCoinTransferSerializedRawTransaction = supra.transaction.build.rawTxnObject(await supraTransferPayload()).toBytes();
-
-    // You use can above serialized payload to send transaction.
-    let txn4 = await supra.transaction.submit.submitSerializedRawTransaction({
-        senderAccount: account,
-        serializedRawTransaction: supraCoinTransferSerializedRawTransaction,
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
-    });
-
-    console.log("Transaction submitted:", txn4);
-
+    const txn3 = await supra.transaction.waitForTransaction({ transactionHash: txn3Hash });
+    assertSuccess("submit through fetch", txn3);
+    console.log("Transaction committed:", txn3.hash);
 
     // ---------------------------------------------------------------------------
-    // Build serialized script raw transaction object
+    // Build a script transaction
     // ---------------------------------------------------------------------------
 
     // To execute move-script
-    let moveScriptCodeHex =
+    const moveScriptCodeHex =
         "a11ceb0b060000000501000403040a050e0f071d29084620000000010002020300010304010002060c030001060c010503060c0503067369676e65720d73757072615f6163636f756e740a616464726573735f6f66087472616e736665720000000000000000000000000000000000000000000000000000000000000001000001060a000b0011000b01110102";
 
-    let supraCoinTransferSerializedScriptRawTransaction = supra.transaction.build.scriptRawTxnObject({
-        senderAddress: account.address(),
-        senderSequenceNumber: await nextSequenceNumber(),
-        scriptCode: new HexString(moveScriptCodeHex).toUint8Array(),
-        scriptTypeArgs: [],
-        scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(BigInt(1000))]
-    }).toBytes();
+    const supraCoinTransferSerializedScriptRawTransaction = supra.transaction.build
+        .scriptRawTxnObject({
+            senderAddress: account.address(),
+            senderSequenceNumber: nextSequenceNumber(),
+            scriptCode: new HexString(moveScriptCodeHex).toUint8Array(),
+            scriptTypeArgs: [],
+            scriptArgs: [new TxnBuilderTypes.TransactionArgumentU64(1000n)],
+        })
+        .toBytes();
 
-    // You use can above serialized payload to send transaction.
-    let txn5 = await supra.transaction.submit.submitSerializedRawTransaction({
+    const txn5 = await supra.transaction.submit.submitSerializedRawTransaction({
         senderAccount: account,
         serializedRawTransaction: supraCoinTransferSerializedScriptRawTransaction,
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn5);
-
+    assertSuccess("script transaction", txn5);
+    console.log("Transaction committed:", txn5.hash);
 
     // ---------------------------------------------------------------------------
-    // Build serialized automation registration payload object
+    // Build an automation registration transaction
     // ---------------------------------------------------------------------------
+    const supraCoinTransferAutomationSerializedRawTransaction = supra.transaction.build
+        .automationRegistrationRawTxnObject({
+            senderAddress: account.address(),
+            senderSequenceNumber: nextSequenceNumber(),
+            function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
+            functionTypeArgs: [],
+            functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+            automationMaxGasAmount: 500n,
+            // The cap must not be below the network's minimum gas unit price.
+            automationGasPriceCap: (await supra.getMinGasUnitPrice()) * 2n,
+            automationFeeCapForEpoch: 1_000_000_000n,
+            automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 60 * 60),
+            automationAuxData: [],
+        })
+        .toBytes();
 
-    let supraCoinTransferAutomationSerializedRawTransaction = supra.transaction.build.automationRegistrationRawTxnObject({
-        senderAddress: account.address(),
-        senderSequenceNumber: await nextSequenceNumber(),
-        function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
-        functionTypeArgs: [],
-        functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)],
-        automationMaxGasAmount: BigInt(500),
-        // The cap must not be below the network's minimum gas unit price.
-        automationGasPriceCap: (await supra.getMinGasUnitPrice()) * BigInt(2),
-        automationFeeCapForEpoch: BigInt(1000000000),
-        automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 60 * 60),
-        automationAuxData: [],
-    }).toBytes();
-
-    // You use can above serialized payload to send transaction.
-    let txn6 = await supra.transaction.submit.submitSerializedRawTransaction({
+    const txn6 = await supra.transaction.submit.submitSerializedRawTransaction({
         senderAccount: account,
         serializedRawTransaction: supraCoinTransferAutomationSerializedRawTransaction,
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn6);
-
+    assertSuccess("automation registration", txn6);
+    console.log("Transaction committed:", txn6.hash);
 
     // ---------------------------------------------------------------------------
-    // Build serialized multisig transaction proposal raw transaction object
+    // Create a multisig account that `account` owns
     // ---------------------------------------------------------------------------
 
-    // The multisig account must exist on the network. The default is an account on Testnet; on any other node, set
-    // SUPRA_EXAMPLES_MULTISIG_ADDRESS to a multisig account whose owner is `account`.
-    const multisigAddress = process.env["SUPRA_EXAMPLES_MULTISIG_ADDRESS"]
-        ?? (usesCustomNode() ? undefined : "0x5ccc30b127e0be0b83f226aed2d7387eee261390f1548483530e15d0208cba65");
-
+    // The address of the multisig account that the creation below makes.
+    const [multisigAddress] = await supra.methods.view<[string]>({
+        function: "0x1::multisig_account::get_next_multisig_account_address",
+        functionArguments: [account.address().toString()],
+        typeArguments: [],
+    });
     if (multisigAddress === undefined) {
-        console.log("Skipping the multisig transactions: set SUPRA_EXAMPLES_MULTISIG_ADDRESS to a multisig account on this network.");
-        return;
+        throw new Error("The node returned no multisig account address");
     }
 
-    let multisigAccountAddress = new HexString(multisigAddress);
+    // One signature of the two owners is enough to execute a transaction.
+    const multisigCreation = await supra.transaction.build.simple({
+        senderAddress: account.address(),
+        senderSequenceNumber: nextSequenceNumber(),
+        function: "0x1::multisig_account::create_with_owners",
+        functionTypeArgs: [],
+        functionArgs: [[new SupraAccount().address().toString()], 1n, [], [], 3_600n],
+    });
+    const txn7 = await supra.transaction.submit.submitRawTransaction({
+        senderAccount: account,
+        rawTransaction: multisigCreation,
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
+    });
+    assertSuccess("multisig account creation", txn7);
+    console.log(`Multisig account ${multisigAddress} created:`, txn7.hash);
 
-    let supraCoinTransferSerializedMultisigHashedRawTransaction = supra.transaction.build.multisigProposalTxRawTxnObject(
-        {
+    // The transfers of the multisig account below are paid from its balance.
+    const txn8 = await supra.transaction.submit.submitSerializedRawTransaction({
+        senderAccount: account,
+        serializedRawTransaction: supra.transaction.build
+            .rawTxnObject({
+                senderAddress: account.address(),
+                senderSequenceNumber: nextSequenceNumber(),
+                function: "0x1::supra_account::transfer" as MoveFunctionId,
+                functionTypeArgs: [],
+                functionArgs: [new HexString(multisigAddress).toUint8Array(), BCS.bcsSerializeUint64(100_000n)],
+            })
+            .toBytes(),
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
+    });
+    assertSuccess("funding of the multisig account", txn8);
+
+    // ---------------------------------------------------------------------------
+    // Build a multisig transaction proposal
+    // ---------------------------------------------------------------------------
+    const multisigAccountAddress = new HexString(multisigAddress);
+
+    const supraCoinTransferSerializedMultisigHashedRawTransaction = supra.transaction.build
+        .multisigProposalTxRawTxnObject({
             senderAddress: account.address(),
-            senderSequenceNumber: await nextSequenceNumber(),
+            senderSequenceNumber: nextSequenceNumber(),
             multisigAddress: multisigAccountAddress,
             function: "0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer",
             functionTypeArgs: [],
-            functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)]
-        }
-    ).toBytes();
+            functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+        })
+        .toBytes();
 
-    // You use can above serialized payload to send transaction.
-    let txn7 = await supra.transaction.submit.submitSerializedRawTransaction({
+    const txn9 = await supra.transaction.submit.submitSerializedRawTransaction({
         senderAccount: account,
         serializedRawTransaction: supraCoinTransferSerializedMultisigHashedRawTransaction,
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn7);
+    assertSuccess("multisig proposal", txn9);
+    console.log("Transaction committed:", txn9.hash);
 
     // ---------------------------------------------------------------------------
-    // Build serialized multisig raw transaction object
+    // Build a multisig transaction that executes the proposal
     // ---------------------------------------------------------------------------
 
-    // Executing multisig transaction.
-    // Note: The used multisig account only require single approval which is provided at the time of
-    // txn creation hence no need of approval.
-    let supraCoinTransferSerializedMultisigRawTransaction = supra.transaction.build.multisigRawTxnObject(
-        {
+    // The proposal has the creator's approval and the multisig account requires one, so it can be executed.
+    const supraCoinTransferSerializedMultisigRawTransaction = supra.transaction.build
+        .multisigRawTxnObject({
             senderAddress: account.address(),
-            senderSequenceNumber: await nextSequenceNumber(),
+            senderSequenceNumber: nextSequenceNumber(),
             multisigAddress: multisigAccountAddress,
             function: "0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer",
             functionTypeArgs: [],
-            functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000)]
-        }
-    ).toBytes();
+            functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+        })
+        .toBytes();
 
-    // You use can above serialized payload to send transaction.
-    let txn8 = await supra.transaction.submit.submitSerializedRawTransaction({
+    const txn10 = await supra.transaction.submit.submitSerializedRawTransaction({
         senderAccount: account,
         serializedRawTransaction: supraCoinTransferSerializedMultisigRawTransaction,
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn8);
-
-})();
+    assertSuccess("multisig execution", txn10);
+    console.log("Transaction committed:", txn10.hash);
+});

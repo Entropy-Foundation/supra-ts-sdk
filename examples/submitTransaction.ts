@@ -1,195 +1,139 @@
-import { BCS, HexString, TxnBuilderTypes, type MoveFunctionId } from "supra-ts-sdk";
-import { account, feePayerAccount, secondarySignerAccount } from "./account.setup";
-import { createClient, fundAccountsIfRequested, usesCustomNode } from "./client.setup";
+import { BCS, SupraAccount, TxnBuilderTypes, type MoveFunctionId } from "supra-ts-sdk";
+import { assertSuccess, createClient, getFundedAccounts, runExample } from "./setup";
+import { publishTwoSignersModule } from "./twoSignersModule";
 
-(async () => {
+runExample(async () => {
     const supra = createClient();
-    await fundAccountsIfRequested(supra, [account, feePayerAccount, secondarySignerAccount]);
+    const [account, feePayerAccount, secondarySignerAccount] = await getFundedAccounts(supra, 3);
+    if (account === undefined || feePayerAccount === undefined || secondarySignerAccount === undefined) {
+        throw new Error("Missing accounts");
+    }
 
-    // const account = SupraAccount.fromSupraAccountObject({
-    //     address: "AccountAddress",
-    //     privateKeyHex: `${"PrivateKey"}${"PublicKey (Without 0x)"}`,
-    //     publicKeyHex: `0x${"PublicKey (Without 0x)"}`
-    // });
+    const receiverAddress = new SupraAccount().address();
+    const waitForCommit = { enableTransactionSimulation: true, enableWaitForTransaction: true };
 
-    // const feePayerAccount = SupraAccount.fromSupraAccountObject({
-    //     address: "AccountAddress",
-    //     privateKeyHex: `${"PrivateKey"}${"PublicKey (Without 0x)"}`,
-    //     publicKeyHex: `0x${"PublicKey (Without 0x)"}`
-    // });
+    // The builders take the sequence number of the transaction. Every transaction below waits for its commit and the
+    // account sends nothing else, so the account's sequence number on chain is the number of the first transaction
+    // and each transaction uses the next one.
+    let sequenceNumber = (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number;
+    const nextSequenceNumber = (): bigint => sequenceNumber++;
 
-    // const secondarySignerAccount = SupraAccount.fromSupraAccountObject({
-    //     address: "AccountAddress",
-    //     privateKeyHex: `${"PrivateKey"}${"PublicKey (Without 0x)"}`,
-    //     publicKeyHex: `0x${"PublicKey (Without 0x)"}`
-    // });
-
-    let receiverAddress = new HexString(
-        // "1000000000000000000000000000000000000000000000000000000000000000"
-        "0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5"
-    );
-
-    // The builders take the sequence number of the transaction. Every transaction below waits for its commit, so the
-    // account's sequence number on chain is the number of the next transaction.
-    const nextSequenceNumber = async () =>
-        (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number;
-
-    // Supra Coin Transfer Payload
-    const supraTransferPayload = async () => ({
+    // SUPRA transfer payload
+    const supraTransferPayload = () => ({
         senderAddress: account.address(),
-        senderSequenceNumber: await nextSequenceNumber(),
+        senderSequenceNumber: nextSequenceNumber(),
         function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
         functionTypeArgs: [],
-        functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10000)]
+        functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(10_000n)],
     });
 
     // ---------------------------------------------------------------------------
-    // Submit simple transaction
+    // Submit a serialized raw transaction; the SDK signs it
     // ---------------------------------------------------------------------------
+    const supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload());
 
-    let supraCoinTransferRawTransaction = supra.transaction.build.rawTxnObject(await supraTransferPayload())
-
-    // You use can above serialized payload to send transaction.
-    let txn = await supra.transaction.submit.submitSerializedRawTransaction({
+    const txn = await supra.transaction.submit.submitSerializedRawTransaction({
         senderAccount: account,
         serializedRawTransaction: supraCoinTransferRawTransaction.toBytes(),
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn);
-
+    assertSuccess("submitSerializedRawTransaction", txn);
+    console.log("Transaction committed:", txn.hash);
 
     // ---------------------------------------------------------------------------
-    // Submit serialized transaction with signature
+    // Submit a serialized transaction with its signature
     // ---------------------------------------------------------------------------
+    const supraCoinTransferSerializedRawTransaction = supra.transaction.build
+        .rawTxnObject(supraTransferPayload())
+        .toBytes();
 
-    let supraCoinTransferSerializedRawTransaction = supra.transaction.build.rawTxnObject(await supraTransferPayload()).toBytes();
-
-    let raw_txn = TxnBuilderTypes.RawTransaction.deserialize(
+    const rawTxn = TxnBuilderTypes.RawTransaction.deserialize(
         new BCS.Deserializer(supraCoinTransferSerializedRawTransaction),
     );
 
-    let signature = await supra.transaction.signTransaction({ senderAccount: account, rawTxn: raw_txn })
+    const signature = await supra.transaction.signTransaction({ senderAccount: account, rawTxn });
 
-    // You use can above serialized payload to send transaction.
-    let txn1 = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
+    const txn1 = await supra.transaction.submit.submitSerializedRawTransactionAndSignature({
         senderPubkey: account.pubKey(),
         signature,
         serializedRawTransaction: supraCoinTransferSerializedRawTransaction,
-        enableTransactionWaitAndSimulationArgs: {
-            enableTransactionSimulation: true,
-            enableWaitForTransaction: true
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn1);
-
+    assertSuccess("submitSerializedRawTransactionAndSignature", txn1);
+    console.log("Transaction committed:", txn1.hash);
 
     // ---------------------------------------------------------------------------
-    // Submit sponsored transaction
+    // Submit a sponsored transaction: the fee payer pays the gas
     // ---------------------------------------------------------------------------
+    const supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject(supraTransferPayload());
 
-    let supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject(await supraTransferPayload());
-
-    // Creating Sponsor Transaction Payload
-    let sponsorTransactionPayload = new TxnBuilderTypes.FeePayerRawTransaction(
+    // The payload that the sender and the fee payer sign
+    const sponsorTransactionPayload = new TxnBuilderTypes.FeePayerRawTransaction(
         supraCoinTransferSponsoredRawTransaction,
         [],
-        new TxnBuilderTypes.AccountAddress(feePayerAccount.address().toUint8Array())
+        new TxnBuilderTypes.AccountAddress(feePayerAccount.address().toUint8Array()),
     );
 
-    // Generating sender authenticator
-    let sponsorTxnSenderAuthenticator = await supra.transaction.signTransaction({
+    const sponsorTxnSenderAuthenticator = await supra.transaction.signTransaction({
         senderAccount: account,
-        rawTxn: sponsorTransactionPayload
+        rawTxn: sponsorTransactionPayload,
     });
 
-    // Generating sponsor authenticator
-    let feePayerAuthenticator = await supra.transaction.signTransaction({
+    const feePayerAuthenticator = await supra.transaction.signTransaction({
         senderAccount: feePayerAccount,
-        rawTxn: sponsorTransactionPayload
+        rawTxn: sponsorTransactionPayload,
     });
 
-
-    let txn2 = await supra.transaction.submit.submitSponsorTransaction(
-        {
-            feePayerAddress: feePayerAccount.address().toString(),
-            secondarySignersAccountAddress: [],
-            rawTxn: supraCoinTransferSponsoredRawTransaction,
-            senderAuthenticator: sponsorTxnSenderAuthenticator,
-            feePayerAuthenticator: feePayerAuthenticator,
-            secondarySignersAuthenticator: [],
-            enableTransactionWaitAndSimulationArgs: {
-                enableTransactionSimulation: true,
-                enableWaitForTransaction: true
-            }
-        }
-    );
-
-    console.log("Transaction submitted:", txn2);
-
+    const txn2 = await supra.transaction.submit.submitSponsorTransaction({
+        feePayerAddress: feePayerAccount.address().toString(),
+        secondarySignersAccountAddress: [],
+        rawTxn: supraCoinTransferSponsoredRawTransaction,
+        senderAuthenticator: sponsorTxnSenderAuthenticator,
+        feePayerAuthenticator,
+        secondarySignersAuthenticator: [],
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
+    });
+    assertSuccess("submitSponsorTransaction", txn2);
+    console.log("Transaction committed:", txn2.hash);
 
     // ---------------------------------------------------------------------------
-    // Submit multi-agent transaction
+    // Submit a multi-agent transaction
     // ---------------------------------------------------------------------------
 
+    // The network has no framework entry function that takes two signers. The example publishes a module with one,
+    // `two_signers(a: &signer, b: &signer)`, under the address of the secondary signer.
+    const twoSignersFunction = await publishTwoSignersModule(supra, secondarySignerAccount);
 
-    // Creating RawTransaction for multi-agent RawTransaction
-    // Note: The `0x7c6033ca961856298e1412fddf5ebb732c247436046d33016a5bd10f7e090a07::wrapper` module is deployed on testnet.
-    // On any other node, set SUPRA_EXAMPLES_TWO_SIGNERS_FUNCTION to an entry function, without arguments, that takes
-    // two signers (the sender and the secondary signer).
-    const twoSignersFunction = process.env["SUPRA_EXAMPLES_TWO_SIGNERS_FUNCTION"]
-        ?? (usesCustomNode() ? undefined : "0x7c6033ca961856298e1412fddf5ebb732c247436046d33016a5bd10f7e090a07::wrapper::two_signers");
-
-    if (twoSignersFunction === undefined) {
-        console.log("Skipping the multi-agent transaction: set SUPRA_EXAMPLES_TWO_SIGNERS_FUNCTION to a two-signer entry function on this network.");
-        return;
-    }
-
-    let multiAgentRawTransaction = supra.transaction.build.rawTxnObject({
+    const multiAgentRawTransaction = supra.transaction.build.rawTxnObject({
         senderAddress: account.address(),
-        senderSequenceNumber: await nextSequenceNumber(),
+        senderSequenceNumber: nextSequenceNumber(),
         function: twoSignersFunction as MoveFunctionId,
         functionTypeArgs: [],
-        functionArgs: []
+        functionArgs: [],
     });
 
-    // Creating Multi-Agent Transaction Payload
-    let multiAgentTransactionPayload =
-        new TxnBuilderTypes.MultiAgentRawTransaction(multiAgentRawTransaction, [
-            new TxnBuilderTypes.AccountAddress(
-                secondarySignerAccount.address().toUint8Array()
-            ),
-        ]);
+    // The payload that the sender and the secondary signer sign
+    const multiAgentTransactionPayload = new TxnBuilderTypes.MultiAgentRawTransaction(multiAgentRawTransaction, [
+        new TxnBuilderTypes.AccountAddress(secondarySignerAccount.address().toUint8Array()),
+    ]);
 
-    // Generating sender authenticator
-    let multiAgentSenderAuthenticator = await supra.transaction.signTransaction({
+    const multiAgentSenderAuthenticator = await supra.transaction.signTransaction({
         senderAccount: account,
-        rawTxn: multiAgentTransactionPayload
+        rawTxn: multiAgentTransactionPayload,
     });
 
-    // Generating Secondary Signer authenticator
-    let secondarySignerAuthenticator = await supra.transaction.signTransaction({
+    const secondarySignerAuthenticator = await supra.transaction.signTransaction({
         senderAccount: secondarySignerAccount,
-        rawTxn: multiAgentTransactionPayload
+        rawTxn: multiAgentTransactionPayload,
     });
 
-    // Sending Multi-Agent transaction
-    let txn3 = await supra.transaction.submit.submitMultiAgentTransaction({
+    const txn3 = await supra.transaction.submit.submitMultiAgentTransaction({
         secondarySignersAccountAddress: [secondarySignerAccount.address().toString()],
         rawTxn: multiAgentRawTransaction,
         senderAuthenticator: multiAgentSenderAuthenticator,
         secondarySignersAuthenticator: [secondarySignerAuthenticator],
-        enableTransactionWaitAndSimulationArgs: {
-            enableWaitForTransaction: true,
-            enableTransactionSimulation: true,
-        }
+        enableTransactionWaitAndSimulationArgs: waitForCommit,
     });
-
-    console.log("Transaction submitted:", txn3);
-
-
-})();
+    assertSuccess("submitMultiAgentTransaction", txn3);
+    console.log("Transaction committed:", txn3.hash);
+});

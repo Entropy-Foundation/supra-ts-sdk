@@ -1,8 +1,10 @@
-import { SupraClient, Network, TypeTagParser } from "supra-ts-sdk";
+import { TypeTagParser } from "supra-ts-sdk";
+import { createClient, runExample } from "./setup";
 
-(async () => {
-    const supra = new SupraClient({ network: Network.TESTNET });
-    let accountAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
+runExample(async () => {
+    const supra = createClient();
+    // The framework account; any address works for the balance views.
+    const accountAddress = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
     // ---------------------------------------------------------------------------
     // Query the account balance of a specific coin with typed view function
@@ -26,11 +28,11 @@ import { SupraClient, Network, TypeTagParser } from "supra-ts-sdk";
     // Option<vector<u256>> : [100n]
     // ---------------------------------------------------------------------------
 
-    let supraCoin = new TypeTagParser("0x1::supra_coin::SupraCoin").parseTypeTag();
+    const supraCoin = new TypeTagParser("0x1::supra_coin::SupraCoin").parseTypeTag();
 
     const accountSupraBalance = await supra.methods.view<[bigint]>({
         function: "0x1::coin::balance",
-        functionArguments: ["0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5"],
+        functionArguments: [accountAddress],
         typeArguments: [supraCoin]
     });
 
@@ -61,17 +63,21 @@ import { SupraClient, Network, TypeTagParser } from "supra-ts-sdk";
 
     const accountSupraBalanceRaw = await supra.methods.viewRaw({
         function: "0x1::coin::balance",
-        functionArguments: ["0x2ee12e63209aee603c76e94e6fbb509629ec2617a65a858da62d862ad2818bc5"],
+        functionArguments: [accountAddress],
         typeArguments: ["0x1::supra_coin::SupraCoin"]
     });
 
-
     console.log("Account supra balance raw:", accountSupraBalanceRaw[0]);
-    
 
+    // ---------------------------------------------------------------------------
+    // A view function without arguments: the chain's time in microseconds
+    // ---------------------------------------------------------------------------
 
+    const now = await supra.methods.view<[bigint]>({
+        function: "0x1::timestamp::now_microseconds",
+        functionArguments: [],
+        typeArguments: [],
+    });
 
-
-
-
-})();
+    console.log("Chain time (microseconds):", now[0]);
+});

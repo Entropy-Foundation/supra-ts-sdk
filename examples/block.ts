@@ -1,44 +1,32 @@
-import { SupraClient, Network } from "supra-ts-sdk";
+import { createClient, runExample } from "./setup";
 
-
-(async () => {
-
-    const supra = new SupraClient({ network: Network.TESTNET });
+runExample(async () => {
+    const supra = createClient();
 
     // ---------------------------------------------------------------------------
-    // Get Latest Block
+    // Get the latest block
     // ---------------------------------------------------------------------------
     const latestBlock = await supra.block.getLatestBlock();
-
-    console.log("Latest block:", latestBlock);
-
-    // ---------------------------------------------------------------------------
-    // Get Block by Height
-    // ---------------------------------------------------------------------------
-
-    const height = 75240367;
-    const block = await supra.block.getBlockByHeight({ height: height, options: { withFinalizedTransactions: true } });
-
-    console.log("Block by Height:", block);
-
+    console.log("Latest block:", latestBlock.header);
 
     // ---------------------------------------------------------------------------
-    // Get Block by Hash
+    // Get a block by height
     // ---------------------------------------------------------------------------
-
-    const blockHash = "0xd5ff53b7278c4957871c654de26e09194a154cf8c5287d81b693dc95fedd7972";
-
-    const blockByHash = await supra.block.getBlockByHash({ blockHash: blockHash });
-
-    console.log("Block by Hash:", blockByHash);
-
+    const block = await supra.block.getBlockByHeight({
+        height: latestBlock.header.height,
+        options: { withFinalizedTransactions: true },
+    });
+    console.log("Block by height:", block.header, `${block.transactions?.length ?? 0} transactions`);
 
     // ---------------------------------------------------------------------------
-    // Get Transactions by Block Hash
+    // Get a block by hash
     // ---------------------------------------------------------------------------
+    const blockByHash = await supra.block.getBlockByHash({ blockHash: latestBlock.header.hash });
+    console.log("Block by hash:", blockByHash.header);
 
-    const transactions = await supra.block.getTransactionsByBlockHash({ blockHash: blockHash });
-
-    console.log("Transactions by Block Hash:", transactions);
-
-})();
+    // ---------------------------------------------------------------------------
+    // Get the transaction hashes of a block
+    // ---------------------------------------------------------------------------
+    const transactions = await supra.block.getTransactionsByBlockHash({ blockHash: latestBlock.header.hash });
+    console.log("Transactions by block hash:", transactions);
+});

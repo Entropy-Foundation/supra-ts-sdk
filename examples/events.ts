@@ -1,16 +1,14 @@
-import { SupraClient, Network } from "supra-ts-sdk";
+import { createClient, runExample } from "./setup";
 
-
-(async () => {
-
-    const supra = new SupraClient({ network: Network.TESTNET });
+runExample(async () => {
+    const supra = createClient();
 
     // ---------------------------------------------------------------------------
     // Get deposit events
     // ---------------------------------------------------------------------------
-    const { response: depositEvents, cursor } = await supra.events.getEventsByType({ eventType: "0x1::fungible_asset::Deposit", options: { limit: 100 } });
-
-    console.log("Deposit events :", depositEvents);
-
-
-})();
+    const { response: depositEvents } = await supra.events.getEventsByType({
+        eventType: "0x1::coin::CoinDeposit",
+        options: { limit: 100 },
+    });
+    console.log(`${depositEvents.length} deposit events; the first:`, depositEvents[0]);
+});
