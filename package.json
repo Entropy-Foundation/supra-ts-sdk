@@ -20,9 +20,14 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./compatibility.json": "./compatibility.json"
   },
@@ -51,6 +56,8 @@
     "typecheck:examples": "tsc -p examples/tsconfig.json",
     "check:jsdoc": "tsx scripts/check-jsdoc-examples.ts",
     "examples": "pnpm build && tsx examples/runAll.ts",
+    "check:exports": "attw --pack .",
+    "check:module-resolution": "tsx scripts/check-module-resolution.ts",
     "doc": "typedoc --out docs src/index.ts --sort source-order --sort instance-first --readme README.md"
   },
   "keywords": [
@@ -83,6 +90,7 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@jest/globals": "^29.7.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^25.2.3",
