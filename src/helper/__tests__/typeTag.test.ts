@@ -243,8 +243,25 @@ describe("parseTypeArgument", () => {
         expect(() => parseTypeArgument("u64 junk")).toThrow('Invalid type argument "u64 junk"');
     });
 
-    it("accepts types nested 9 levels deep and refuses deeper ones", () => {
+    it("accepts eight nested vector levels and refuses nine", () => {
         expect(typeTagToString(parseTypeArgument(nested(8)))).toBe(nested(8));
-        expect(() => parseTypeArgument(nested(9))).toThrow(/nested more than 9 levels deep/);
+        expect(() => parseTypeArgument(nested(9))).toThrow(/at most 8 nested struct and vector levels/);
+    });
+
+    it("accepts eight nested struct levels and refuses nine", () => {
+        const structs = (levels: number) => `${"0x1::a::A<".repeat(levels - 1)}0x1::a::A${">".repeat(levels - 1)}`;
+        expect(typeTagToString(parseTypeArgument(structs(8)))).toBe(structs(8));
+        expect(() => parseTypeArgument(structs(9))).toThrow(/at most 8 nested struct and vector levels/);
+    });
+
+    it("counts mixed struct and vector levels together", () => {
+        const mixed = (pairs: number) => `${"vector<0x1::a::A<".repeat(pairs)}u8${">>".repeat(pairs)}`;
+        expect(() => parseTypeArgument(mixed(4))).not.toThrow();
+        expect(() => parseTypeArgument(mixed(5))).toThrow(/at most 8 nested struct and vector levels/);
+    });
+
+    it("counts levels in a later type parameter", () => {
+        expect(() => parseTypeArgument(`0x1::a::A<u8, ${nested(8)}>`)).toThrow(/at most 8 nested/);
+        expect(() => parseTypeArgument(`0x1::a::A<u8, ${nested(7)}>`)).not.toThrow();
     });
 });

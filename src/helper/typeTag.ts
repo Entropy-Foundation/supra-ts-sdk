@@ -78,8 +78,11 @@ const PRIMITIVE_TYPE_TAGS: ReadonlyMap<string, () => TxnBuilderTypes.TypeTag> = 
 /** Words that a node reads as keywords in a type string; they are not module or struct names. */
 const TYPE_KEYWORDS: ReadonlySet<string> = new Set([...PRIMITIVE_TYPE_TAGS.keys(), "vector", "true", "false"]);
 
-/** Depth at which a node stops parsing a type string; the outermost type is at depth 0. */
-const MAX_TYPE_NESTING = 9;
+/**
+ * Most nested `vector` and struct levels that a transaction can carry. A node reads a type tag of a transaction from
+ * BCS with this limit; its string parser accepts one more level. Primitive types do not count as a level.
+ */
+const MAX_TYPE_NESTING = 8;
 
 /** Number of hex digits of an address. */
 const ADDRESS_HEX_DIGITS = 64;
@@ -145,8 +148,9 @@ function describeToken(token: TypeToken | undefined): string {
  * @param input - The type string, for example `0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>`.
  * @returns The `TypeTag` of the type.
  * @throws Error when the string is not exactly one type: text after the type, an unknown type name, a generic type
- *   parameter such as `T0` (type arguments are concrete types), an address of more than 64 hex digits, or nesting
- *   deeper than nodes accept.
+ *   parameter such as `T0` (type arguments are concrete types), an address of more than 64 hex digits, or more than
+ *   eight nested `vector` and struct levels (the most a transaction can carry; primitive types are not a level, so
+ *   `vector` nested eight times around `u8` is accepted and nine times is refused).
  * @example
  * ```typescript
  * import { BCS, Network, SupraAccount, SupraClient, parseTypeArgument } from "supra-ts-sdk";
@@ -189,9 +193,11 @@ export function parseTypeArgument(input: string): TxnBuilderTypes.TypeTag {
     };
 
     const parseType = (depth: number): TxnBuilderTypes.TypeTag => {
-        if (depth >= MAX_TYPE_NESTING) {
-            fail(`types are nested more than ${MAX_TYPE_NESTING} levels deep`);
-        }
+        const enterNesting = (): void => {
+            if (depth >= MAX_TYPE_NESTING) {
+                fail(`a transaction carries at most ${MAX_TYPE_NESTING} nested struct and vector levels`);
+            }
+        };
         const token = next();
         if (token?.kind === "name") {
             const primitive = PRIMITIVE_TYPE_TAGS.get(token.value);
@@ -199,6 +205,7 @@ export function parseTypeArgument(input: string): TxnBuilderTypes.TypeTag {
                 return primitive();
             }
             if (token.value === "vector") {
+                enterNesting();
                 expect("<");
                 const inner = parseType(depth + 1);
                 expect(">");
@@ -210,6 +217,7 @@ export function parseTypeArgument(input: string): TxnBuilderTypes.TypeTag {
             return fail(`unknown type "${token.value}"`);
         }
         if (token?.kind === "address") {
+            enterNesting();
             if (token.hex.length > ADDRESS_HEX_DIGITS) {
                 fail(`the address 0x${token.hex} has more than ${ADDRESS_HEX_DIGITS} hex digits`);
             }
