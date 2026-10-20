@@ -409,13 +409,17 @@ that relied on the default. In 2.0.0 the price of a transaction is the call's `g
   `SupraGasUnitPriceBelowMinimumError`, a `SupraError`, with `gasUnitPrice` (the price sent), `minimumGasUnitPrice` (read
   from the node after the refusal, `undefined` when that read fails), `major_status` and the original error as `cause`,
   from the submission and from the simulation that precedes it (the max gas estimate and `enableTransactionSimulation`).
-  It is neither a `SupraAPIError` nor a `SupraSimulationFailedError`: a submission refusal that was caught as a
-  `SupraAPIError`, and a simulation of a built transaction (`simulate`) that was caught as a
-  `SupraSimulationFailedError`, are now caught as `SupraGasUnitPriceBelowMinimumError`, and the original is in `cause`.
-  The transaction is not sent again and its price is not raised; the sequence number is used by the next transaction.
-- A failed read of the estimate throws that read's error, like a failed build, and nothing is submitted. The read starts
-  when the call is made and is awaited in the call's turn for the sender's account, so calls from one account keep the
-  order of the calls.
+  It is neither a `SupraAPIError` nor a `SupraSimulationFailedError`. In 1.2.0 the submission refusal was a
+  `SupraAPIError` with status 400, which code can have caught with `instanceof SupraAPIError`; catch
+  `SupraGasUnitPriceBelowMinimumError` as well, and read the original `SupraAPIError` from `cause`. In 1.2.0 a simulation
+  (`simulate` of a built transaction, `simulate.simple`) returned the `Invalid` response without throwing; it now
+  throws, as for every status other than `Success` ([A simulation throws for every status other than
+  `Success`](#a-simulation-throws-for-every-status-other-than-success)). The transaction is not sent again and its price
+  is not raised; the sequence number is used by the next transaction.
+- A failed read of the estimate throws that read's error, like a failed build, and nothing is submitted. In the helpers
+  that submit, the read starts when the call is made and is awaited in the call's turn for the sender's account, so calls
+  from one account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited
+  before the lock is requested. `transaction.build.simple` awaits the read before it builds.
 - `getEstimatedGasUnitPrice()` is new; `getGasPrice()` (the median) and `getMinGasUnitPrice()` (the minimum) are
   unchanged.
 

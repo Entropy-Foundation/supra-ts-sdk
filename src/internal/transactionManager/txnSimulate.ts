@@ -13,9 +13,23 @@ import { mapGasUnitPriceRefusalInternal } from "./gasPrice";
  *
  * The request carries a copy of the payload whose signatures are zero; the caller's payload is not modified.
  * A simulation with any other status throws `SupraSimulationFailedError` carrying the simulated transaction, except one
- * refused for a gas unit price below the node's minimum, which throws `SupraGasUnitPriceBelowMinimumError`.
+ * refused for a gas unit price below the node's minimum, which throws `SupraGasUnitPriceBelowMinimumError` (read of the
+ * node's minimum included). The helpers that simulate while they hold the account's lock use
+ * `simulateUnmappedTxnInternal` and map the refusal after the lock is released.
  */
 export async function simulateTxnInternal(
+    args: { sendTxPayload: SendTxnPayload },
+    config: NetworkConfig,
+): Promise<TransactionResponse> {
+    try {
+        return await simulateUnmappedTxnInternal(args, config);
+    } catch (error) {
+        throw await mapGasUnitPriceRefusalInternal(error, args.sendTxPayload.Move.raw_txn.gas_unit_price, config);
+    }
+}
+
+/** `simulateTxnInternal` without the mapping of a refusal for a gas unit price below the node's minimum. */
+export async function simulateUnmappedTxnInternal(
     args: { sendTxPayload: SendTxnPayload },
     config: NetworkConfig,
 ): Promise<TransactionResponse> {
@@ -36,11 +50,7 @@ export async function simulateTxnInternal(
 
     // The node answers a simulation with HTTP 200 whatever the simulated status.
     if (simulatedTxnResponse.status !== TransactionStatus.Success) {
-        throw await mapGasUnitPriceRefusalInternal(
-            new SupraSimulationFailedError(simulatedTxnResponse),
-            BigInt(args.sendTxPayload.Move.raw_txn.gas_unit_price),
-            config,
-        );
+        throw new SupraSimulationFailedError(simulatedTxnResponse);
     }
 
     return simulatedTxnResponse;

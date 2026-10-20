@@ -22,8 +22,12 @@ import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../../utils/constants";
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
-import { simulateTxnInternal } from "./txnSimulate";
-import { mapGasUnitPriceRefusalInternal, withResolvedGasUnitPriceInternal } from "./gasPrice";
+import { simulateUnmappedTxnInternal } from "./txnSimulate";
+import {
+    mapCallGasUnitPriceRefusalInternal,
+    mapGasUnitPriceRefusalInternal,
+    withResolvedGasUnitPriceInternal,
+} from "./gasPrice";
 import {
     buildWithResolvedMaxGasInternal,
     getRawTxnJSONInternal,
@@ -64,7 +68,7 @@ async function simulateBeforeSubmission(
     let current = payload;
     for (let checks = 0; ; checks += 1) {
         try {
-            await simulateTxnInternal({ sendTxPayload: current }, config);
+            await simulateUnmappedTxnInternal({ sendTxPayload: current }, config);
             return current;
         } catch (error) {
             if (!isSequenceNumberTooNew(error) || checks >= MAX_TOO_NEW_CHECKS) {
@@ -85,7 +89,7 @@ async function simulateBeforeSubmission(
                     reservation: binding?.reservation,
                     tooNew: error,
                     simulateAt: (chainSequenceNumber) =>
-                        simulateTxnInternal(
+                        simulateUnmappedTxnInternal(
                             {
                                 sendTxPayload: {
                                     ...signed,
@@ -111,7 +115,32 @@ async function simulateBeforeSubmission(
     }
 }
 
+/**
+ * Submits a signed transaction, simulating it first with `enableTransactionSimulation`, and waits as the options say.
+ * A refusal for a gas unit price below the node's minimum, by the simulation or the submission, throws
+ * `SupraGasUnitPriceBelowMinimumError`; the read of the node's minimum for it is made here. The helpers that call this
+ * while they hold the account's lock set `deferGasPriceRefusalMapping` and map the error after they have released the
+ * lock (`mapCallGasUnitPriceRefusalInternal`).
+ */
 export async function submitTxnInternal(
+    args: {
+        sendTxJsonPayload: SendTxnPayload;
+        enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+        deferGasPriceRefusalMapping?: boolean;
+    },
+    config: NetworkConfig,
+): Promise<SubmitTransactionResponse> {
+    try {
+        return await submitUnmappedTxnInternal(args, config);
+    } catch (error) {
+        if (args.deferGasPriceRefusalMapping === true) {
+            throw error;
+        }
+        throw await mapGasUnitPriceRefusalInternal(error, args.sendTxJsonPayload.Move.raw_txn.gas_unit_price, config);
+    }
+}
+
+async function submitUnmappedTxnInternal(
     args: {
         sendTxJsonPayload: SendTxnPayload;
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
@@ -152,11 +181,7 @@ export async function submitTxnInternal(
         );
     } catch (error) {
         // The refusal for a price below the node's minimum is a known outcome: the number is handed out again.
-        throw await mapGasUnitPriceRefusalInternal(
-            settleFailedSubmissionInternal({ rawTxn, reservation }, error, config),
-            BigInt(rawTxn.gas_unit_price),
-            config,
-        );
+        throw settleFailedSubmissionInternal({ rawTxn, reservation }, error, config);
     }
     // The record keeps the number from the counter until the transaction has committed or can no longer commit.
     tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, txHash);
@@ -212,6 +237,8 @@ export async function buildAndSubmitEntryFunctionInternal(
     // no-op catch keeps a rejection from being reported as unhandled before it is awaited.
     const priceRead = withResolvedGasUnitPriceInternal(callOptions, config);
     priceRead.catch(() => undefined);
+    // A refusal for a gas unit price below the node's minimum is mapped after the lock is released, as the read of the
+    // node's minimum is not made under it.
     return withSequenceNumberInternal(
         { address: senderAddress, sequenceNumber: callOptions?.sequenceNumber },
         config,
@@ -250,11 +277,14 @@ export async function buildAndSubmitEntryFunctionInternal(
                     sendTxJsonPayload: sendTxPayload,
                     enableTransactionWaitAndSimulationArgs:
                         args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
+                    deferGasPriceRefusalMapping: true,
                 },
                 config,
             );
         },
-    );
+    ).catch(async (error: unknown) => {
+        throw await mapCallGasUnitPriceRefusalInternal(error, priceRead, config);
+    });
 }
 
 export async function submitSerializedRawTransactionInternal(

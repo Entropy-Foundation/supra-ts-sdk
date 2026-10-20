@@ -3,7 +3,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import { sendTxnPayloadInternal, simpleInternal, withSequenceNumber } from "./transactionManager/txnBuild";
 import { bindReservation, withSequenceNumberInternal } from "./sequenceNumber";
 import type { MoveFunctionId, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../types/move";
-import { withResolvedGasUnitPriceInternal } from "./transactionManager/gasPrice";
+import { mapCallGasUnitPriceRefusalInternal, withResolvedGasUnitPriceInternal } from "./transactionManager/gasPrice";
 import { submitTxnInternal, validateSubmitOptions } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionPayloadArgs } from "../types/transactionManager/transactionBuild";
 import type {
@@ -90,9 +90,14 @@ export async function callContractInternal(
                 {
                     sendTxJsonPayload: sendTxPayload,
                     enableTransactionWaitAndSimulationArgs: args.enableTransactionWaitAndSimulationArgs ?? {},
+                    deferGasPriceRefusalMapping: true,
                 },
                 config,
             );
         },
-    );
+    ).catch(async (error: unknown) => {
+        // A refusal for a gas unit price below the node's minimum is mapped after the lock is released, as the read of
+        // the node's minimum is not made under it.
+        throw await mapCallGasUnitPriceRefusalInternal(error, priceRead, config);
+    });
 }

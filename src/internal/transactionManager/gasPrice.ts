@@ -64,23 +64,47 @@ export async function withResolvedGasUnitPriceInternal(
 /**
  * Returns `error`, or the `SupraGasUnitPriceBelowMinimumError` that replaces it when it is the node's refusal of a
  * transaction whose gas unit price is below the node's minimum: an error of a submission with that status, or a failed
- * simulation with that status. The node's minimum is read for the error; a failed read leaves `minimumGasUnitPrice`
- * undefined and does not replace the refusal.
+ * simulation with that status. `rawGasUnitPrice` is the price of the transaction as it is in the request; it is
+ * converted only when the status matches, and an `error` that matches but whose price cannot be converted is returned
+ * unchanged. The node's minimum is read for the error; a failed read leaves `minimumGasUnitPrice` undefined and does not
+ * replace the refusal. An error that is already a `SupraGasUnitPriceBelowMinimumError` is returned as it is.
  */
 export async function mapGasUnitPriceRefusalInternal(
     error: unknown,
-    gasUnitPrice: bigint,
+    rawGasUnitPrice: bigint | number | string,
     config: NetworkConfig,
 ): Promise<unknown> {
-    if (error instanceof SupraGasUnitPriceBelowMinimumError) {
-        return error;
-    }
     if (
         !(error instanceof SupraAPIError || error instanceof SupraSimulationFailedError) ||
         error.major_status !== MoveVmError.GAS_UNIT_PRICE_BELOW_MIN_BOUND
     ) {
         return error;
     }
+    let gasUnitPrice: bigint;
+    try {
+        gasUnitPrice = BigInt(rawGasUnitPrice);
+    } catch {
+        return error;
+    }
     const minimumGasUnitPrice = await getMinGasUnitPriceInternal(config).catch(() => undefined);
     return new SupraGasUnitPriceBelowMinimumError({ cause: error, gasUnitPrice, minimumGasUnitPrice });
+}
+
+/**
+ * Maps the error of a helper call that held the account's lock, after the lock is released: `priceRead` is the read of
+ * the call's gas unit price that the helper awaited. When that read failed, its error is the error to throw and `error`
+ * is returned as it is.
+ */
+export async function mapCallGasUnitPriceRefusalInternal(
+    error: unknown,
+    priceRead: Promise<OptionalTransactionPayloadArgs>,
+    config: NetworkConfig,
+): Promise<unknown> {
+    let price: bigint | undefined;
+    try {
+        price = (await priceRead).gasUnitPrice;
+    } catch {
+        return error;
+    }
+    return price === undefined ? error : mapGasUnitPriceRefusalInternal(error, price, config);
 }

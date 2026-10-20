@@ -62,7 +62,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   without a request.
 - **`getEstimatedGasUnitPrice()`** returns the gas unit price that a transaction carries when neither the call nor
   `SupraConfig.gasUnitPrice` sets one: `max(median_gas_price, min_configured_gas_price)` of
-  `GET /rpc/v3/transactions/estimate_gas_price`.
+  `GET /rpc/v3/transactions/estimate_gas_price`. It throws a `SupraError` naming the field when
+  `median_gas_price` or `min_configured_gas_price` is missing or is not a non-negative integer.
 - **`SupraGasUnitPriceBelowMinimumError`** (extends `SupraError`) is thrown when the node refuses a submission or a
   simulation with `GAS_UNIT_PRICE_BELOW_MIN_BOUND`; `gasUnitPrice` is the price sent, `minimumGasUnitPrice` the node's
   minimum read after the refusal (`undefined` when that read fails), `major_status` the status name, and `cause` the
@@ -221,9 +222,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   for `max gas × gas unit price`: 20 SUPRA at a gas unit price of 100,000 quants. A sender with less must set
   `maxGas` on the builders that make no request.
 - **Breaking:** a transaction without a `gasUnitPrice` on the call or the client carries the node's estimate,
-  `max(median_gas_price, min_configured_gas_price)`, read from the node for each transaction (the read starts when the
-  call is made and is awaited in the call's turn for the sender's account, so calls from one account keep the order of
-  the calls); the same price is used for the max gas estimate. It was `SupraConfig.minGasUnitPrice`, else
+  `max(median_gas_price, min_configured_gas_price)`, read from the node for each transaction (in the helpers that submit
+  the read starts when the call is made and is awaited in the call's turn for the sender's account, so calls from one
+  account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited before the
+  lock is requested; `transaction.build.simple` awaits it before it builds); the same price is used for the max gas estimate. It was `SupraConfig.minGasUnitPrice`, else
   `DEFAULT_GAS_PRICE` (100,000 quants), without reading the node. A failed read of the estimate throws its error and
   nothing is submitted. A price of the call or the client is used as given.
 - **Breaking:** `SupraConfig.minGasUnitPrice` and `NetworkConfig.minGasUnitPrice` are renamed `gasUnitPrice`, without an

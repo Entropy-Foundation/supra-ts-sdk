@@ -11,12 +11,12 @@ import {
     SUPRA_COIN_TYPE,
 } from "../../utils/constants";
 import { standardizeAddress } from "../../helper/account";
-import { SupraGasUnitPriceBelowMinimumError, SupraSimulationFailedError } from "../../errors/transactionError";
+import { SupraSimulationFailedError } from "../../errors/transactionError";
 import { viewRawInternal } from "../methods";
 import { sequenceNumberTrackerOf, type SequenceNumberReservation } from "../sequenceNumber";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
 import { resolveGasUnitPriceInternal } from "./gasPrice";
-import { simulateTxnInternal } from "./txnSimulate";
+import { simulateUnmappedTxnInternal } from "./txnSimulate";
 import { sendTxnPayloadInternal, withSequenceNumber } from "./txnBuild";
 
 /** Returns `value` when it is a finite number of at least 1, and throws otherwise. */
@@ -86,8 +86,9 @@ export interface ResolvedMaxGas {
  * once. A failed read of the estimate is thrown.
  *
  * A simulation whose status is not `Success` (a `Fail` with an abort, `OUT_OF_GAS`, `PendingAfterExecution`,
- * `Invalid`) throws its `SupraSimulationFailedError`, except one refused for a gas unit price below the node's minimum,
- * which throws `SupraGasUnitPriceBelowMinimumError`. Nothing is submitted. When the transaction's sequence number
+ * `Invalid`) throws its `SupraSimulationFailedError`, and nothing is submitted. The caller, after it has released the
+ * account's lock, maps a refusal for a gas unit price below the node's minimum to
+ * `SupraGasUnitPriceBelowMinimumError` (`mapCallGasUnitPriceRefusalInternal`). When the transaction's sequence number
  * is ahead of the account's number on the chain, the simulation reports `SEQUENCE_NUMBER_TOO_NEW`, and
  * `resolveSequenceNumberTooNewInternal` reads the account and the latest block:
  *
@@ -265,11 +266,8 @@ class EstimateSimulations {
                 this.config,
             );
             try {
-                return await simulateTxnInternal({ sendTxPayload }, this.config);
+                return await simulateUnmappedTxnInternal({ sendTxPayload }, this.config);
             } catch (error) {
-                if (error instanceof SupraGasUnitPriceBelowMinimumError) {
-                    throw error;
-                }
                 if (!(error instanceof SupraSimulationFailedError)) {
                     return undefined;
                 }

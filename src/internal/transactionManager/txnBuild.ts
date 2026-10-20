@@ -632,6 +632,8 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @param args.senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
      * @returns `TransactionResponse` of the simulation, whose status is `Success`
      * @throws `SupraSimulationFailedError` when the simulated status is not `Success`
+     * @throws `SupraGasUnitPriceBelowMinimumError` instead when the status is `Invalid` because the gas unit price is
+     * below the node's minimum; the `SupraSimulationFailedError` is its `cause`
      * @throws `SupraChainIdMismatchError` before signing with a `SupraAccount` when the client's or the transaction's
      * chain ID is not the node's (see `SupraConfig.verifyChainId`)
      */

@@ -20,9 +20,12 @@ import type { AccountAddressInput } from "../../types/account";
  * controlled by `enableTransactionWaitAndSimulationArgs`:
  *
  * 1. With `enableTransactionSimulation`, the transaction is simulated first. A simulated status other than `Success`
- *    throws `SupraSimulationFailedError` and nothing is submitted.
+ *    throws `SupraSimulationFailedError` and nothing is submitted; a simulation refused because the gas unit price is
+ *    below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead (its `cause` is the
+ *    `SupraSimulationFailedError`).
  * 2. The transaction is submitted. An error status of the node throws `SupraAPIError`; the transaction was not
- *    accepted. A node whose transaction pool is full answers HTTP 503 on v12 and HTTP 500 on v11; the transaction can
+ *    accepted. A refusal because the gas unit price is below the node's minimum throws
+ *    `SupraGasUnitPriceBelowMinimumError`, which is not a `SupraAPIError` (its `cause` is the `SupraAPIError`). A node whose transaction pool is full answers HTTP 503 on v12 and HTTP 500 on v11; the transaction can
  *    be submitted again later (see "HTTP status codes by node version" in the README). A submission that times out or
  *    fails before the node answers throws `SupraTimeoutError` or `SupraNetworkError`; the node may have accepted the
  *    transaction.

@@ -232,7 +232,7 @@ const rawTxn = supra.transaction.build.rawTxnObject({
   functionTypeArgs: [],
   functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
   // The builders that make no request need a gas unit price, from the call or from `SupraConfig.gasUnitPrice`
-  optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100n },
+  optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n },
 });
 const signedTransaction = await rawTxn.signedTransaction(sender); // chain ID 8, no request
 ```
@@ -487,10 +487,13 @@ The gas unit price of a transaction is, in this order:
 2. the client's `SupraConfig.gasUnitPrice`;
 3. the node's estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`
    (`supra.getEstimatedGasUnitPrice()` returns it). The median is taken over the last transactions the RPC node
-   executed and can be below the node's current minimum. The estimate is read for each transaction that needs it. The
-   read starts when the call is made, before the sender's account is requested, and is awaited in the call's turn, so
-   calls from one account keep the order of the calls; the same price is used for the max gas estimate and the
-   transaction. A failed read throws its error, like a failed build, and nothing is submitted.
+   executed and can be below the node's current minimum. The estimate is read for each transaction that needs it. In the
+   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of
+   `Contract.fromABI`) the read starts when the call is made, before the sender's account lock is requested, and is
+   awaited in the call's turn, so calls from one account keep the order of the calls, except SUPRA fungible asset
+   transfers, whose balance check is awaited before the lock is requested. `transaction.build.simple` awaits the read
+   before it builds. The same price is used for the max gas estimate and the transaction. A failed read throws its
+   error, like a failed build, and nothing is submitted.
 
 A price set by the call or the client is used as given and makes no request. When it is below the node's minimum, the
 node refuses the transaction and the SDK throws `SupraGasUnitPriceBelowMinimumError` (`gasUnitPrice`,

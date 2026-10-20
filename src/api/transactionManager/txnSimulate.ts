@@ -37,6 +37,8 @@ export class Simulate {
      * @throws `SupraSimulationFailedError` when the simulated status is `Fail`, `PendingAfterExecution` (validation
      * failed, for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or `SEQUENCE_NUMBER_TOO_NEW`) or `Invalid`; the error
      * carries the simulated transaction and its `vm_status`
+     * @throws `SupraGasUnitPriceBelowMinimumError` instead when the status is `Invalid` because the gas unit price is
+     * below the node's minimum (`GAS_UNIT_PRICE_BELOW_MIN_BOUND`); the `SupraSimulationFailedError` is its `cause`
      * @example
      * ```typescript
      * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
@@ -72,6 +74,8 @@ export class Simulate {
      * @param args.serializedRawTransaction - Serialized raw transaction data
      * @returns Transaction simulation result, whose status is `Success`
      * @throws `SupraSimulationFailedError` when the simulated status is not `Success`, as for {@link Simulate.simple}
+     * @throws `SupraGasUnitPriceBelowMinimumError` when the gas unit price is below the node's minimum, as for
+     * {@link Simulate.simple}
      * @example
      * ```typescript
      * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";

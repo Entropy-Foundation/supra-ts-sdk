@@ -8,8 +8,9 @@ import type { MoveInnerAuthenticator } from "../move";
  *   too, the max gas is estimated (see `estimateMaxGas`).
  * - `gasUnitPrice`: gas unit price, in quants, used as given. Default the client's `gasUnitPrice`, else the node's
  *   estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, read for each
- *   transaction. The read starts when the call is made and is awaited in the call's turn for the sender's account. The
- *   max gas estimate uses the same price. A price below the node's minimum is refused by the node with
+ *   transaction. In the helpers that submit, the read starts when the call is made and is awaited in the call's turn
+ *   for the sender's account (SUPRA fungible asset transfers check the sender's balances first, before the account is
+ *   requested); `transaction.build.simple` awaits it before it builds. The max gas estimate uses the same price. A price below the node's minimum is refused by the node with
  *   `SupraGasUnitPriceBelowMinimumError` (its `cause` is the original error); the SDK does not change it. A failed read
  *   of the estimate throws its error and nothing is submitted.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the

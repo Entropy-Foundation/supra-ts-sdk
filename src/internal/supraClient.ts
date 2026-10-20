@@ -30,12 +30,27 @@ export async function getMinGasUnitPriceInternal(config: NetworkConfig): Promise
  * Reads the gas unit price that a transaction without a price of the call or the client carries:
  * `max(median_gas_price, min_configured_gas_price)` of `GET /rpc/v3/transactions/estimate_gas_price`. The median is
  * taken over recent transactions and can be below the node's current minimum.
+ *
+ * The response is parsed as JSON numbers, so a value above 2^53 loses precision before it is converted to a `bigint`.
+ * @throws {SupraError} If `median_gas_price` or `min_configured_gas_price` is missing or is not a non-negative integer;
+ * the message names the field.
  */
 export async function getEstimatedGasUnitPriceInternal(config: NetworkConfig): Promise<bigint> {
-    const { data } = await get<GasPrice>({ path: `/transactions/estimate_gas_price` }, config);
-    const median = BigInt(data.median_gas_price);
-    const minimum = BigInt(data.min_configured_gas_price);
+    const { data } = await get<unknown>({ path: `/transactions/estimate_gas_price` }, config);
+    const median = priceField(data, "median_gas_price");
+    const minimum = priceField(data, "min_configured_gas_price");
     return median > minimum ? median : minimum;
+}
+
+function priceField(data: unknown, field: keyof GasPrice): bigint {
+    const value = (data as Record<string, unknown> | null | undefined)?.[field];
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        throw new SupraError(
+            `The node answered GET /transactions/estimate_gas_price with ${JSON.stringify(data)}, ` +
+                `in which ${field} is not a non-negative integer`,
+        );
+    }
+    return BigInt(value);
 }
 
 /**

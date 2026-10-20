@@ -112,9 +112,10 @@ export class SupraSimulationFailedError extends SupraError {
 /**
  * SupraGasUnitPriceBelowMinimumError is thrown when the node refuses a transaction because its gas unit price is below
  * the node's minimum (`GAS_UNIT_PRICE_BELOW_MIN_BOUND`), in a submission or in a simulation (the max gas estimate, the
- * simulation before a submission, or `simulate` of a built transaction). The price is never changed by the SDK: it is
- * the price of the call, else the client's `gasUnitPrice`, and the transaction is not sent again. The helpers that take
- * the sequence number from the client's counter hand the number out again.
+ * simulation before a submission, or `simulate` of a built transaction). The price of the refused transaction can be
+ * the call's, the client's `gasUnitPrice`, the node's estimate (when the node's minimum rose after the estimate was
+ * read) or the price of a transaction built by hand. The SDK does not send the transaction again and does not raise the
+ * price. The helpers that take the sequence number from the client's counter hand the number out again.
  *
  * The original error is available as `cause`: the {@link SupraAPIError} of the submission or the
  * {@link SupraSimulationFailedError} of the simulation. This error is neither of them, so `instanceof` checks for those

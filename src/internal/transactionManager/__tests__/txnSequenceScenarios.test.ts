@@ -75,7 +75,8 @@ describe("request counts", () => {
 
         const estimate = options.maxGas === undefined;
         const simulate = options.simulate === true;
-        // Every call reads the node's gas unit price estimate once, before it takes its number. The first call reads the
+        // Every call that sets no gas unit price reads the node's estimate once: the read starts before the call
+        // requests the account's lock and is awaited inside it, before building. The first call reads the
         // account and the latest block, the chain ID before signing, the balance and one simulation for an estimate,
         // one simulation before submission, and the transaction after submission.
         expect(single).toEqual({
