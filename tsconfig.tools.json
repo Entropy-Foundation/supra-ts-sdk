@@ -1,0 +1,15 @@
+{
+  // Type-checks the end-to-end suite and the fixture scripts, which the main
+  // tsconfig does not include. Nothing is emitted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "rootDir": ".",
+    "types": ["node", "jest"]
+  },
+  "include": ["e2e", "scripts"],
+  "exclude": ["node_modules", "dist"]
+}

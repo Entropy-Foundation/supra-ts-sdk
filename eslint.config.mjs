@@ -3,7 +3,7 @@ import tsparser from "@typescript-eslint/parser";
 
 export default [
     {
-        files: ["src/**/*.ts"],
+        files: ["src/**/*.ts", "e2e/**/*.ts", "scripts/**/*.ts"],
         languageOptions: {
             parser: tsparser,
             parserOptions: {
@@ -22,6 +22,13 @@ export default [
                 { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
             ],
             "no-console": "warn",
+        },
+    },
+    {
+        // Command-line tools report on the console.
+        files: ["scripts/**/*.ts"],
+        rules: {
+            "no-console": "off",
         },
     },
     {
