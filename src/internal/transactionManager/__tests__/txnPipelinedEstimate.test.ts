@@ -532,6 +532,74 @@ describe("a read of a transaction this client submitted", () => {
     });
 });
 
+describe("the simulation before a submission (enableTransactionSimulation)", () => {
+    function simulatedTransfer(supra: SupraClient, sender: SupraAccount, maxGas?: bigint) {
+        return supra.coin.transferSupraCoin({
+            senderAccount: sender,
+            receiverAccountAddress: "0x" + "ab".repeat(32),
+            amount: 1n,
+            optionalTransactionArgs: {
+                ...(maxGas === undefined ? {} : { optionalTransactionPayloadArgs: { maxGas } }),
+                enableTransactionWaitAndSimulationArgs: {
+                    enableWaitForTransaction: false,
+                    enableTransactionSimulation: true,
+                },
+            },
+        });
+    }
+
+    it.each([
+        ["with the estimated max gas", undefined],
+        ["with an explicit max gas", 5_000n],
+    ])("submits transfers sent one after another behind pending ones %s", async (_name, maxGas) => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        for (let index = 0; index < 3; index += 1) {
+            await simulatedTransfer(supra, sender, maxGas);
+        }
+
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3, 4, 5]);
+        if (maxGas !== undefined) {
+            // No estimate: each transfer is simulated at its own number, then at the chain's.
+            expect(simulations.map((s) => s.sequenceNumber)).toEqual([3, 4, 3, 5, 3]);
+            expect(submissions.every((s) => s.maxGas === Number(maxGas))).toBe(true);
+        }
+    });
+
+    it("sends the transfer again with the chain's number when the earlier transaction was discarded", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await simulatedTransfer(supra, sender, 5_000n);
+        simulations = [];
+        submissions = [];
+        readTransaction = (hash) =>
+            hash === submittedHashes[0]
+                ? json(moveTxn(TransactionStatus.Invalid, "SEQUENCE_NUMBER_TOO_OLD", 0))
+                : json(moveTxn(TransactionStatus.Pending, "", 0));
+
+        await simulatedTransfer(supra, sender, 5_000n);
+
+        expect(simulations.map((s) => s.sequenceNumber)).toEqual([4, 3]);
+        expect(submissions.map((s) => s.sequenceNumber)).toEqual([3]);
+    });
+
+    it("throws the failure of the simulation at the chain's number and submits nothing", async () => {
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await simulatedTransfer(supra, sender, 5_000n);
+        submissions = [];
+        simulateAtChainNumber = () =>
+            json(moveTxn(TransactionStatus.Fail, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006): x", 5));
+
+        const error: unknown = await simulatedTransfer(supra, sender, 5_000n).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(SupraSimulationFailedError);
+        expect(isStaleSequenceNumberError(error)).toBe(false);
+        expect(submissions).toHaveLength(0);
+    });
+});
+
 describe("the max gas estimate", () => {
     it("throws the error of a failed chain-ID read made while signing the simulated transaction", async () => {
         const supra = newClient();

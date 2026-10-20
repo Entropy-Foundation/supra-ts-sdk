@@ -155,7 +155,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Breaking:** a simulation throws `SupraSimulationFailedError` for every status other than `Success`, including
   `PendingAfterExecution` (for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or `SEQUENCE_NUMBER_TOO_NEW`) and `Invalid`.
   It threw a `SupraAPIError` with status 400 for `Fail` only. With `enableTransactionSimulation: true`, a failed
-  simulation means the transaction is not submitted.
+  simulation means the transaction is not submitted. That simulation handles `SEQUENCE_NUMBER_TOO_NEW` as the max gas
+  estimate does: behind pending transactions that this client submitted, the transaction is simulated with the
+  account's sequence number on the chain and submitted with its own; otherwise the number is stale.
 - **Breaking:** `waitForTransaction` and submissions with `enableWaitForTransaction` keep waiting while the status is
   `Pending` or `PendingAfterExecution` and while a read fails (including HTTP 404 for a transaction the node has not
   seen yet), until the wait timeout measured in wall-clock time. A timeout throws `SupraTransactionTimeoutError`, and a

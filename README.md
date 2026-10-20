@@ -320,7 +320,9 @@ Every submit helper (`transaction.submit.*`, the submit methods of a built trans
 transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handles the outcome the same way:
 
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws
-  `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too.
+  `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too. Behind pending transactions of the
+  same client, the simulation uses the account's sequence number on the chain, as the max gas estimate does (see
+  [Sequence numbers](#sequence-numbers)).
 - With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed
   and failed, for example a Move abort or `Out of gas`) and `Invalid` (discarded) throw `SupraTransactionFailedError`,
   unless `checkSuccess: false` is passed. `Pending` and `PendingAfterExecution` are not final, and neither is a 404

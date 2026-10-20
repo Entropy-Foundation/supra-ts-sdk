@@ -508,7 +508,7 @@ const submittedSigned = await supra.transaction.submit.submitSerializedRawTransa
 ```
 
 Outcome of a submission (every submit helper, transfer, `publishPackage` and contract entry function):
-- With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws `SupraSimulationFailedError` and nothing is submitted.
+- With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws `SupraSimulationFailedError` and nothing is submitted. Behind pending transactions of the same client, the simulation uses the account's sequence number on the chain, as the max gas estimate does.
 - With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed and failed) and `Invalid` (discarded) throw `SupraTransactionFailedError` unless `checkSuccess: false` is passed. No final status within `waitTimeoutMs` throws `SupraTransactionTimeoutError`.
 - Without `enableWaitForTransaction`, the call returns the transaction as the node reports it right after the submission (usually `Pending`), or `{ hash, status: "NotReadBack", readError }` when that read fails; the node has accepted the transaction in both cases.
 

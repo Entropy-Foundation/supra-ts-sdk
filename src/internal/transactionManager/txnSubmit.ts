@@ -1,6 +1,8 @@
 import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
-import { SupraTransactionFailedError } from "../../errors/transactionError";
+import { SupraSimulationFailedError, SupraTransactionFailedError } from "../../errors/transactionError";
+import { standardizeAddress } from "../../helper/account";
+import { simulateBehindPendingInternal } from "./behindPending";
 import { TransactionStatus, type WaitForTransactionOptions } from "../../types/transaction";
 import {
     bindReservation,
@@ -31,6 +33,44 @@ export function validateSubmitOptions(options: EnableTransactionWaitAndSimulatio
     }
 }
 
+/**
+ * Simulates a payload before its submission and throws the `SupraSimulationFailedError` of a status other than
+ * `Success`.
+ *
+ * When the simulation reports `SEQUENCE_NUMBER_TOO_NEW`, the transaction is simulated with the sender's sequence number
+ * on the chain if every number from the chain's up to the transaction's belongs to a transaction that the node accepted
+ * from this client and the one at the chain's number is still pending (`simulateBehindPendingInternal`); the
+ * submission keeps its own number. Otherwise the `SEQUENCE_NUMBER_TOO_NEW` failure is thrown, which reports a stale
+ * number. The simulation at the chain's number throws its own failures and request errors.
+ */
+async function simulateBeforeSubmission(payload: SendTxnPayload, config: NetworkConfig): Promise<void> {
+    try {
+        await simulateTxnInternal({ sendTxPayload: payload }, config);
+        return;
+    } catch (error) {
+        if (!(error instanceof SupraSimulationFailedError) || error.major_status !== "SEQUENCE_NUMBER_TOO_NEW") {
+            throw error;
+        }
+        const rawTxn = payload.Move.raw_txn;
+        let address: string;
+        try {
+            address = standardizeAddress(rawTxn.sender);
+        } catch {
+            throw error;
+        }
+        const outcome = await simulateBehindPendingInternal({
+            address,
+            sequenceNumber: BigInt(rawTxn.sequence_number),
+            simulateAt: (chainSequenceNumber) => simulateTxnInternal({
+                sendTxPayload: { ...payload, Move: { ...payload.Move, raw_txn: { ...rawTxn, sequence_number: chainSequenceNumber } } },
+            }, config),
+        }, config);
+        if (outcome.kind !== "simulated") {
+            throw error;
+        }
+    }
+}
+
 export async function submitTxnInternal(
     args: {
         sendTxJsonPayload: SendTxnPayload,
@@ -48,7 +88,7 @@ export async function submitTxnInternal(
     try {
         // A failed simulation throws, so the transaction is not submitted.
         if ((options.enableTransactionSimulation ?? DEFAULT_ENABLE_SIMULATION) === true) {
-            await simulateTxnInternal({ sendTxPayload: args.sendTxJsonPayload }, config);
+            await simulateBeforeSubmission(args.sendTxJsonPayload, config);
         }
 
         txHash = await post<SendTxnPayload, string>({

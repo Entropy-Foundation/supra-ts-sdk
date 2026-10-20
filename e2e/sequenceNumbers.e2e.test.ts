@@ -212,6 +212,31 @@ describeE2E("sequence numbers", () => {
             expectConsecutive(await commitAll(responses), first);
         });
 
+        test("transfers with enableTransactionSimulation issued one after another are all accepted and committed", async () => {
+            const sender = await createFundedAccount(ctx);
+            const supra = newClient();
+            const first = await chainSequenceNumber(sender);
+
+            const responses: SubmitTransactionResponse[] = [];
+            for (let index = 0; index < 3; index += 1) {
+                responses.push(
+                    await supra.coin.transferSupraCoin({
+                        senderAccount: sender,
+                        receiverAccountAddress: createUnfundedAccount().address().toString(),
+                        amount: AMOUNT,
+                        optionalTransactionArgs: {
+                            enableTransactionWaitAndSimulationArgs: {
+                                enableTransactionSimulation: true,
+                                enableWaitForTransaction: false,
+                            },
+                        },
+                    }),
+                );
+            }
+
+            expectConsecutive(await commitAll(responses), first);
+        });
+
         test("a transfer after an accepted transaction that the node discarded is sent with the chain's number", async () => {
             const sender = await createFundedAccount(ctx);
             const supra = newClient();
