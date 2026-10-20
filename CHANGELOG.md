@@ -288,9 +288,13 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - The examples `buildTransaction.ts` and `submitTransaction.ts` read a fresh sequence number for each transaction
   (they reused the number of the first one), use the client's RPC URL for the raw HTTP request, and take the
   automation gas price cap from the network's minimum gas unit price.
-- **Breaking:** `standardizeAddress` returns lower-case hex, and throws a `RangeError` for an address of more than 64
-  hex digits instead of a `SupraAPIError` with status 400 that no node sent. An address in upper case now matches the
-  SUPRA fungible asset address, and `resetSequenceNumber` finds the counter of such an address.
+- **Breaking:** `standardizeAddress` returns lower-case hex and accepts a `0x` or `0X` prefix. It throws a
+  `RangeError` for a value that is not 1 to 64 hex digits after the optional prefix (for example `""`, `"0x"`,
+  `"0xzz"` or 65 digits); it threw a `SupraAPIError` with status 400 that no node sent for more than 64 digits, and
+  returned other malformed values with the prefix doubled or the invalid characters kept. An address in upper case now
+  matches the SUPRA fungible asset address, and `resetSequenceNumber` finds the counter of such an address. The methods
+  that take an address without validating it first (`fundAccountWithFaucet`, `getFaucetTransaction`,
+  `resetSequenceNumber` and the builders of `transaction.build`) throw this `RangeError` before any request.
 - **Breaking:** `getTransactionByHash`, `waitForTransaction` and `isPendingTransaction` require a transaction hash of
   `0x` followed by exactly 64 hex digits. A longer or shorter value is rejected before any request.
 - **Breaking:** `getAccountModule` requires `moduleName` to be a Move identifier, and the resource, event and coin

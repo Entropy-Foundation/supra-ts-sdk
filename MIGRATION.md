@@ -313,9 +313,12 @@ async function senderOf(transactionHash: string): Promise<string | undefined> {
 ### `standardizeAddress` lower-cases and throws `RangeError`
 
 `standardizeAddress` returns the hex digits in lower case. Code that compares its result with an upper-case address
-must lower-case the other side. An address of more than 64 hex digits throws a `RangeError`; it threw a
-`SupraAPIError` with status 400 and an empty `url`. Code that caught the `SupraAPIError` of an invalid address must
-catch `RangeError`.
+must lower-case the other side. It accepts a `0x` or `0X` prefix. A value that is not 1 to 64 hex digits after the
+optional prefix throws a `RangeError`: an address of more than 64 hex digits threw a `SupraAPIError` with status 400
+and an empty `url`, and other malformed values (`"0XA"`, `"0xzz"`, `""`) were returned with the prefix doubled or the
+invalid characters kept. Code that caught the `SupraAPIError` of an invalid address must catch `RangeError`.
+`fundAccountWithFaucet`, `getFaucetTransaction`, `resetSequenceNumber` and the builders of `transaction.build` throw
+this `RangeError` for a malformed address before any request.
 
 ## Gas
 
