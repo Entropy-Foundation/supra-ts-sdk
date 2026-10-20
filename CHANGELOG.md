@@ -223,10 +223,12 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   throw before any request. Entry functions encoded `""` and `"0x"` as the address `0x0`, and views sent every
   value to the node, converted with `String(value)` for `address` and unchanged for `Object<T>`.
 - **Breaking:** type arguments given as strings are parsed by the SDK with the grammar of the node's type
-  parser, in entry functions (`transaction.build.simple` and the entry functions of `Contract.fromABI`), the
-  `coinType` of `coin.transferCoin` and of `fungibleAsset.migrateCoinToFungibleStore`, and `methods.view`. A string that is not exactly one concrete type throws
+  parser, in entry functions (`transaction.build.simple` and the entry functions of `Contract.fromABI`) and
+  `methods.view`. The `coinType` of `coin.transferCoin` and of `fungibleAsset.migrateCoinToFungibleStore` is
+  checked by `validateStructId` and then parsed the same way. A string that is not exactly one concrete type throws
   before any request: text after the type (`"u64 junk"`, `"0x1::supra_coin::SupraCoin, u8"`), a generic type
-  parameter (`"T0"`), and `"string"`, which was read as `0x1::string::String` and which nodes refuse. Entry
+  parameter (`"T0"`), `"string"`, which was read as `0x1::string::String` and which nodes refuse, and a type
+  with more than eight nested `vector` and struct levels, the most a transaction can carry. Entry
   functions used the first type of such a string, and views sent it to the node unchecked.
 - **Breaking (types):** `FunctionTypeArgs`, the type of an entry in `ty_args` of a transaction payload
   in JSON form, is a union of the primitive type names, `{ vector }` and `{ struct }` instead of an
