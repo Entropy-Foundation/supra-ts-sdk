@@ -29,7 +29,8 @@ export const MAX_TOO_NEW_CHECKS = 2;
  * (`tooNew`): the account's sequence number on the chain, C, is below the transaction's number, N.
  *
  * Each round reads the account and the latest block (`readChainInternal`), which drops the records of the client's
- * submissions that the chain shows dead (`SequenceNumberTracker`), then:
+ * submissions that the chain shows dead (`SequenceNumberTracker`). C is the higher of the number read and the highest
+ * number of the account on the chain that the tracker has observed. Then:
  *
  * 1. When every number from C up to N (exclusive) has a record of a submission of this client, calls
  *    `simulateAt(C)`, whose result gives `simulated`. A `SupraSimulationFailedError` for a stale sequence number starts
@@ -57,8 +58,11 @@ export async function resolveSequenceNumberTooNewInternal<T>(
     const tracker = sequenceNumberTrackerOf(config);
     let stale: unknown = args.tooNew;
     for (let round = 0; round < ROUNDS; round += 1) {
-        const chainSequenceNumber = await readChainInternal(args.address, config);
-        tracker.observeChainSequenceNumber(args.address, chainSequenceNumber);
+        const read = await readChainInternal(args.address, config);
+        tracker.observeChainSequenceNumber(args.address, read);
+        // An account read from a node that lags may be below a number the tracker has already observed.
+        const observed = tracker.chainSequenceNumber(args.address);
+        const chainSequenceNumber = observed !== undefined && observed > read ? observed : read;
         if (
             chainSequenceNumber > args.sequenceNumber ||
             !tracker.everyNumberRecorded(args.address, chainSequenceNumber, args.sequenceNumber)

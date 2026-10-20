@@ -24,8 +24,8 @@ export interface NetworkConfig {
     /** Longest wait for a transaction's final status, in milliseconds, when the call sets none. */
     waitTimeoutMs?: number,
     /**
-     * Seconds from the estimated chain time to the expiration time of a transaction built without `txExpiryTime`;
-     * default `DEFAULT_TX_EXPIRATION_DURATION`.
+     * Seconds from the client's clock to the expiration time of a transaction built without `txExpiryTime`, at most
+     * `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`; default `DEFAULT_TX_EXPIRATION_DURATION`.
      */
     txExpirySecs?: number,
     /**

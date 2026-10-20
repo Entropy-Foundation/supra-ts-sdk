@@ -26,16 +26,23 @@ export const MAX_GAS_UNITS_PER_TRANSACTION = BigInt(2_000_000_000);
 /** Gas unit price, in quants, when neither the call nor the client sets one: the node's `txn.min_price_per_gas_unit`. */
 export const DEFAULT_GAS_PRICE = BigInt(100_000);
 /**
- * Seconds from the client's estimate of the chain's time to the expiration time of a transaction built without
- * `txExpiryTime`, when `SupraConfig.txExpirySecs` sets none. The estimate is the client's clock shifted by the
- * difference between the timestamp of the latest block the client has read and the client's clock when it read it.
+ * Seconds from the client's clock, in whole seconds, to the expiration time of a transaction built without
+ * `txExpiryTime`, when `SupraConfig.txExpirySecs` sets none.
  */
 export const DEFAULT_TX_EXPIRATION_DURATION = 60;
 /**
- * The largest `SupraConfig.txExpirySecs`: nodes from v12 onwards refuse a transaction whose expiration time is more
- * than 600 seconds after their clock.
+ * The largest `SupraConfig.txExpirySecs`: the nodes (v11.7.0 and v12) refuse a transaction whose expiration time is
+ * more than 600 seconds after their clock in whole seconds.
  */
 export const MAX_TX_EXPIRATION_DURATION = 600;
+/**
+ * Seconds by which the clocks of the client and of the node that receives a transaction may differ. A transaction
+ * built without `txExpiryTime` expires at most `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS` (595) seconds
+ * after the client's clock, so that a node accepts it when `txExpirySecs` is 600. A submission whose request failed
+ * without an answer is recorded with its expiration time, at most
+ * `MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS` (605) seconds after the client's clock.
+ */
+export const TX_EXPIRATION_MARGIN_SECS = 5;
 export const MILLISECONDS_PER_SECOND = 1000;
 export const SUPRA_FRAMEWORK_ADDRESS =
     "0x0000000000000000000000000000000000000000000000000000000000000001";

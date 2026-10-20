@@ -4,13 +4,15 @@ import type { TransactionQueryType } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { chainClockOf } from "./chainTime";
 
-// Every block read records the block's timestamp in the client's chain time (`chainClockOf`).
-
+/**
+ * Reads the latest block. Its timestamp updates the client's chain time (`chainClockOf`); the reads of a block by
+ * height or by hash do not.
+ */
 export async function getLatestBlockInternal(config: NetworkConfig): Promise<FinalizedBlockHeader> {
     const block = await get<FinalizedBlockHeader>({
         path: `/block`,
     }, config).then(res => res.data);
-    chainClockOf(config).observeBlockHeader(block);
+    chainClockOf(config).observeLatestBlockHeader(block);
     return block;
 }
 
@@ -22,23 +24,20 @@ export async function getBlockByHeightInternal(
     },
     config: NetworkConfig
 ): Promise<FinalizedBlockHeader> {
-    const block = await get<FinalizedBlockHeader>({
+    return await get<FinalizedBlockHeader>({
         path: `/block/height/${args.height}`,
         query: {
             with_finalized_transactions: args.options?.withFinalizedTransactions,
             type: args.options?.type
         }
     }, config).then(res => res.data);
-    chainClockOf(config).observeBlockHeader(block);
-    return block;
+
 }
 
 export async function getBlockByHashInternal(args: { blockHash: string }, config: NetworkConfig): Promise<FinalizedBlockHeader> {
-    const block = await get<FinalizedBlockHeader>({
+    return await get<FinalizedBlockHeader>({
         path: `/block/${args.blockHash}`,
     }, config).then(res => res.data);
-    chainClockOf(config).observeBlockHeader(block);
-    return block;
 }
 
 

@@ -8,9 +8,9 @@ import type { MoveInnerAuthenticator } from "../move";
  *   too, the max gas is estimated (see `estimateMaxGas`).
  * - `gasUnitPrice`: gas unit price, in quants. Default the client's `minGasUnitPrice`, else `DEFAULT_GAS_PRICE`.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
- *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's estimate of the
- *   chain's time when the transaction is built: the client's clock shifted by the difference to the timestamp of the
- *   latest block the client has read, or the client's clock before it has read a block.
+ *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole
+ *   seconds when the transaction is built, at most 595 seconds after it (`MAX_TX_EXPIRATION_DURATION -
+ *   TX_EXPIRATION_MARGIN_SECS`).
  * - `estimateMaxGas`: when no `maxGas` is set, estimate it (`true`) or use `DEFAULT_MAX_GAS_UNITS` (`false`). Default
  *   the client's `estimateMaxGas`, else `true`.
  *

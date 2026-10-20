@@ -359,21 +359,21 @@ describe("SequenceNumberTracker records and chain time", () => {
         tracker.record(ADDRESS, 3n, 1_000n);
         tracker.record(ADDRESS, 4n, 1_060n);
 
-        clock.observeBlock(blockAt(999n) + 999_999);
+        clock.observeLatestBlock(blockAt(999n) + 999_999);
         expect(expirations(tracker)).toEqual(
             new Map([
                 [3n, 1_000n],
                 [4n, 1_060n],
             ]),
         );
-        clock.observeBlock(blockAt(1_000n));
+        clock.observeLatestBlock(blockAt(1_000n));
         expect(expirations(tracker)).toEqual(new Map([[4n, 1_060n]]));
     });
 
     it("keeps a record whatever the client's clock while no block has reached its expiration time", () => {
         const clock = new ChainClock();
         const tracker = new SequenceNumberTracker(clock);
-        clock.observeBlock(blockAt(1_000n), 0);
+        clock.observeLatestBlock(blockAt(1_000n), 0);
         tracker.record(ADDRESS, 3n, 1_060n);
 
         // The client's clock is an hour past the expiration time; the chain has produced no block since.
@@ -431,7 +431,7 @@ describe("SequenceNumberTracker records and chain time", () => {
         const clock = new ChainClock();
         const tracker = new SequenceNumberTracker(clock);
         const fetchChain = jest.fn(async () => 7n);
-        clock.observeBlock(blockAt(1_000n), 1_000_000);
+        clock.observeLatestBlock(blockAt(1_000n), 1_000_000);
         const now = jest.spyOn(Date, "now").mockReturnValue(1_000_000);
         try {
             const first = await tracker.reserve(ADDRESS, fetchChain);
@@ -451,15 +451,55 @@ describe("SequenceNumberTracker records and chain time", () => {
             expect(fetchChain).toHaveBeenCalledTimes(2);
             tracker.release(third);
 
-            // No second read for the same expiration time.
+            // The read did not show 7 expired, so the next call reads the chain again, once.
             tracker.release(await tracker.reserve(ADDRESS, fetchChain));
+            expect(fetchChain).toHaveBeenCalledTimes(3);
+
+            // A block read after 7's expiration time drops it, and 7 is handed out.
+            fetchChain.mockImplementationOnce(async () => {
+                clock.observeLatestBlock(blockAt(1_065n), 1_065_000);
+                return 7n;
+            });
+            now.mockReturnValue(1_066_000);
+            const fourth = await tracker.reserve(ADDRESS, fetchChain);
+            expect(fourth.sequenceNumber).toBe(7n);
+            expect(fetchChain).toHaveBeenCalledTimes(4);
+            tracker.release(fourth);
+
+            // With no record past its expiration time, the chain is not read.
+            tracker.release(await tracker.reserve(ADDRESS, fetchChain));
+            expect(fetchChain).toHaveBeenCalledTimes(4);
+        } finally {
+            now.mockRestore();
+        }
+    });
+
+    it("reads the chain again at the next call after a read whose block request failed at an expiration trigger", async () => {
+        const clock = new ChainClock();
+        const tracker = new SequenceNumberTracker(clock);
+        clock.observeLatestBlock(blockAt(1_000n), 1_000_000);
+        const now = jest.spyOn(Date, "now").mockReturnValue(1_000_000);
+        // The account reads succeed; the block read at the first trigger fails (the clock is not updated).
+        let blockReads = 0;
+        const fetchChain = jest.fn(async () => {
+            blockReads += 1;
+            if (blockReads > 2) {
+                clock.observeLatestBlock(blockAt(1_070n), 1_070_000);
+            }
+            return 7n;
+        });
+        try {
+            accept(tracker, await tracker.reserve(ADDRESS, fetchChain), 1_060n);
+            now.mockReturnValue(1_070_000);
+
+            const atTrigger = await tracker.reserve(ADDRESS, fetchChain);
+            expect(atTrigger.sequenceNumber).toBe(8n);
+            tracker.release(atTrigger);
             expect(fetchChain).toHaveBeenCalledTimes(2);
 
-            // A block read after 7's expiration time (here by another read of the client) drops it, and 7 is handed
-            // out.
-            clock.observeBlock(blockAt(1_065n), 1_065_000);
-            now.mockReturnValue(1_066_000);
-            expect((await tracker.reserve(ADDRESS, fetchChain)).sequenceNumber).toBe(7n);
+            const next = await tracker.reserve(ADDRESS, fetchChain);
+            expect(fetchChain).toHaveBeenCalledTimes(3);
+            expect(next.sequenceNumber).toBe(7n);
         } finally {
             now.mockRestore();
         }

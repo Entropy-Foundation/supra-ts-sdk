@@ -36,18 +36,22 @@ export interface RetryConfig {
  *
  * The counter records every transaction of the account that the client submitted (accepted, or whose submission
  * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time, and hands out the
- * lowest number at or above the account's sequence number on the chain that has no record. A record is dropped when
- * the chain's number passes it, when a block the client reads has reached its expiration time, or when a read of the
- * transaction returns `Invalid`; an HTTP 404 does not drop it. The first use of an account reads the account and the
- * latest block; so does the next call after a refusal for a stale number or a full queue
- * (`SupraAccountQueueFullError`), and once the estimated chain time has passed the expiration time of a record by two
- * seconds.
+ * lowest number at or above the account's sequence number on the chain that has no record. A submission whose request
+ * failed without an answer is recorded with an expiration time at most 605 seconds
+ * (`MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS`) after the client's clock. A record is dropped when the
+ * chain's number passes it, when the timestamp of a latest block the client reads (`GET /rpc/v3/block`) has reached
+ * its expiration time, or when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it. The first use
+ * of an account reads the account and the latest block; so does the next call after a refusal for a stale number or a
+ * full queue (`SupraAccountQueueFullError`), and every call while the estimated chain time (the client's clock shifted
+ * by the largest difference to a latest block's timestamp observed at its read) has passed the expiration time of a
+ * record by two seconds and no latest block read has reached it.
  *
  * `txExpirySecs` sets the expiration time of every transaction built without `txExpiryTime`: that many seconds after
- * the client's estimate of the chain's time (the client's clock shifted by the difference to the timestamp of the
- * latest block it has read; the client's clock before it has read a block). An integer from 1 to
+ * the client's clock in whole seconds, at most 595 (`MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`) so that
+ * a node whose clock is up to 5 seconds behind the client's accepts it. An integer from 1 to
  * `MAX_TX_EXPIRATION_DURATION` (600); default `DEFAULT_TX_EXPIRATION_DURATION` (60). The constructor throws a
- * `RangeError` otherwise.
+ * `RangeError` otherwise. The node refuses a transaction whose expiration time is not after its clock, or more than 600
+ * seconds after it, so a client whose clock is far from the node's has its transactions refused.
  *
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`. `retry` turns on retries of GET requests; it is off by default.

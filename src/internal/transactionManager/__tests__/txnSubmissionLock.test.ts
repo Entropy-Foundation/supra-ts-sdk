@@ -266,14 +266,17 @@ describe("a transaction of this client that can no longer commit", () => {
 
     it("with explicit max gas and the simulation before submission, signs the next transfer again with an expired number", async () => {
         const mock = start();
+        const clock = new ClientClock();
         const supra = newClient();
         const sender = new SupraAccount();
         const options = { maxGas: 5_000n, simulate: true };
         await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });
         await transfer(supra, sender, options);
         await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });
-        // The chain's time passes 6's expiration time; the client's clock does not move, so only the check before
-        // submission, which reads the latest block, finds 6 expired.
+        // The chain's time passes 6's expiration time; the client's clock moves one second less, so the estimated
+        // chain time has not passed it by two seconds and only the check before submission, which reads the latest
+        // block, finds 6 expired.
+        clock.offsetMs += 60_000;
         mock.advance(61_000);
 
         await transfer(supra, sender, { ...options, txExpiryTime: later(mock) });

@@ -1,5 +1,9 @@
 import { SupraClient } from "../../api/supraClient";
-import { DEFAULT_TX_EXPIRATION_DURATION, MAX_TX_EXPIRATION_DURATION } from "../../utils/constants";
+import {
+    DEFAULT_TX_EXPIRATION_DURATION,
+    MAX_TX_EXPIRATION_DURATION,
+    TX_EXPIRATION_MARGIN_SECS,
+} from "../../utils/constants";
 import { ChainClock, chainClockOf } from "../chainTime";
 
 const RPC_URL = "http://node.test";
@@ -48,13 +52,13 @@ describe("ChainClock", () => {
 
         expect(clock.latestBlockSeconds()).toBeUndefined();
         expect(clock.estimatedNowMs(1_000_000)).toBe(1_000_000);
-        expect(clock.estimatedNowSeconds(1_000_500)).toBe(1_001n);
+        expect(clock.estimatedNowSeconds(1_000_500)).toBe(1_000n);
     });
 
-    it("shifts the client's clock by the difference observed when the latest block was first read", () => {
+    it("shifts the client's clock by the difference observed when the latest block was read", () => {
         const clock = new ChainClock();
 
-        clock.observeBlock(2_000_000_000, 1_000_000);
+        clock.observeLatestBlock(2_000_000_000, 1_000_000);
 
         expect(clock.latestBlockSeconds()).toBe(2_000n);
         expect(clock.estimatedNowMs(1_010_000)).toBe(2_010_000);
@@ -62,65 +66,99 @@ describe("ChainClock", () => {
 
     it("keeps the estimate for a block that is not newer than the latest one read", () => {
         const clock = new ChainClock();
-        clock.observeBlock(2_000_000_000, 1_000_000);
+        clock.observeLatestBlock(2_000_000_000, 1_000_000);
 
         // The same block read 30 s later (the chain produced no block), and an older block.
-        clock.observeBlock(2_000_000_000, 1_030_000);
-        clock.observeBlock(1_500_000_000, 1_030_000);
+        clock.observeLatestBlock(2_000_000_000, 1_030_000);
+        clock.observeLatestBlock(1_500_000_000, 1_030_000);
 
         expect(clock.latestBlockSeconds()).toBe(2_000n);
         expect(clock.estimatedNowMs(1_030_000)).toBe(2_030_000);
     });
 
+    it("does not move the estimate backwards for a newer block that is older at its read than an earlier one", () => {
+        const clock = new ChainClock();
+        // A block 100 ms old at its read, then a newer block 2 s old at its read (from a node that lags).
+        clock.observeLatestBlock(2_000_000_000, 1_000_100);
+        clock.observeLatestBlock(2_001_000_000, 1_003_000);
+
+        expect(clock.latestBlockSeconds()).toBe(2_001n);
+        expect(clock.estimatedNowMs(1_003_000)).toBe(2_002_900);
+    });
+
+    it("moves the estimate forwards when the first latest block read lagged", () => {
+        const clock = new ChainClock();
+        // The first read comes from a node 120 s behind the chain; the next from a node that is current.
+        clock.observeLatestBlock(1_880_000_000, 1_000_000);
+        clock.observeLatestBlock(2_001_000_000, 1_001_000);
+
+        expect(clock.estimatedNowMs(1_001_000)).toBe(2_001_000);
+    });
+
     it("ignores a timestamp that is not a positive safe integer", () => {
         const clock = new ChainClock();
 
-        clock.observeBlock(Number.NaN);
-        clock.observeBlock(-1);
-        clock.observeBlock(2 ** 60);
+        clock.observeLatestBlock(Number.NaN);
+        clock.observeLatestBlock(-1);
+        clock.observeLatestBlock(2 ** 60);
 
         expect(clock.latestBlockSeconds()).toBeUndefined();
     });
 
-    it("is updated by every block read of the client", async () => {
+    it("is updated by the client's reads of the latest block, not by reads of a block by height or hash", async () => {
+        jest.spyOn(Date, "now").mockReturnValue(5_000_000);
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
-        serveBlockAt(5_000_000);
-
-        await supra.getLatestBlock();
-
-        expect(chainClockOf(supra.networkInformation).latestBlockSeconds()).toBe(5_000n);
-        serveBlockAt(6_000_000);
+        const clock = chainClockOf(supra.networkInformation);
+        // A historical block 30 days before the client's clock.
+        serveBlockAt(5_000_000 - 30 * 86_400_000);
         await supra.getBlockByHeight({ height: 1 });
-        expect(chainClockOf(supra.networkInformation).latestBlockSeconds()).toBe(6_000n);
-        serveBlockAt(7_000_000);
         await supra.getBlockByHash({ blockHash: "0x" + "00".repeat(32) });
-        expect(chainClockOf(supra.networkInformation).latestBlockSeconds()).toBe(7_000n);
+        expect(clock.latestBlockSeconds()).toBeUndefined();
+        expect(clock.estimatedNowMs()).toBe(5_000_000);
+
+        serveBlockAt(4_999_000);
+        await supra.getLatestBlock();
+        expect(clock.latestBlockSeconds()).toBe(4_999n);
+        expect(clock.estimatedNowMs()).toBe(4_999_000);
+
+        serveBlockAt(9_000_000);
+        await supra.getBlockByHeight({ height: 2 });
+        expect(clock.latestBlockSeconds()).toBe(4_999n);
     });
 });
 
 describe("the default expiration time of a built transaction", () => {
-    it(`is ${DEFAULT_TX_EXPIRATION_DURATION} s after the client's clock before the client has read a block`, () => {
-        jest.spyOn(Date, "now").mockReturnValue(1_000_000_000);
+    it(`is ${DEFAULT_TX_EXPIRATION_DURATION} s after the client's clock in whole seconds`, () => {
+        jest.spyOn(Date, "now").mockReturnValue(1_000_000_999);
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
 
         expect(rawTxn(supra).expiration_timestamp_secs).toBe(1_000_000n + BigInt(DEFAULT_TX_EXPIRATION_DURATION));
     });
 
-    it(`is ${DEFAULT_TX_EXPIRATION_DURATION} s after the estimated chain time once the client has read a block`, async () => {
+    it(`is ${DEFAULT_TX_EXPIRATION_DURATION} s after the client's clock after the client has read a block`, async () => {
         jest.spyOn(Date, "now").mockReturnValue(1_000_000_000);
         const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255 });
         // The chain's clock is 45 s behind the client's.
         serveBlockAt(1_000_000_000 - 45_000);
         await supra.getLatestBlock();
 
-        expect(rawTxn(supra).expiration_timestamp_secs).toBe(1_000_000n - 45n + 60n);
+        expect(rawTxn(supra).expiration_timestamp_secs).toBe(1_000_000n + 60n);
     });
 
-    it("is SupraConfig.txExpirySecs after the estimated chain time", () => {
+    it("is SupraConfig.txExpirySecs after the client's clock", () => {
         jest.spyOn(Date, "now").mockReturnValue(1_000_000_000);
-        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, txExpirySecs: 600 });
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, txExpirySecs: 300 });
 
-        expect(rawTxn(supra).expiration_timestamp_secs).toBe(1_000_600n);
+        expect(rawTxn(supra).expiration_timestamp_secs).toBe(1_000_300n);
+    });
+
+    it(`is at most ${MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS} s after the client's clock`, () => {
+        jest.spyOn(Date, "now").mockReturnValue(1_000_000_999);
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, txExpirySecs: MAX_TX_EXPIRATION_DURATION });
+
+        expect(rawTxn(supra).expiration_timestamp_secs).toBe(
+            1_000_000n + BigInt(MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS),
+        );
     });
 
     it("is the call's txExpiryTime as given", () => {

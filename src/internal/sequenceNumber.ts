@@ -5,6 +5,7 @@ import type { AccountAddressInput } from "../types/account";
 import { TransactionStatus } from "../types/transaction";
 import type { RawTxnJSON, SendTxnPayload } from "../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../utils/apiEndpoints";
+import { MAX_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, TX_EXPIRATION_MARGIN_SECS } from "../utils/constants";
 import { getAccountInfoInternal } from "./account";
 import { getLatestBlockInternal } from "./block";
 import { ChainClock, chainClockOf } from "./chainTime";
@@ -74,8 +75,6 @@ interface AccountState {
     chain: bigint | undefined;
     /** Whether the next number is taken after a read of the chain. */
     readChain: boolean;
-    /** The estimated chain time, in seconds, when the chain was last read. */
-    estimatedAtRead: bigint | undefined;
     /** The submissions of this client that may still commit, by sequence number. */
     submissions: Map<bigint, SubmissionRecord>;
     /** The reservation that holds the account's lock, and the function that releases the lock. */
@@ -91,15 +90,17 @@ interface AccountState {
  * have accepted (the submission request failed without an answer), with its expiration time. A transaction that the
  * node accepted either commits or can no longer commit once the chain's time (the timestamp of its latest block) has
  * reached its expiration time. A record is dropped when the account's sequence number on the chain passes its number,
- * when the timestamp of a block read from the node has reached its expiration time, or when a read of the transaction
+ * when the timestamp of a latest block read from the node has reached its expiration time, or when a read of the transaction
  * by hash returns `Invalid`; until then its number is not handed out. A refused submission is not recorded.
  *
  * A helper takes a number (`reserve`) after it has acquired the account's lock, and holds the lock while it builds,
  * estimates, signs and submits the transaction. The number handed out is the lowest number, at or above the account's
  * sequence number on the chain, that has no record. The chain is read (the account and the latest block) on the first
- * use of an account, after a refusal that reports a stale number or a full queue (`resynchronise`), and once the
- * estimated chain time has passed the expiration time of a record by two seconds since the last read. A read of the
- * chain drops the records it shows dead and keeps the others.
+ * use of an account, after a refusal that reports a stale number or a full queue (`resynchronise`), and while the
+ * estimated chain time has passed the expiration time of a record by two seconds and no latest block read has reached
+ * that expiration time: a read that fails, or whose block has not reached it, leaves the record, and the next number
+ * is again taken after a read. A number is taken after at most one read of the chain. A read of the chain drops the
+ * records it shows dead and keeps the others.
  *
  * Every address is standardized (`standardizeAddress`); `record` standardizes its own.
  */
@@ -220,6 +221,14 @@ export class SequenceNumberTracker {
     }
 
     /**
+     * The highest sequence number of `address` on the chain that the tracker has observed, or `undefined` when the
+     * chain has not been read for the account.
+     */
+    chainSequenceNumber(address: string): bigint | undefined {
+        return this.accounts.get(address)?.chain;
+    }
+
+    /**
      * The lowest number of `address`, at or above the account's sequence number on the chain, that has no record, or
      * `undefined` when the chain has not been read for the account.
      */
@@ -288,7 +297,6 @@ export class SequenceNumberTracker {
         }
         state.chain = undefined;
         state.readChain = false;
-        state.estimatedAtRead = undefined;
         state.submissions.clear();
     }
 
@@ -316,7 +324,6 @@ export class SequenceNumberTracker {
             state = {
                 chain: undefined,
                 readChain: false,
-                estimatedAtRead: undefined,
                 submissions: new Map(),
                 holder: undefined,
                 tail: Promise.resolve(),
@@ -350,26 +357,19 @@ export class SequenceNumberTracker {
 
     /**
      * Whether the next number is taken after a read of the chain: the chain was never read, a refusal asked for a read,
-     * or the estimated chain time has passed the expiration time of a record by `EXPIRED_RECORD_READ_DELAY_SECONDS`
-     * since the chain was last read.
+     * or the estimated chain time has passed the expiration time of a record by `EXPIRED_RECORD_READ_DELAY_SECONDS`.
+     * Such a record stays until a latest block read has reached its expiration time (or the chain passes its number),
+     * so a read whose block request fails or returns an earlier block is followed by another read at the next call.
      */
     private needsChainRead(state: AccountState): boolean {
         if (state.chain === undefined || state.readChain) {
             return true;
         }
+        this.prune(state);
         const earliest = minimum([...state.submissions.values()].map((record) => record.expiration));
-        if (earliest === undefined) {
-            return false;
-        }
-        const due = earliest + EXPIRED_RECORD_READ_DELAY_SECONDS;
         return (
-            due <= this.estimatedNowSeconds() && (state.estimatedAtRead === undefined || state.estimatedAtRead < due)
+            earliest !== undefined && earliest + EXPIRED_RECORD_READ_DELAY_SECONDS <= this.clock.estimatedNowSeconds()
         );
-    }
-
-    /** The estimated chain time in whole seconds, rounded down. */
-    private estimatedNowSeconds(): bigint {
-        return BigInt(Math.floor(this.clock.estimatedNowMs() / 1_000));
     }
 
     /** The next number of the account, after a read of the chain when one is needed. */
@@ -377,7 +377,6 @@ export class SequenceNumberTracker {
         if (this.needsChainRead(state)) {
             const chain = await readChain();
             state.readChain = false;
-            state.estimatedAtRead = this.estimatedNowSeconds();
             if (state.chain === undefined || chain > state.chain) {
                 state.chain = chain;
             }
@@ -480,7 +479,9 @@ export function settleUnsubmittedSequenceNumberInternal(
  * - Another answer with an error status of the client, and a 503: the node did not take the number; with
  *   `reservation`, the number is handed out next.
  * - Any other error (a timeout, a connection failure, a 5xx other than 503): the node may have accepted the
- *   transaction, so it is recorded without a hash, whether or not its number came from the counter.
+ *   transaction, so it is recorded without a hash, whether or not its number came from the counter. The record's
+ *   expiration time is the transaction's, at most `unknownOutcomeExpiration` (the latest expiration time a node
+ *   accepts).
  *
  * A reservation is released in every case.
  */
@@ -515,10 +516,38 @@ export function settleFailedSubmissionInternal(
     } else if (error instanceof SupraAPIError && (error.status < 500 || error.status === 503)) {
         settle(false);
     } else {
-        tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs);
+        tracker.record(
+            rawTxn.sender,
+            rawTxn.sequence_number,
+            unknownOutcomeExpiration(rawTxn.expiration_timestamp_secs),
+        );
         settle(false);
     }
     return error;
+}
+
+/**
+ * The expiration time recorded for a submission whose request failed without an answer: `expiration`, at most
+ * `MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS` seconds after the client's clock (rounded up). A node
+ * refuses a transaction whose expiration time is more than `MAX_TX_EXPIRATION_DURATION` seconds after the node's
+ * clock, so a transaction with a later expiration time was refused by a node whose clock is less than
+ * `TX_EXPIRATION_MARGIN_SECS` seconds ahead of the client's, and its record does not hold the number beyond that time.
+ * `expiration` is returned unchanged when it cannot be read as an integer.
+ */
+export function unknownOutcomeExpiration(
+    expiration: bigint | number,
+    localNowMs: number = Date.now(),
+): bigint | number {
+    let expires: bigint;
+    try {
+        expires = BigInt(expiration);
+    } catch {
+        return expiration;
+    }
+    const latest =
+        BigInt(Math.ceil(localNowMs / MILLISECONDS_PER_SECOND)) +
+        BigInt(MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS);
+    return expires < latest ? expires : latest;
 }
 
 /**

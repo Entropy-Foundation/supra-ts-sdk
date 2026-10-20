@@ -1,8 +1,7 @@
 import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type { OptionalTransactionPayloadArgs, RawTxnJSON, SendTxnPayload, TransactionPayloadJSON } from "../../types/transactionManager/transactionBuild";
-import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MAX_TX_EXPIRATION_DURATION, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
-import { chainClockOf } from "../chainTime";
+import { DEFAULT_GAS_PRICE, DEFAULT_MAX_GAS_UNITS, DEFAULT_TX_EXPIRATION_DURATION, MAX_TX_EXPIRATION_DURATION, MILLISECONDS_PER_SECOND, SUPRA_FRAMEWORK_ADDRESS, TX_EXPIRATION_MARGIN_SECS } from "../../utils/constants";
 import type { AccountAddressInput } from "../../types/account";
 import { addressToBytes } from "../../helper/account";
 import type { MoveFunctionId, MoveInnerAuthenticator, MoveModule, SimpleEntryFunctionArgumentTypes, TypeArgument } from "../../types/move";
@@ -162,11 +161,15 @@ export function validateTxExpirySecs(value: number): number {
 
 /**
  * The expiration time of a transaction built without `txExpiryTime`: `SupraConfig.txExpirySecs` (default
- * `DEFAULT_TX_EXPIRATION_DURATION`) seconds after the client's estimate of the chain's time (`ChainClock`), which is
- * the client's clock until the client has read a block.
+ * `DEFAULT_TX_EXPIRATION_DURATION`) seconds after the client's clock in whole seconds (rounded down), at most
+ * `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS` seconds after it.
  */
 export function defaultTxExpiryTime(config: NetworkConfig): bigint {
-    return chainClockOf(config).estimatedNowSeconds() + BigInt(config.txExpirySecs ?? DEFAULT_TX_EXPIRATION_DURATION);
+    const secs = Math.min(
+        config.txExpirySecs ?? DEFAULT_TX_EXPIRATION_DURATION,
+        MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS,
+    );
+    return BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + secs);
 }
 
 export function rawTxnObjectInnerInternal(

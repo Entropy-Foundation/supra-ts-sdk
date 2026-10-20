@@ -2,6 +2,7 @@ import { HexString, SupraAccount } from "supra-l1-sdk-core";
 import { SupraAccountQueueFullError, SupraAPIError } from "../../../errors/apiError";
 import { SupraSimulationFailedError } from "../../../errors/transactionError";
 import { MockNode, u64Mark, type MockNodeOptions } from "./helpers/mockNode";
+import { MAX_TX_EXPIRATION_DURATION, TX_EXPIRATION_MARGIN_SECS } from "../../../utils/constants";
 import { ClientClock, newClient, transfer, type TransferOptions } from "./helpers/transfers";
 
 /**
@@ -301,12 +302,13 @@ describe("transfers whose transactions the node drops or never receives", () => 
 
     it("keeps the order of the calls when the first one finds an expired number", async () => {
         const mock = start();
+        const clock = new ClientClock();
         const supra = newClient();
         const sender = new SupraAccount();
         await transfer(supra, sender, { txExpiryTime: later(mock) });
         await transfer(supra, sender);
-        // Only the chain's time moves: the first of the next calls finds 6 expired in its check.
-        mock.advance(61_000);
+        // The first of the next calls finds 6 expired.
+        clock.advance(mock, 61_000);
 
         await Promise.all([
             transfer(supra, sender, { amount: 1_001n }),
@@ -365,9 +367,9 @@ describe("transfers whose transactions the node drops or never receives", () => 
 
 describe("the expiration time of a transaction the helpers build", () => {
     it.each([
-        ["ahead of", 45_000],
-        ["behind", -45_000],
-    ])("is 60 seconds of chain time with a client clock 45 s %s the chain's", async (_name, offsetMs) => {
+        ["ahead of", 30_000],
+        ["behind", -30_000],
+    ])("is 60 seconds after the client's clock with a client clock 30 s %s the chain's", async (_name, offsetMs) => {
         const mock = start();
         const clock = new ClientClock(offsetMs);
         const supra = newClient();
@@ -375,16 +377,31 @@ describe("the expiration time of a transaction the helpers build", () => {
 
         await transfer(supra, sender);
         const expiration = mock.submissions[0]?.expiration ?? 0;
-        expect(expiration - mock.blockSeconds()).toBeGreaterThanOrEqual(59);
-        expect(expiration - mock.blockSeconds()).toBeLessThanOrEqual(61);
+        const clientSeconds = () => Math.floor(Date.now() / 1000);
+        expect(clientSeconds() + 60 - expiration).toBeGreaterThanOrEqual(0);
+        expect(clientSeconds() + 60 - expiration).toBeLessThanOrEqual(1);
 
-        // 30 s later the transaction at 5 is still pending, and its number is not handed out again.
-        clock.advance(mock, 30_000);
+        // 20 s of chain time later the transaction at 5 has not expired, and its number is not handed out again.
+        clock.advance(mock, 20_000);
         await transfer(supra, sender);
         expect(mock.submitted).toEqual([5, 6]);
         const second = mock.submissions[1]?.expiration ?? 0;
-        expect(second - mock.blockSeconds()).toBeGreaterThanOrEqual(59);
-        expect(second - mock.blockSeconds()).toBeLessThanOrEqual(61);
+        expect(clientSeconds() + 60 - second).toBeGreaterThanOrEqual(0);
+        expect(clientSeconds() + 60 - second).toBeLessThanOrEqual(1);
+    });
+
+    it("is refused by the node, and thrown, when the client's clock is behind the chain's by more than the window", async () => {
+        const mock = start();
+        new ClientClock(-90_000);
+        const supra = newClient();
+        const sender = new SupraAccount();
+
+        const error = await transfer(supra, sender, { maxGas: 5_000n }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(SupraAPIError);
+        expect((error as SupraAPIError).message).toMatch(/expiration timestamp is in the past/);
+        expect(mock.submitted).toEqual([5]);
+        expect(mock.pooled()).toEqual([]);
     });
 
     it("follows SupraConfig.txExpirySecs", async () => {
@@ -457,5 +474,200 @@ describe("the expiration time of a transaction the helpers build", () => {
 
         expect(error).toBeInstanceOf(SupraSimulationFailedError);
         expect(mock.submitted).toEqual([5]);
+    });
+});
+
+/** A `fetch` that answers the requests `answer` returns a response for, and passes the others to `mock`. */
+function intercept(mock: MockNode, answer: (path: string, method: string) => unknown): typeof fetch {
+    return (async (input: string | URL | Request, init?: RequestInit) => {
+        const body = answer(new URL(String(input)).pathname, init?.method ?? "GET");
+        if (body === undefined) {
+            return mock.fetch(input, init);
+        }
+        return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+}
+
+/** The body of a latest block at `ms` milliseconds since the Unix epoch. */
+function blockAtMs(ms: number): unknown {
+    return {
+        header: {
+            height: 1,
+            timestamp: { microseconds_since_unix_epoch: Math.floor(ms) * 1000, utc_date_time: "" },
+            view: { epoch_id: { chain_id: 255, epoch: 1 }, round: 1 },
+        },
+        execution_statistics: null,
+    };
+}
+
+describe("reads of the chain, chain time and expiration times", () => {
+    beforeEach(() => {
+        jest.spyOn(SupraAccount.prototype, "signBuffer").mockReturnValue(new HexString("00".repeat(64)));
+    });
+
+    it("reads the chain again at the next call when the block read at an expiration trigger fails", async () => {
+        const mock = start({ latencyMs: [1, 1] });
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const gas = { maxGas: 5_000n };
+        // 5 is answered with 500 and not pooled: an unknown outcome the node never accepted.
+        mock.refuseNext.set(5, { status: 500, message: "Internal error" });
+        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraAPIError);
+        clock.advance(mock, 30_000);
+        await transfer(supra, sender, gas);
+
+        // Past 5's expiration time by more than two seconds, the block read fails once.
+        clock.advance(mock, 33_000);
+        mock.failBlockReads = 1;
+        await transfer(supra, sender, gas);
+        expect(acceptedNumbers(mock)).toEqual([6, 7]);
+
+        clock.advance(mock, 5_000);
+        await transfer(supra, sender, gas);
+        expect(acceptedNumbers(mock)).toEqual([6, 7, 5]);
+        mock.tick();
+        expect(mock.chain).toBe(8);
+    });
+
+    it("reads the chain again at the next call when the block read at an expiration trigger has not reached it", async () => {
+        const mock = start({ latencyMs: [1, 1] });
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const gas = { maxGas: 5_000n };
+        mock.refuseNext.set(5, { status: 500, message: "Internal error" });
+        await expect(transfer(supra, sender, gas)).rejects.toBeInstanceOf(SupraAPIError);
+        clock.advance(mock, 30_000);
+        await transfer(supra, sender, gas);
+
+        // The chain stops producing blocks 2 s before 5's expiration time.
+        clock.advance(mock, 28_000);
+        mock.stallBlocks();
+        clock.advance(mock, 5_000);
+        await transfer(supra, sender, gas);
+        expect(acceptedNumbers(mock)).toEqual([6, 7]);
+
+        mock.resumeBlocks();
+        clock.advance(mock, 5_000);
+        await transfer(supra, sender, gas);
+        expect(acceptedNumbers(mock)).toEqual([6, 7, 5]);
+    });
+
+    it("pipelines behind a pending transaction when the account read lags the chain number the client observed", async () => {
+        const mock = start({ latencyMs: [1, 1] });
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        mock.tick();
+        // The read shows 5 committed: the account's number is at least 6.
+        expect((await supra.getTransactionByHash({ transactionHash: mock.submissionHash(5) })).status).toBe("Success");
+        await transfer(supra, sender);
+
+        // From now on account reads come from an RPC node one commit behind.
+        global.fetch = intercept(mock, (path, method) =>
+            method === "GET" && /\/accounts\/0x[0-9a-f]+$/.test(path)
+                ? { sequence_number: mock.chain - 1, authentication_key: "0x" + "00".repeat(32) }
+                : undefined,
+        );
+        await transfer(supra, sender);
+        await transfer(supra, sender, { simulate: true, maxGas: 5_000n });
+
+        expect(mock.submitted).toEqual([5, 6, 7, 8]);
+        expect(mock.log).toContain("SIMULATE 6 (chain 6) -> Success");
+    });
+
+    it("keeps its chain time and the expiration times of built transactions after a read of an old block by height", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        global.fetch = intercept(mock, (path) =>
+            path.endsWith("/block/height/1") ? blockAtMs(mock.blockMs() - 30 * 86_400_000) : undefined,
+        );
+
+        await supra.getBlockByHeight({ height: 1 });
+        const built = supra.transaction.build.rawTxnObject({
+            senderAddress: sender.address(),
+            senderSequenceNumber: 5n,
+            function: "0x1::supra_account::transfer",
+            functionTypeArgs: [],
+            functionArgs: [],
+        });
+        expect(Number(built.expiration_timestamp_secs) - Math.floor(Date.now() / 1000)).toBe(60);
+
+        await transfer(supra, sender, { sequenceNumber: 5n, maxGas: 5_000n });
+        expect(mock.pooled()).toEqual([5]);
+    });
+
+    it("submits when the first latest block read comes from a node 120 s behind the chain", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        let lagging = 1;
+        global.fetch = intercept(mock, (path, method) => {
+            if (method === "GET" && path.endsWith("/block") && lagging > 0) {
+                lagging -= 1;
+                return blockAtMs(mock.blockMs() - 120_000);
+            }
+            return undefined;
+        });
+
+        for (let index = 0; index < 4; index += 1) {
+            await transfer(supra, sender, index % 2 === 0 ? {} : { maxGas: 5_000n });
+        }
+
+        expect(acceptedNumbers(mock)).toEqual([5, 6, 7, 8]);
+    });
+
+    it(`is accepted with txExpirySecs ${MAX_TX_EXPIRATION_DURATION} by a node whose clock is up to ${TX_EXPIRATION_MARGIN_SECS} s behind the client's`, async () => {
+        const mock = start({ latencyMs: [1, 1] });
+        const clock = new ClientClock();
+        const supra = newClient({ txExpirySecs: MAX_TX_EXPIRATION_DURATION });
+        const sender = new SupraAccount();
+
+        for (let index = 0; index < 10; index += 1) {
+            // From 0 to 4.9 s ahead of the node's clock.
+            clock.offsetMs = Math.floor((index * (TX_EXPIRATION_MARGIN_SECS * 1_000 - 100)) / 9);
+            await transfer(supra, sender, { maxGas: 5_000n });
+        }
+
+        expect(mock.submissions.map((submission) => submission.status)).toEqual(Array(10).fill(200));
+    });
+
+    it("refuses the next call after resetSequenceNumber while transactions of this client are pending", async () => {
+        const mock = start({ latencyMs: [1, 1] });
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const gas = { maxGas: 5_000n };
+        await transfer(supra, sender, gas);
+        await transfer(supra, sender, gas);
+
+        supra.resetSequenceNumber(sender.address());
+        const error = await transfer(supra, sender, gas).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(SupraAPIError);
+        expect((error as SupraAPIError).message).toMatch(/already pending/);
+        // Once they have committed, the next call reads the chain and takes the next number.
+        mock.tick();
+        await transfer(supra, sender, gas);
+        expect(acceptedNumbers(mock)).toEqual([5, 6, 7]);
+    });
+
+    it("records an unknown outcome with at most the latest expiration time a node accepts", async () => {
+        const mock = start({ latencyMs: [1, 1] });
+        const clock = new ClientClock();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const gas = { maxGas: 5_000n };
+        mock.refuseNext.set(5, { status: 500, message: "Internal error" });
+        const hourLater = BigInt(Math.floor(Date.now() / 1000) + 3_600);
+        await expect(transfer(supra, sender, { ...gas, txExpiryTime: hourLater })).rejects.toBeInstanceOf(
+            SupraAPIError,
+        );
+
+        clock.advance(mock, (MAX_TX_EXPIRATION_DURATION + TX_EXPIRATION_MARGIN_SECS + 4) * 1_000);
+        await transfer(supra, sender, gas);
+
+        expect(acceptedNumbers(mock)).toEqual([5]);
     });
 });

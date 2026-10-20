@@ -10,12 +10,14 @@
  *
  * - Account reads return the chain's number; balance views return 500 SUPRA; the chain ID is 255; `GET /block`
  *   returns the latest block's timestamp.
- * - A simulation reports `SEQUENCE_NUMBER_TOO_NEW` above the chain's number, `SEQUENCE_NUMBER_TOO_OLD` below it, a
- *   Move abort for a transfer of `ABORT_AMOUNT`, and otherwise `Success` with 1,000 gas units used.
+ * - A simulation reports `TRANSACTION_EXPIRED` for an expiration time the latest block's timestamp has reached,
+ *   `SEQUENCE_NUMBER_TOO_NEW` above the chain's number, `SEQUENCE_NUMBER_TOO_OLD` below it, a Move abort for a transfer
+ *   of `ABORT_AMOUNT`, and otherwise `Success` with 1,000 gas units used.
  * - A submission is refused with 400 and the messages of a v12 node: below the chain's number, for a number in the
  *   pool (`already pending`), for a number at or beyond the window ahead of the chain's number (the account's queue is
- *   full), and for an expiration time the latest block has reached. Otherwise it is accepted. `refuseNext` answers the
- *   next submissions of a number with the status and message given, and pools the transaction when `pool` is set.
+ *   full), for an expiration time not after the node's clock, and for an expiration time more than 600 s after the
+ *   node's clock in whole seconds. Otherwise it is accepted. `refuseNext` answers the next submissions of a number with
+ *   the status and message given, and pools the transaction when `pool` is set.
  * - A read by hash returns `Success` once committed, `Pending` while pooled (HTTP 404 instead with
  *   `pendingVisible: false`, as from an RPC node that did not receive the transaction), `Invalid` for a transaction
  *   dropped as discarded, and 404 for an expired or unknown one.
@@ -151,6 +153,11 @@ export class MockNode {
         this.stalledAtMs = this.blockMs();
     }
 
+    /** The chain produces blocks again: the latest block's timestamp is the node's clock. */
+    resumeBlocks(): void {
+        this.stalledAtMs = undefined;
+    }
+
     /** Commits the pooled transactions from the chain's number upwards, up to the first number without one. */
     tick(): void {
         this.expire();
@@ -232,9 +239,10 @@ export class MockNode {
                 }
             ).Move.raw_txn;
             const sequenceNumber = Number(raw.sequence_number);
+            const expiration = Number(raw.expiration_timestamp_secs);
             return path === "/transactions/simulate"
-                ? this.simulate(sequenceNumber, body)
-                : this.submit(sequenceNumber, Number(raw.expiration_timestamp_secs), body);
+                ? this.simulate(sequenceNumber, expiration, body)
+                : this.submit(sequenceNumber, expiration, body);
         }
         if (method === "GET" && path.startsWith("/transactions/")) {
             return this.read(path.slice("/transactions/".length));
@@ -271,10 +279,12 @@ export class MockNode {
         }
     }
 
-    private simulate(sequenceNumber: number, body: string): Promise<Response> {
+    private simulate(sequenceNumber: number, expiration: number, body: string): Promise<Response> {
         this.count("simulate");
         let answer: Answer;
-        if (sequenceNumber > this.chain) {
+        if (expiration <= this.blockSeconds()) {
+            answer = transaction("0x00", "Invalid", "Status Code: TRANSACTION_EXPIRED, Type Validation", 0);
+        } else if (sequenceNumber > this.chain) {
             answer = transaction(
                 "0x00",
                 "PendingAfterExecution",
@@ -323,8 +333,18 @@ export class MockNode {
                 `sequence number ${sequenceNumber} is above ${this.chain + this.window - 1}, the highest sequence ` +
                     "number this node can queue for the account",
             );
-        } else if (expiration <= this.blockSeconds()) {
-            answer = refused(`the transaction expired at ${expiration}`);
+        } else if (expiration * 1000 <= this.nowMs()) {
+            answer = refused(
+                `Transaction expiration timestamp is in the past: expiration time ${expiration}, submission time ` +
+                    `${Math.floor(this.nowMs() / 1000)}, both in Unix seconds`,
+            );
+        } else if (expiration > Math.floor(this.nowMs() / 1000) + 600) {
+            const submission = Math.floor(this.nowMs() / 1000);
+            answer = refused(
+                `Transaction expiration timestamp is too far in the future: expiration time ${expiration}, ` +
+                    `submission time ${submission}, both in Unix seconds; time to live ${expiration - submission} ` +
+                    "seconds exceeds the maximum of 600 seconds",
+            );
         } else {
             answer = { status: 200, body: this.accept(sequenceNumber, expiration) };
         }
