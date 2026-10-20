@@ -1,3 +1,5 @@
+// Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
+// Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import type { Authenticator, AutomationAuthenticator, MoveEvent, MoveFunctionId, MoveScriptBytecode, MoveTransactionAuthenticator } from "./move";
 
 /**
