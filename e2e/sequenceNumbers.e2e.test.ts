@@ -212,6 +212,45 @@ describeE2E("sequence numbers", () => {
             expectConsecutive(await commitAll(responses), first);
         });
 
+        test.each([
+            ["the estimate", undefined],
+            ["the simulation before submission (explicit max gas)", 5_000n],
+        ])(
+            "of three transfers issued together, the two others are committed when %s of the middle one aborts",
+            async (_name, maxGas) => {
+                const sender = await createFundedAccount(ctx);
+                const supra = newClient();
+                const first = await chainSequenceNumber(sender);
+                const tooMuch = (await rawSupraBalance(ctx, sender.address().toString())) * 10n;
+                const send = (amount: bigint) =>
+                    supra.coin.transferSupraCoin({
+                        senderAccount: sender,
+                        receiverAccountAddress: createUnfundedAccount().address().toString(),
+                        amount,
+                        optionalTransactionArgs: {
+                            ...(maxGas === undefined ? {} : { optionalTransactionPayloadArgs: { maxGas } }),
+                            enableTransactionWaitAndSimulationArgs: {
+                                enableWaitForTransaction: false,
+                                enableTransactionSimulation: maxGas !== undefined,
+                            },
+                        },
+                    });
+
+                const [one, aborting, three] = await Promise.allSettled([send(AMOUNT), send(tooMuch), send(AMOUNT)]);
+
+                expect(aborting.status === "rejected" && aborting.reason).toBeInstanceOf(SupraSimulationFailedError);
+                if (one.status !== "fulfilled" || three.status !== "fulfilled") {
+                    throw new Error(`a transfer was not submitted: ${JSON.stringify([one.status, three.status])}`);
+                }
+                expectConsecutive(await commitAll([one.value, three.value]), first);
+                await pollUntil(
+                    "the account's sequence number to advance",
+                    () => chainSequenceNumber(sender),
+                    (value) => value === first + 2n,
+                );
+            },
+        );
+
         test("transfers with enableTransactionSimulation issued one after another are all accepted and committed", async () => {
             const sender = await createFundedAccount(ctx);
             const supra = newClient();
