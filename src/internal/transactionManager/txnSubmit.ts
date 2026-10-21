@@ -15,7 +15,11 @@ import {
     withSequenceNumberInternal,
     type ReservationBinding,
 } from "../sequenceNumber";
-import type { RawTxnJSON, SendTxnPayload } from "../../types/transactionManager/transactionBuild";
+import type {
+    OptionalTransactionPayloadArgs,
+    RawTxnJSON,
+    SendTxnPayload,
+} from "../../types/transactionManager/transactionBuild";
 import type {
     EnableTransactionWaitAndSimulationArgs,
     OptionalTransactionArgs,
@@ -174,6 +178,11 @@ export async function submitTxnInternal(
         sendTxJsonPayload: SendTxnPayload;
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
         deferGasPriceRefusalMapping?: boolean;
+        /**
+         * Called with the raw transaction that is about to be sent, after the simulation before submission, which can
+         * sign the transaction again with a lower sequence number.
+         */
+        onSubmission?: ((rawTxn: RawTxnJSON) => void) | undefined;
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
@@ -191,6 +200,7 @@ async function submitUnmappedTxnInternal(
     args: {
         sendTxJsonPayload: SendTxnPayload;
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+        onSubmission?: ((rawTxn: RawTxnJSON) => void) | undefined;
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
@@ -228,6 +238,8 @@ async function submitUnmappedTxnInternal(
     if (options.waitTimeoutMs !== undefined) {
         waitOptions.timeoutMs = options.waitTimeoutMs;
     }
+
+    args.onSubmission?.(rawTxn);
 
     let answer: unknown;
     try {
@@ -313,7 +325,52 @@ export async function buildAndSubmitEntryFunctionInternal(
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
+    return buildAndSubmitInternal(
+        {
+            senderAccount: args.senderAccount,
+            buildRawTxn: (senderSequenceNumber, optionalTransactionPayloadArgs) =>
+                rawTxnObjectInternal(
+                    {
+                        ...args.payload,
+                        senderAddress: args.senderAccount.address(),
+                        senderSequenceNumber,
+                        optionalTransactionPayloadArgs,
+                    },
+                    config,
+                ),
+            optionalTransactionArgs: args.optionalTransactionArgs,
+        },
+        config,
+    );
+}
+
+/**
+ * Builds, signs and submits the transaction that `buildRawTxn` makes, for the helpers of `senderAccount`, with the
+ * sequence number, lock, gas, simulation and wait behaviour described for `buildAndSubmitEntryFunctionInternal`.
+ * `buildRawTxn` is called with the sequence number and the resolved gas settings, and again with another max gas when
+ * the estimate simulates the transaction. `onSubmission` is called with the raw transaction that is sent.
+ */
+export async function buildAndSubmitInternal(
+    args: {
+        senderAccount: SupraAccount;
+        buildRawTxn: (
+            senderSequenceNumber: bigint,
+            optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs,
+        ) => TxnBuilderTypes.RawTransaction;
+        /** Builds the transaction the max gas estimate simulates, when that is not the one that is sent. */
+        buildEstimateRawTxn?:
+            | ((
+                  senderSequenceNumber: bigint,
+                  optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs,
+              ) => TxnBuilderTypes.RawTransaction)
+            | undefined;
+        optionalTransactionArgs?: OptionalTransactionArgs | undefined;
+        onSubmission?: ((rawTxn: RawTxnJSON) => void) | undefined;
+    },
+    config: NetworkConfig,
+): Promise<SubmitTransactionResponse> {
     const senderAddress = args.senderAccount.address();
+    const buildEstimate = args.buildEstimateRawTxn;
     validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
     const callOptions = args.optionalTransactionArgs?.optionalTransactionPayloadArgs;
     // The read of the node's gas unit price estimate starts before the account's lock is requested and is awaited
@@ -334,16 +391,11 @@ export async function buildAndSubmitEntryFunctionInternal(
                     senderAccount: args.senderAccount,
                     reservation,
                     optionalTransactionPayloadArgs,
-                    buildRawTxn: (options) =>
-                        rawTxnObjectInternal(
-                            {
-                                ...args.payload,
-                                senderAddress,
-                                senderSequenceNumber,
-                                optionalTransactionPayloadArgs: options,
-                            },
-                            config,
-                        ),
+                    buildRawTxn: (options) => args.buildRawTxn(senderSequenceNumber, options),
+                    buildEstimateRawTxn:
+                        buildEstimate === undefined
+                            ? undefined
+                            : (options) => buildEstimate(senderSequenceNumber, options),
                 },
                 config,
             );
@@ -362,6 +414,7 @@ export async function buildAndSubmitEntryFunctionInternal(
                     enableTransactionWaitAndSimulationArgs:
                         args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
                     deferGasPriceRefusalMapping: true,
+                    onSubmission: args.onSubmission,
                 },
                 config,
             );

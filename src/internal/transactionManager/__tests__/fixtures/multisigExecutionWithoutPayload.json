@@ -1,0 +1,24 @@
+{
+    "schema": 1,
+    "description": "A multisig execution without a payload (the proposal stores its payload on chain), recorded from a v11.7.0 node, which reported the hash that the SDK derives for the signed transaction.",
+    "chainId": 255,
+    "signer": {
+        "seed": "f85ca1c27aede08b1009235366d7c2a9b7110e8431e05515b1b63274b17d0e41",
+        "address": "0x5b8de692bd4096e4aab9f1848743085d2bf8e00ed00d9995783ce3cfcbc9ad0b",
+        "publicKey": "c7c45c95cb4a1b6125f10710aab48745bcb01e8a63f4bf568b745e4de73d77d9"
+    },
+    "multisigAddress": "0x33178a34485d6fb01ac6cfbb7bd366685502416631ecc578d0341e7335959b8a",
+    "raw": {
+        "sequenceNumber": "2",
+        "maxGasAmount": "20000",
+        "gasUnitPrice": "100000",
+        "expirationTimestampSecs": "1792560756"
+    },
+    "expected": {
+        "rawTransactionBcs": "5b8de692bd4096e4aab9f1848743085d2bf8e00ed00d9995783ce3cfcbc9ad0b02000000000000000333178a34485d6fb01ac6cfbb7bd366685502416631ecc578d0341e7335959b8a00204e000000000000a086010000000000744ed86a00000000ff",
+        "signature": "c3a40bab26ce3b5f00c5d0cdc7fc5c0ae5eb832c1daf7a4a30086ee4a53dc482cf8954ea853d81543a65ca912c5535af7595b96c32ff2e03ae16ca6e494f1d04",
+        "signedTransactionBcs": "5b8de692bd4096e4aab9f1848743085d2bf8e00ed00d9995783ce3cfcbc9ad0b02000000000000000333178a34485d6fb01ac6cfbb7bd366685502416631ecc578d0341e7335959b8a00204e000000000000a086010000000000744ed86a00000000ff0020c7c45c95cb4a1b6125f10710aab48745bcb01e8a63f4bf568b745e4de73d77d940c3a40bab26ce3b5f00c5d0cdc7fc5c0ae5eb832c1daf7a4a30086ee4a53dc482cf8954ea853d81543a65ca912c5535af7595b96c32ff2e03ae16ca6e494f1d04",
+        "transactionHash": "0x6377030c24478bc6dde5ad225141d4eaa61835ef22b8274f2c8d6365fb009046"
+    },
+    "nodes": ["http://localhost:37001"]
+}
