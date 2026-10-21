@@ -19,6 +19,7 @@ import { Coin } from "./coin";
 import { Events } from "./events";
 import { Block } from "./block";
 import { FungibleAsset } from "./fungibleAsset";
+import { Multisig } from "./multisig";
 import { validateMaxGasEstimateMultiplier } from "../internal/transactionManager/maxGas";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
 import { validateRpcUrl } from "../client/url";
@@ -94,6 +95,11 @@ export class SupraClient {
      * FungibleAsset instance provides methods for interacting with fungible asset related operations on the Supra network.
      */
     readonly fungibleAsset: FungibleAsset;
+
+    /**
+     * Multisig instance provides methods for the lifecycle of multisig accounts on the Supra network.
+     */
+    readonly multisig: Multisig;
 
     /**
      * The constructor function takes a SupraConfig object as a parameter and assigns it to the config property.
@@ -208,6 +214,7 @@ export class SupraClient {
         this.events = new Events(this.networkInformation);
         this.block = new Block(this.networkInformation);
         this.fungibleAsset = new FungibleAsset(this.networkInformation);
+        this.multisig = new Multisig(this.networkInformation);
     }
 
     /**
@@ -387,7 +394,8 @@ export interface SupraClient
         Coin,
         Events,
         Block,
-        FungibleAsset {}
+        FungibleAsset,
+        Multisig {}
 
 /**
  * Members of `Transaction` that are instance properties: `build`, `simulate` and `submit` are reached through
@@ -411,4 +419,16 @@ function applyMixins(derivedCtor: any, constructors: any[]) {
     });
 }
 
-applyMixins(SupraClient, [Account, Transaction, Contract, Methods, Faucet, Table, Coin, Events, Block, FungibleAsset]);
+applyMixins(SupraClient, [
+    Account,
+    Transaction,
+    Contract,
+    Methods,
+    Faucet,
+    Table,
+    Coin,
+    Events,
+    Block,
+    FungibleAsset,
+    Multisig,
+]);

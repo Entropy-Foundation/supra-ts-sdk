@@ -62,6 +62,17 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     transferSupraFungibleAsset: true,
     transferFungibleAsset: true,
     migrateCoinToFungibleStore: true,
+    multisig: true,
+    createMultisigAccount: true,
+    proposeMultisigTransaction: true,
+    proposeMultisigTransactionWithHash: true,
+    approveMultisigTransaction: true,
+    rejectMultisigTransaction: true,
+    executeMultisigTransaction: true,
+    executeRejectedMultisigTransaction: true,
+    getMultisigSequenceNumbers: true,
+    getMultisigProposal: true,
+    getNextMultisigProposal: true,
 };
 
 /** `build`, `simulate` and `submit` are members of `supra.transaction`, not of the client. */

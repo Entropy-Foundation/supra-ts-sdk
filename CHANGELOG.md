@@ -186,6 +186,22 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - [`RELEASING.md`](./RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
 - The types that public signatures reference are exported: `ExtendedRawTransaction` (returned by the `Build` methods),
   `FixedPointType` and `MoveToTSOther` (used by `MoveToTS`).
+- **Multisig helpers** on `supra.multisig` and the client: `createMultisigAccount` (`create_with_owners`; returns
+  `{ multisigAddress, transaction }`, the address derived from the sender and the creating transaction's sequence
+  number), `proposeMultisigTransaction` (`create_transaction`, payload stored on chain),
+  `proposeMultisigTransactionWithHash` (`create_transaction_with_hash`), `approveMultisigTransaction`,
+  `rejectMultisigTransaction`, `executeMultisigTransaction`, `executeRejectedMultisigTransaction`, and the reads
+  `getMultisigSequenceNumbers`, `getMultisigProposal` and `getNextMultisigProposal`. They use the client's sequence
+  numbers, chain ID check, estimated max gas and hash derivation. `executeMultisigTransaction` reads the next proposal
+  and sends no payload when the proposal stores it, or the call's `payload` when only its hash is stored; it throws
+  `SupraMultisigPayloadError` before submitting when a needed payload is missing or does not match, and
+  `SupraMultisigNoProposalError` when the queue is empty. The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an
+  execution without a payload (`MISSING_DATA`), so the max gas estimate simulates it with the stored payload carried,
+  and `enableTransactionSimulation` on such an execution throws `SupraSimulationFailedError`.
+  `deriveMultisigAccountAddress`, the types `MultisigProposal`,
+  `MultisigVote`, `MultisigSequenceNumbers`, `MultisigEntryFunctionPayload`, `CreateMultisigAccountResponse` and
+  `MultisigExecutionPayloadArgs`, and the constants `DEFAULT_MULTISIG_TIMEOUT_DURATION_SECS` (seven days) and
+  `MIN_MULTISIG_TIMEOUT_DURATION_SECS` are exported.
 
 ### Changed
 
@@ -419,6 +435,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 ### Fixed
 
+- `transaction.build.multisigRawTxnObject` builds the execution of a proposal whose payload is stored on chain
+  (`create_transaction`) when `function`, `functionTypeArgs` and `functionArgs` are left out. The payload JSON of the
+  submission carries no `transaction_payload` then; it threw `Multisig payload is missing`. The derived transaction
+  hash is the node's for this kind of transaction.
 - A submission that the node accepts with a 2xx status whose body is not a transaction hash (a body that is not JSON,
   an empty body, or a value that is not a hash) is handled as an accepted submission with the hash derived from the
   signed transaction: the wait or the read-back uses that hash. A body that was not JSON threw a `SupraAPIError` with

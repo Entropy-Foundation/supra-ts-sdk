@@ -308,6 +308,35 @@ const assetTransfer = await supra.fungibleAsset.transferFungibleAsset({
 
 ---
 
+## Multisig Module
+
+`supra.multisig` covers the lifecycle of a multisig account. The methods that send a transaction take `senderAccount` and `optionalTransactionArgs` and behave like the other helpers (client sequence numbers, chain ID check, estimated max gas). `createMultisigAccount` returns `{ multisigAddress, transaction }`; the address is derived from the sender and the creating transaction's sequence number (`deriveMultisigAccountAddress`). `proposeMultisigTransaction` stores the payload on chain, `proposeMultisigTransactionWithHash` stores only its SHA3-256 hash. `executeMultisigTransaction` reads the next proposal and sends no payload when the proposal stores one, or the call's `payload` when only a hash is stored; it throws `SupraMultisigPayloadError` before submitting when a needed payload is missing or does not match, and `SupraMultisigNoProposalError` when the queue is empty. `transaction.build.multisigRawTxnObject` without `function`, `functionTypeArgs` and `functionArgs` builds an execution without a payload.
+
+```typescript
+const { multisigAddress } = await supra.multisig.createMultisigAccount({
+    senderAccount: account,
+    additionalOwners: ["0x2"],
+    signaturesRequired: 2,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+await supra.multisig.proposeMultisigTransaction({
+    senderAccount: account,
+    multisigAddress,
+    payload: { function: "0x1::supra_account::transfer", functionArgs: ["0x3", 1000n] },
+});
+
+const { lastResolved, next } = await supra.multisig.getMultisigSequenceNumbers({ multisigAddress });
+const proposal = await supra.multisig.getNextMultisigProposal({ multisigAddress }); // with its votes
+
+await supra.multisig.approveMultisigTransaction({ senderAccount: account, multisigAddress, sequenceNumber: next - 1n });
+await supra.multisig.rejectMultisigTransaction({ senderAccount: account, multisigAddress, sequenceNumber: next - 1n });
+await supra.multisig.executeMultisigTransaction({ senderAccount: account, multisigAddress });
+await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: account, multisigAddress });
+```
+
+---
+
 ## View Functions (Read-Only Contract Calls)
 
 Two approaches: typed `view` and untyped `viewRaw`.

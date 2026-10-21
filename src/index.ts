@@ -6,6 +6,7 @@ export * from "./api/events";
 export * from "./api/faucet";
 export * from "./api/fungibleAsset";
 export * from "./api/methods";
+export * from "./api/multisig";
 export * from "./api/supraClient";
 export * from "./api/table";
 export * from "./api/transaction";
@@ -26,6 +27,7 @@ export * from "./types/faucet";
 export * from "./types/fungibleAsset";
 export * from "./types/methods";
 export * from "./types/move";
+export * from "./types/multisig";
 export * from "./types/supraClient";
 export * from "./types/table";
 export * from "./types/transaction";
@@ -40,12 +42,14 @@ export * from "./errors/transactionError";
 export * from "./errors/chainIdError";
 export * from "./errors/fungibleAssetError";
 export * from "./errors/moveVmErrors";
+export * from "./errors/multisigError";
 export { parseVmStatus, type ParsedVmStatus } from "./errors/vmStatus";
 
 //function
 export { standardizeAddress } from "./helper/account";
 export { addAddressPadding, getFunctionParts } from "./helper/general";
 export { parseTypeArgument } from "./helper/typeTag";
+export { deriveMultisigAccountAddress } from "./helper/multisig";
 export { stringifyWithBigInt } from "./utils/json";
 
 //constants
