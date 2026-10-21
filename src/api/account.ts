@@ -239,11 +239,12 @@ export class Account {
      * @param args.options.start - The sequence number to start from, inclusive in both orders, or the `cursor` of
      * the previous page. Omit it for the most recent transactions (descending) or the first ones (ascending).
      * @param args.options.ascending - Whether to return the transactions in ascending order.
-     * @note Maximum number of items to return default is 20 and maximum is 100.
-     * @note The node pages this feed by sequence number and sends no `x-supra-cursor` header. The SDK computes
-     * `cursor` as the sequence number after the last transaction of the page in the requested order, so it is
-     * passed back as `start` like the cursor of the other feeds. It is `undefined` when the page is empty, or ends
-     * at sequence number 0 in descending order.
+     * @remarks
+     * - `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
+     * - The node pages this feed by sequence number and sends no `x-supra-cursor` header. The SDK computes
+     *   `cursor` as the sequence number after the last transaction of the page in the requested order, so it is
+     *   passed back as `start` like the cursor of the other feeds. It is `undefined` when the page is empty, or ends
+     *   at sequence number 0 in descending order.
      * @returns A Promise that resolves to an array of TransactionResponse objects representing the transactions of the account with optional cursor.
      * The items are user transactions.
      * @example
@@ -284,7 +285,7 @@ export class Account {
      * @param args.options.ascending - Whether to return the transactions in ascending order.
      * @param args.options.type - Return only transactions of this type. `"settlement"` requires a node from v12
      * onwards; older nodes reject it with HTTP 400. A page filtered by type can be empty and still carry a cursor.
-     * @note Maximum number of items to return default is 20 and maximum is 100.
+     * @remarks `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
      * @returns A Promise that resolves to an array of TransactionResponse objects representing the coin transactions of the account with optional cursor.
      * Items can be of any `txn_type`, including `settlement` items, which have no `header`, `payload` or
      * `authenticator`; narrow on `txn_type` before reading them. `cursor` is `undefined` when there are no more
@@ -325,14 +326,15 @@ export class Account {
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.count - The number of transactions to return.
      * @param args.options.block_height - Starting block height (inclusive). Optional.
-     *  The block height at which to start lookup for transactions. If provided, returns :count of transactions starting from it in the specified order. For order see :ascending flag.
-     * @note If a :cursor is specified then this field will be ignored.
+     *  The block height at which to start lookup for transactions. If provided, returns `options.count` transactions starting from it in the order set by `options.ascending`.
      * @param args.options.cursor - The `cursor` of the previous page, exclusive. Omit it, or pass `undefined`, for the first page.
-     * If provided, returns :count of transactions starting from this cursor in the specified order. For order see :ascending flag.
-     * If not specified, the lookup will be done based on the :block_height parameter value.
-     * @note If both :cursor and :block_height are specified then :cursor has precedence.
+     * If provided, returns `options.count` transactions after this cursor in the order set by `options.ascending`.
+     * If not specified, the lookup starts at `options.block_height` when it is given.
      * @param args.options.ascending - Whether to return the transactions in ascending order.
-     * @note Maximum number of items to return default is 20 and maximum is 100.
+     * @remarks
+     * - `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
+     * - `options.block_height` is ignored when `options.cursor` is given: if both are given, `options.cursor` has
+     *   precedence.
      * @returns A Promise that resolves to an array of AutoTransactionResponse objects representing the auto transactions of the account with optional cursor.
      * `cursor` is `undefined` when there are no more transactions; see {@link PaginatedResponse}.
      * @example

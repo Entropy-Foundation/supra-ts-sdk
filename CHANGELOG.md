@@ -184,6 +184,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   API versions it calls. A unit test checks that its latest release is the version in `package.json`. The package
   ships it, readable as `supra-ts-sdk/compatibility.json`.
 - [`RELEASING.md`](./RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
+- The types that public signatures reference are exported: `ExtendedRawTransaction` (returned by the `Build` methods),
+  `FixedPointType` and `MoveToTSOther` (used by `MoveToTS`).
 
 ### Changed
 

@@ -98,7 +98,7 @@ export class SupraClient {
     /**
      * The constructor function takes a SupraConfig object as a parameter and assigns it to the config property.
      * @param config - A SupraConfig object that contains information about the network on which the Supra client is running.
-     * @note - A predefined network (`Network.MAINNET`, `Network.TESTNET` or `Network.DEVNET`) sets the RPC URL and the
+     * @remarks A predefined network (`Network.MAINNET`, `Network.TESTNET` or `Network.DEVNET`) sets the RPC URL and the
      * chain ID; any other node needs both `rpcUrl` and `chainId`.
      * @throws {RangeError} When `chainId` is not an integer from 0 to 255.
      * @throws {TypeError} When `rpcUrl` is not an absolute `http:` or `https:` URL, or `verifyChainId` is not a boolean.

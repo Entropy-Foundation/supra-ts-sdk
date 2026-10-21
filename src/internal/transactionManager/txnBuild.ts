@@ -579,6 +579,10 @@ export function multisigProposalTxRawTxnObjectInternal(
     );
 }
 
+/**
+ * A `RawTransaction` bound to the client's network configuration. The `Build` methods return it; it serializes the
+ * transaction and signs it, which checks the chain ID first.
+ */
 export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     constructor(
         private config: NetworkConfig, // pass whatever you need
@@ -605,7 +609,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
 
     /**
      * Create a signed transaction
-     * @param args.senderAccount - Sender KeyPair
+     * @param senderAccount - Sender KeyPair
      * @returns `SignedTransaction`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
@@ -622,7 +626,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
 
     /**
      * Create a send transaction payload
-     * @param args.senderAccount - Sender KeyPair
+     * @param senderAccount - Sender KeyPair
      * @returns `SendTxnPayload`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
@@ -639,7 +643,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
 
     /**
      * Simulate the transaction
-     * @param args.senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
+     * @param senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
      * @returns `TransactionResponse` of the simulation, whose status is `Success`
      * @throws `SupraSimulationFailedError` when the simulated status is not `Success`
      * @throws `SupraGasUnitPriceBelowMinimumError` instead when the status is `Invalid` because the gas unit price is
