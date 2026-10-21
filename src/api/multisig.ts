@@ -342,9 +342,9 @@ export class Multisig {
      * proposal that stores only a hash.
      *
      * The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an execution without a payload (they report
-     * `MISSING_DATA`). The max gas estimate therefore simulates the execution with the stored payload carried, and the
-     * sent transaction carries none; `enableTransactionSimulation` simulates the sent transaction and throws
-     * `SupraSimulationFailedError` for it.
+     * `MISSING_DATA`). The max gas estimate and `enableTransactionSimulation` therefore simulate the execution with the
+     * stored payload carried, and the sent transaction, its signature and its hash are those of the execution without
+     * a payload.
      * @param args.senderAccount - An owner of the multisig account.
      * @param args.multisigAddress - The address of the multisig account.
      * @param args.payload - The entry function of the proposal. Required for a proposal that stores only a hash;

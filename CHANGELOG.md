@@ -196,8 +196,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   and sends no payload when the proposal stores it, or the call's `payload` when only its hash is stored; it throws
   `SupraMultisigPayloadError` before submitting when a needed payload is missing or does not match, and
   `SupraMultisigNoProposalError` when the queue is empty. The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an
-  execution without a payload (`MISSING_DATA`), so the max gas estimate simulates it with the stored payload carried,
-  and `enableTransactionSimulation` on such an execution throws `SupraSimulationFailedError`.
+  execution without a payload (`MISSING_DATA`), so the max gas estimate and
+  `enableTransactionSimulation` simulate it with the stored payload carried, while the transaction that is sent
+  carries none.
   `deriveMultisigAccountAddress`, the types `MultisigProposal`,
   `MultisigVote`, `MultisigSequenceNumbers`, `MultisigEntryFunctionPayload`, `CreateMultisigAccountResponse` and
   `MultisigExecutionPayloadArgs`, and the constants `DEFAULT_MULTISIG_TIMEOUT_DURATION_SECS` (seven days) and

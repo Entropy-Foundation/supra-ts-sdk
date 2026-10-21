@@ -45,6 +45,16 @@ import {
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
 
+const simulationForms = new WeakMap<SendTxnPayload, SendTxnPayload>();
+
+/**
+ * Records `form` as the transaction that the simulation before the submission of `payload` simulates, for a transaction
+ * that the node simulates only in another form than the one that is sent. `payload` is what is submitted.
+ */
+export function bindSimulationForm(payload: SendTxnPayload, form: SendTxnPayload): void {
+    simulationForms.set(payload, form);
+}
+
 /**
  * Validates the options of a submission. The helpers that reserve a sequence number call it before reserving, so
  * that an invalid option does not use a number.
@@ -74,14 +84,15 @@ async function simulateBeforeSubmission(
 ): Promise<SendTxnPayload> {
     let current = payload;
     for (let checks = 0; ; checks += 1) {
+        // The transaction that is simulated: the one that is sent, or its recorded simulation form.
+        const signed = simulationForms.get(current) ?? current;
         try {
-            await simulateUnmappedTxnInternal({ sendTxPayload: current }, config);
+            await simulateUnmappedTxnInternal({ sendTxPayload: signed }, config);
             return current;
         } catch (error) {
             if (!isSequenceNumberTooNew(error) || checks >= MAX_TOO_NEW_CHECKS) {
                 throw error;
             }
-            const signed = current;
             const rawTxn = signed.Move.raw_txn;
             let address: string;
             try {
@@ -399,13 +410,30 @@ export async function buildAndSubmitInternal(
                 },
                 config,
             );
-            const sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
+            // The payload that is sent, with the simulation form of the transaction when it has one.
+            const signWithSimulationForm = async (signedRawTxn: TxnBuilderTypes.RawTransaction) => {
+                const payload = await sendTxnPayloadInternal(
+                    { senderAccount: args.senderAccount, rawTxn: signedRawTxn },
+                    config,
+                );
+                if (buildEstimate !== undefined) {
+                    const form = buildEstimate(signedRawTxn.sequence_number, {
+                        ...optionalTransactionPayloadArgs,
+                        maxGas: signedRawTxn.max_gas_amount,
+                        gasUnitPrice: signedRawTxn.gas_unit_price,
+                        txExpiryTime: signedRawTxn.expiration_timestamp_secs,
+                    });
+                    bindSimulationForm(
+                        payload,
+                        await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: form }, config),
+                    );
+                }
+                return payload;
+            };
+            const sendTxPayload = await signWithSimulationForm(rawTxn);
             if (reservation !== undefined) {
                 bindReservation(sendTxPayload, reservation, (sequenceNumber) =>
-                    sendTxnPayloadInternal(
-                        { senderAccount: args.senderAccount, rawTxn: withSequenceNumber(rawTxn, sequenceNumber) },
-                        config,
-                    ),
+                    signWithSimulationForm(withSequenceNumber(rawTxn, sequenceNumber)),
                 );
             }
             return await submitTxnInternal(

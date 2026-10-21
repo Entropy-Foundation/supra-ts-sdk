@@ -2,7 +2,6 @@ import type { MultisigEntryFunctionPayload, SubmitTransactionResponse, SupraAcco
 import {
     SupraMultisigNoProposalError,
     SupraMultisigPayloadError,
-    SupraSimulationFailedError,
     SupraSubmissionOutcomeUnknownError,
     TransactionStatus,
     deriveMultisigAccountAddress,
@@ -385,28 +384,27 @@ describeE2E("multisig helpers", () => {
         expect(maxGas).toBeGreaterThanOrEqual(gasUsed);
     });
 
-    test("enableTransactionSimulation on an execution without a payload throws a simulation failure", async () => {
+    test.each([
+        ["with a max gas", { maxGas: 20_000n }],
+        ["with the estimated max gas", {}],
+    ])("enableTransactionSimulation simulates an execution without a payload and submits it %s", async (_name, gas) => {
         const multisigAddress = await approvedStoredProposal(98n);
-        const options = {
-            optionalTransactionPayloadArgs: { maxGas: 20_000n },
-            enableTransactionWaitAndSimulationArgs: { ...WAIT, enableTransactionSimulation: true },
-        };
-        const execute = () =>
-            ctx.supra.multisig.executeMultisigTransaction({
-                senderAccount: first,
-                multisigAddress,
-                optionalTransactionArgs: options,
-            });
 
         // The nodes of v11.7.0 and v12.0.0.rc6 do not simulate a multisig execution that carries no payload
-        // (`MISSING_DATA`); the transaction is not submitted, so the call can be repeated without the simulation.
-        await expect(execute()).rejects.toBeInstanceOf(SupraSimulationFailedError);
+        // (`MISSING_DATA`); the SDK simulates the form with the stored payload and sends the form without it.
         const executed = await ctx.supra.multisig.executeMultisigTransaction({
             senderAccount: first,
             multisigAddress,
-            optionalTransactionArgs: WAIT_ARGS,
+            optionalTransactionArgs: {
+                optionalTransactionPayloadArgs: gas,
+                enableTransactionWaitAndSimulationArgs: { ...WAIT, enableTransactionSimulation: true },
+            },
         });
+
         expect(executed.status).toBe(TransactionStatus.Success);
+        const payload = (committed(executed).payload as { Move: Record<string, unknown> }).Move;
+        expect(payload["type"]).toBe("multisig_payload");
+        expect(payload["transaction_payload"]).toBeUndefined();
     });
 
     test("the hash derived for an execution without a payload is the hash the node gives it", async () => {

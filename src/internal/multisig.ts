@@ -289,8 +289,8 @@ export async function executeMultisigTransactionInternal(
                     config,
                 ),
             // The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an execution without a payload (`MISSING_DATA`), so the max gas
-            // estimate simulates the execution with the stored payload, which the node accepts as it is the stored
-            // one.
+            // estimate and the simulation before submission simulate the execution with the stored payload, which the
+            // node accepts as it is the stored one.
             buildEstimateRawTxn:
                 storedPayload === undefined
                     ? undefined
