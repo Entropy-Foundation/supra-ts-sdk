@@ -18,6 +18,8 @@ It provides strongly-typed helpers for:
 - Calling view / entry functions on Move modules
 - Working with Move structs and ABIs
 
+The [API reference](https://entropy-foundation.github.io/supra-ts-sdk/) documents every exported class, function and type of the latest release.
+
 
 ## ✨ Features
 
@@ -52,12 +54,12 @@ pnpm add supra-ts-sdk@devnet
 ```
 
 A tag moves to a new version when the node release that version supports reaches the tag's network.
-[RELEASING.md](./RELEASING.md) describes the versioning policy and the release process.
+[RELEASING.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/RELEASING.md) describes the versioning policy and the release process.
 
 ### Compatibility
 
 2.0.0 supports Supra node v11.7.0 (Mainnet and Testnet) and the v12.0.0 release candidates (Devnet).
-[`compatibility.json`](./compatibility.json) states, for each SDK release, the node releases it supports and the RPC
+[`compatibility.json`](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/compatibility.json) states, for each SDK release, the node releases it supports and the RPC
 API versions it calls. The package ships it, so an application can read it as `supra-ts-sdk/compatibility.json`:
 
 ```json
@@ -88,8 +90,8 @@ Node releases are written `v<major>.<minor>.<patch>`, with `-rc<N>` for a releas
 
 ### Upgrading from 1.x
 
-[MIGRATION.md](./MIGRATION.md) lists every breaking change from 1.2.0 to 2.0.0 and the code to change.
-[CHANGELOG.md](./CHANGELOG.md) lists every change of each release.
+[MIGRATION.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/MIGRATION.md) lists every breaking change from 1.2.0 to 2.0.0 and the code to change.
+[CHANGELOG.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/CHANGELOG.md) lists every change of each release.
 
 ## Requirements
 
@@ -128,7 +130,7 @@ console.log(`Transfer ${transfer.hash}: ${transfer.status}`);
 
 The helper estimates the max gas, takes the sequence number from the client's counter and checks the chain ID of the
 node before it signs. On a network without a faucet, use an account that holds SUPRA, for example one made with
-`SupraAccount.fromSupraAccountObject`. The [examples](./examples/README.md) run against Devnet, Testnet and localnets.
+`SupraAccount.fromSupraAccountObject`. The [examples](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/README.md) run against Devnet, Testnet and localnets.
 
 ### Querying Accounts
 
@@ -606,7 +608,7 @@ console.log(rate.value); // 6442450944n
 
 Every example runs against Devnet, Testnet or a localnet given `SUPRA_NETWORK` (or `SUPRA_RPC_URL` and
 `SUPRA_CHAIN_ID`) and, for the examples that send transactions, `SUPRA_PRIVATE_KEY` or `SUPRA_EXAMPLES_FUND=1`.
-[`examples/README.md`](./examples/README.md) lists what each one needs. From a clone of this repository:
+[`examples/README.md`](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/README.md) lists what each one needs. From a clone of this repository:
 
 ```bash
 SUPRA_NETWORK=devnet SUPRA_EXAMPLES_FUND=1 pnpm examples
@@ -646,14 +648,14 @@ Please:
 
 ### Releasing
 
-[RELEASING.md](./RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
-[`compatibility.json`](./compatibility.json) and [CHANGELOG.md](./CHANGELOG.md) are updated with every release.
+[RELEASING.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
+[`compatibility.json`](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/compatibility.json) and [CHANGELOG.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/CHANGELOG.md) are updated with every release.
 
 
 ## 📄 License
 
 MIT License
 
-See the [LICENSE](./LICENSE) file for full details.
+See the [LICENSE](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/LICENSE) file for full details.
 
 Built with ❤️ for the Supra ecosystem. Happy coding! 🚀
