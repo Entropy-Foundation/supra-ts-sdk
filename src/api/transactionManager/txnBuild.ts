@@ -1,6 +1,7 @@
 import { SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type {
+    AutomationTaskType,
     MultisigExecutionPayloadArgs,
     OptionalTransactionPayloadArgs,
     SendTxnPayload,
@@ -210,16 +211,33 @@ export class Build {
 
     /**
      * Create raw transaction object for `automation_registration_payload` type txn
+     *
+     * The registration parameters are version 2 when `automationTaskType` or `automationPriority` is given, and
+     * version 1 otherwise. Nodes of the v11.7.0 and v12 lines accept both versions. A version 1 registration and a
+     * version 2 registration of task type `User` without a priority register the same task; the node records the
+     * version in the transaction's payload.
+     *
+     * The node registers the task with `0x1::automation_registry`, which emits an
+     * `0x1::automation_registry::AutomationTaskMetaData` event whose `task_index` is the index that
+     * `Automation.cancelAutomationTask` and `Automation.stopAutomationTasks` take.
      * @param args.senderAddress - Sender account address
      * @param args.senderSequenceNumber - Sender account sequence number
      * @param args.function - Target function name as MoveFunctionId
      * @param args.functionTypeArgs - Target function type args
      * @param args.functionArgs - Target function args
      * @param args.automationMaxGasAmount - Max gas amount for automated transaction
-     * @param args.automationGasPriceCap - Gas unit price upper limit that user is willing to pay
+     * @param args.automationGasPriceCap - Gas unit price upper limit that user is willing to pay. The node refuses a
+     * registration whose cap is below its minimum gas unit price.
      * @param args.automationFeeCapForEpoch - Maximum automation fee that user is willing to pay for epoch.
      * @param args.automationExpirationTimestampSecs - Expiration time of the automated transaction in seconds since UTC Epoch start.
-     * @param args.automationAuxData - Reserved for future extensions of registration parameters.
+     * @param args.automationAuxData - Reserved for future extensions of registration parameters. Where the node adds
+     * the task type and the priority to the auxiliary data (feature `SUPRA_AUTOMATION_V2`, enabled on Mainnet, Testnet
+     * and Devnet), the registry accepts only an empty list.
+     * @param args.automationTaskType - Task type of a version 2 registration: `"User"` (the default when only
+     * `automationPriority` is given) or `"System"`. Only an account that the Supra framework has authorised to
+     * register system tasks can register a `"System"` task; the registration of any other account aborts.
+     * @param args.automationPriority - Priority of a version 2 registration, a `u64`. Without a priority the registry
+     * assigns the task's index.
      * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
      * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
@@ -227,6 +245,8 @@ export class Build {
      * cannot read the node's gas unit price estimate: without a `gasUnitPrice` on the call or the client it throws a
      * `RangeError`; `supra.getEstimatedGasUnitPrice()` returns the estimate.
      * @returns Raw transaction object
+     * @throws `RangeError` before building when `automationTaskType` is not `"User"` or `"System"`, or
+     * `automationPriority` is not a `bigint` from 0 to 2^64 - 1
      * @example
      * ```typescript
      * import { BCS, MILLISECONDS_PER_SECOND, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
@@ -236,22 +256,30 @@ export class Build {
      * const receiverAddress = new SupraAccount().address();
      *
      * async function runExample() {
+     *     const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
      *
-     *     const supraCoinTransferAutomationSerializedRawTransaction = supra.transaction.build.automationRegistrationRawTxnObject({
+     *     // Version 2 registration of a user task with priority 10
+     *     const registration = supra.transaction.build.automationRegistrationRawTxnObject({
      *         senderAddress: account.address(),
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
      *         function: "0x1::supra_account::transfer",
      *         functionTypeArgs: [],
      *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
-     *         automationMaxGasAmount: BigInt(500),
-     *         automationGasPriceCap: BigInt(100),
-     *         automationFeeCapForEpoch: BigInt(1000000000),
-     *         automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 2 * 60 * 60),
+     *         automationMaxGasAmount: 500n,
+     *         automationGasPriceCap: 2n * gasUnitPrice,
+     *         automationFeeCapForEpoch: 1_000_000_000n,
+     *         automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 60 * 60),
      *         automationAuxData: [],
-     *         optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
-     *     }).toBytes();
+     *         automationTaskType: "User",
+     *         automationPriority: 10n,
+     *         optionalTransactionPayloadArgs: { gasUnitPrice },
+     *     });
      *
-     *     console.log(supraCoinTransferAutomationSerializedRawTransaction);
+     *     const response = await registration.submitTransaction({
+     *         senderAccount: account,
+     *         enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+     *     });
+     *     console.log(response.hash, response.status);
      * }
      *
      * runExample().catch(console.error);
@@ -270,6 +298,8 @@ export class Build {
         automationFeeCapForEpoch: bigint;
         automationExpirationTimestampSecs: bigint;
         automationAuxData: Uint8Array[];
+        automationTaskType?: AutomationTaskType;
+        automationPriority?: bigint;
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     }): ExtendedRawTransaction {
         return extendedRawTransaction(

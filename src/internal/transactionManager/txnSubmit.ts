@@ -1,4 +1,4 @@
-import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
+import { HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
 import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
@@ -44,6 +44,7 @@ import {
 } from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
+import { deserializeRawTransaction } from "./automationRegistration";
 
 const simulationForms = new WeakMap<SendTxnPayload, SendTxnPayload>();
 
@@ -463,7 +464,7 @@ export async function submitSerializedRawTransactionInternal(
     let sendTxPayload = await sendTxnPayloadInternal(
         {
             senderAccount: args.senderAccount,
-            rawTxn: TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction)),
+            rawTxn: deserializeRawTransaction(args.serializedRawTransaction),
         },
         config,
     );
@@ -488,7 +489,7 @@ export async function submitSerializedRawTransactionAndSignatureInternal(
 ): Promise<SubmitTransactionResponse> {
     const publicKey = hexBytesOf(args.senderPubkey, "senderPubkey");
     const signature = hexBytesOf(args.signature, "signature");
-    const rawTxn = TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction));
+    const rawTxn = deserializeRawTransaction(args.serializedRawTransaction);
     const sendTxPayload = withTransactionHash(
         {
             Move: {

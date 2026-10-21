@@ -1,4 +1,5 @@
 export * from "./api/account";
+export * from "./api/automation";
 export * from "./api/block";
 export * from "./api/coin";
 export * from "./api/contract";

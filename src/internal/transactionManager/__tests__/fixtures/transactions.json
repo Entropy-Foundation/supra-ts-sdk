@@ -8,7 +8,13 @@
             "node": "commit 156ff94cc719e857ca5af2305589bf095570ad3b",
             "crossCheckedAgainst": "commit 35b11ce415dabd91da8a12e430efbaea9e54dca4",
             "chainId": 255,
-            "cases": ["module_publish", "multisig_create_transaction", "multisig_create_transaction_with_hash"]
+            "cases": [
+                "module_publish",
+                "multisig_create_transaction",
+                "multisig_create_transaction_with_hash",
+                "automation_registration_v2_priority",
+                "automation_registration_v2_no_priority"
+            ]
         }
     },
     "cases": [
@@ -496,6 +502,114 @@
                 ],
                 "signedTransactionBcs": "e106cac8a9a680ee09547d32814f17bf9a623c3f26d9433ceda090cf0a2b0bbb0100000000000000020000000000000000000000000000000000000000000000000000000000000001106d756c74697369675f6163636f756e741c6372656174655f7472616e73616374696f6e5f776974685f68617368000220f546f0cfc89cad14ab8937feb5773fa070ac2e272a818a96dab837744429dc132120d3ed47806e5d0594b93bfc4bb215cb781c35f8eaf76c7d7936f891f4103fd90a204e000000000000a086010000000000f268d76a00000000ff00206e187b48b1174a648fec8eeb042cf113d81c61766b7925c240ffaf276280b9a040f7802a86df5fb4953a4058bc9b436affe97f7557ff9816f981520d3fa0af1875ce3c9d7d286f8b53a151f5d0affa75e6d973627ed105a56fe02e8737a8ff0007",
                 "transactionHash": "cb0f1c4320502f1832381d47f82063e64a3e03aac0d7b443881afe12e64e9570"
+            },
+            "provenance": {
+                "inputs": "specification",
+                "rawTransactionBcs": "specification",
+                "signingMessage": "specification",
+                "signatures": "node-verified",
+                "signedTransactionBcs": "specification",
+                "transactionHash": "node"
+            }
+        },
+        {
+            "name": "automation_registration_v2_priority",
+            "description": "The registration of a user automation task with version 2 parameters and priority 7.",
+            "authenticator": "ed25519",
+            "chainId": 255,
+            "signers": [
+                {
+                    "role": "sender",
+                    "seed": "67d9515824acff3e7e6f4bdf7ef36291a19a8378a422f0281474da7a1d06e834",
+                    "address": "0x4f8c00e808d180387928821ebc2de35be24cb58f9c37a5064948b3b9543f9cfd",
+                    "publicKey": "d94e3f272f2600af530d6415ce08c0d9136fd191e5e00ea6237248250077855e"
+                }
+            ],
+            "raw": {
+                "sender": "0x4f8c00e808d180387928821ebc2de35be24cb58f9c37a5064948b3b9543f9cfd",
+                "sequenceNumber": "0",
+                "maxGasAmount": "20000",
+                "gasUnitPrice": "100000",
+                "expirationTimestampSecs": "1792559248",
+                "payload": {
+                    "type": "automation_registration",
+                    "function": "0x1::supra_account::transfer",
+                    "typeArguments": [],
+                    "arguments": [
+                        "ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a",
+                        "e803000000000000"
+                    ],
+                    "maxGasAmount": "500",
+                    "gasPriceCap": "200000",
+                    "feeCapForEpoch": "1000000000",
+                    "expirationTimestampSecs": "1792562308",
+                    "auxData": [],
+                    "taskType": "User",
+                    "priority": "7"
+                }
+            },
+            "expected": {
+                "rawTransactionBcs": "4f8c00e808d180387928821ebc2de35be24cb58f9c37a5064948b3b9543f9cfd0000000000000000040100000000000000000000000000000000000000000000000000000000000000010d73757072615f6163636f756e74087472616e73666572000220ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a08e803000000000000f401000000000000400d03000000000000ca9a3b000000008454d86a000000000000010700000000000000204e000000000000a0860100000000009048d86a00000000ff",
+                "signingMessage": "88d16ed1aba6d77d521aafada6d6e92d7a174527adb457adfa66a9c5a0f1fe374f8c00e808d180387928821ebc2de35be24cb58f9c37a5064948b3b9543f9cfd0000000000000000040100000000000000000000000000000000000000000000000000000000000000010d73757072615f6163636f756e74087472616e73666572000220ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a08e803000000000000f401000000000000400d03000000000000ca9a3b000000008454d86a000000000000010700000000000000204e000000000000a0860100000000009048d86a00000000ff",
+                "signatures": [
+                    "f24dd286b017e1795cb4fe2efb78c8f5f697defeab7e38d14d219e911c598f078818342bbe13e77756a10ff1def2135dac1f4e49821338be04bb687d91b78704"
+                ],
+                "signedTransactionBcs": "4f8c00e808d180387928821ebc2de35be24cb58f9c37a5064948b3b9543f9cfd0000000000000000040100000000000000000000000000000000000000000000000000000000000000010d73757072615f6163636f756e74087472616e73666572000220ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a08e803000000000000f401000000000000400d03000000000000ca9a3b000000008454d86a000000000000010700000000000000204e000000000000a0860100000000009048d86a00000000ff0020d94e3f272f2600af530d6415ce08c0d9136fd191e5e00ea6237248250077855e40f24dd286b017e1795cb4fe2efb78c8f5f697defeab7e38d14d219e911c598f078818342bbe13e77756a10ff1def2135dac1f4e49821338be04bb687d91b78704",
+                "transactionHash": "3b6624a0d8e5242010d804285e710bc82575d6058f474772678c6d66d4be085b"
+            },
+            "provenance": {
+                "inputs": "specification",
+                "rawTransactionBcs": "specification",
+                "signingMessage": "specification",
+                "signatures": "node-verified",
+                "signedTransactionBcs": "specification",
+                "transactionHash": "node"
+            }
+        },
+        {
+            "name": "automation_registration_v2_no_priority",
+            "description": "The registration of a user automation task with version 2 parameters and no priority.",
+            "authenticator": "ed25519",
+            "chainId": 255,
+            "signers": [
+                {
+                    "role": "sender",
+                    "seed": "8e0fa503a77bd10625e14bb0ffe8cb3e13da3d7425d65c902c1682538246f7e9",
+                    "address": "0x6db72d631c18ba5edaa1144a3c84e4a880852feccf0eada5c32d06b2adc6192e",
+                    "publicKey": "f79890cb2a2c8080c845c6f34da0d4dcf51dfb5fd0242778b6f2a14fed8dbf95"
+                }
+            ],
+            "raw": {
+                "sender": "0x6db72d631c18ba5edaa1144a3c84e4a880852feccf0eada5c32d06b2adc6192e",
+                "sequenceNumber": "0",
+                "maxGasAmount": "20000",
+                "gasUnitPrice": "100000",
+                "expirationTimestampSecs": "1792559250",
+                "payload": {
+                    "type": "automation_registration",
+                    "function": "0x1::supra_account::transfer",
+                    "typeArguments": [],
+                    "arguments": [
+                        "ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a",
+                        "e803000000000000"
+                    ],
+                    "maxGasAmount": "500",
+                    "gasPriceCap": "200000",
+                    "feeCapForEpoch": "1000000000",
+                    "expirationTimestampSecs": "1792562310",
+                    "auxData": [],
+                    "taskType": "User",
+                    "priority": null
+                }
+            },
+            "expected": {
+                "rawTransactionBcs": "6db72d631c18ba5edaa1144a3c84e4a880852feccf0eada5c32d06b2adc6192e0000000000000000040100000000000000000000000000000000000000000000000000000000000000010d73757072615f6163636f756e74087472616e73666572000220ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a08e803000000000000f401000000000000400d03000000000000ca9a3b000000008654d86a00000000000000204e000000000000a0860100000000009248d86a00000000ff",
+                "signingMessage": "88d16ed1aba6d77d521aafada6d6e92d7a174527adb457adfa66a9c5a0f1fe376db72d631c18ba5edaa1144a3c84e4a880852feccf0eada5c32d06b2adc6192e0000000000000000040100000000000000000000000000000000000000000000000000000000000000010d73757072615f6163636f756e74087472616e73666572000220ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a08e803000000000000f401000000000000400d03000000000000ca9a3b000000008654d86a00000000000000204e000000000000a0860100000000009248d86a00000000ff",
+                "signatures": [
+                    "09f2c4b35111ff5c640812ec206bc03d1aa21b44e47280ff7e3220d7c0c38f63e9f23a8cedf0058fe413cb900db400ce760936ce3f525772534cf9f7a0611a0d"
+                ],
+                "signedTransactionBcs": "6db72d631c18ba5edaa1144a3c84e4a880852feccf0eada5c32d06b2adc6192e0000000000000000040100000000000000000000000000000000000000000000000000000000000000010d73757072615f6163636f756e74087472616e73666572000220ff97ea0f4b2128f02c2e6f6e33ba9192ba34977477acf1a5229cdf276b3fb26a08e803000000000000f401000000000000400d03000000000000ca9a3b000000008654d86a00000000000000204e000000000000a0860100000000009248d86a00000000ff0020f79890cb2a2c8080c845c6f34da0d4dcf51dfb5fd0242778b6f2a14fed8dbf954009f2c4b35111ff5c640812ec206bc03d1aa21b44e47280ff7e3220d7c0c38f63e9f23a8cedf0058fe413cb900db400ce760936ce3f525772534cf9f7a0611a0d",
+                "transactionHash": "3e9d3491b61ea32a017cc3a3d00141592ef5b78f5c5fcb7aa50bd46899f04765"
             },
             "provenance": {
                 "inputs": "specification",

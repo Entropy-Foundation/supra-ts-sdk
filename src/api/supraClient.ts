@@ -20,6 +20,7 @@ import { Events } from "./events";
 import { Block } from "./block";
 import { FungibleAsset } from "./fungibleAsset";
 import { Multisig } from "./multisig";
+import { Automation } from "./automation";
 import { validateMaxGasEstimateMultiplier } from "../internal/transactionManager/maxGas";
 import { resolveRetry, validateTimeoutMs } from "../client/request";
 import { validateRpcUrl } from "../client/url";
@@ -100,6 +101,11 @@ export class SupraClient {
      * Multisig instance provides methods for the lifecycle of multisig accounts on the Supra network.
      */
     readonly multisig: Multisig;
+
+    /**
+     * Automation instance provides methods for managing the automation tasks of an account on the Supra network.
+     */
+    readonly automation: Automation;
 
     /**
      * The constructor function takes a SupraConfig object as a parameter and assigns it to the config property.
@@ -215,6 +221,7 @@ export class SupraClient {
         this.block = new Block(this.networkInformation);
         this.fungibleAsset = new FungibleAsset(this.networkInformation);
         this.multisig = new Multisig(this.networkInformation);
+        this.automation = new Automation(this.networkInformation);
     }
 
     /**
@@ -358,7 +365,8 @@ export class SupraClient {
      * The client keeps, per account, the account's sequence number on the chain and a record of each transaction that
      * it submitted and that can still commit, for the transactions that its helpers (`transferSupraCoin`,
      * `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `migrateCoinToFungibleStore`,
-     * `publishPackage` and the entry functions of `Contract.fromABI`) send, and for the transactions submitted through
+     * `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry functions of `Contract.fromABI`)
+     * send, and for the transactions submitted through
      * its submit methods (see `SupraConfig`). The chain is read again automatically when the node reports a stale
      * number, including after the account has sent transactions by other means (another client or process, a wallet);
      * a call whose number such a transaction holds while it is pending is refused.
@@ -395,7 +403,8 @@ export interface SupraClient
         Events,
         Block,
         FungibleAsset,
-        Multisig {}
+        Multisig,
+        Automation {}
 
 /**
  * Members of `Transaction` that are instance properties: `build`, `simulate` and `submit` are reached through
@@ -431,4 +440,5 @@ applyMixins(SupraClient, [
     Block,
     FungibleAsset,
     Multisig,
+    Automation,
 ]);
