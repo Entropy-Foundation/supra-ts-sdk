@@ -1,7 +1,6 @@
 {
     "name": "supra-ts-sdk",
     "includeVersion": true,
-    "cname": "sdk-docs.supra.com",
     "entryPoints": [
         "src/index.ts"
     ],
