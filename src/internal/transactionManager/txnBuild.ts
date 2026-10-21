@@ -2,6 +2,7 @@ import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type {
     AutomationTaskType,
+    MultisigExecutionPayloadArgs,
     OptionalTransactionPayloadArgs,
     RawTxnJSON,
     SendTxnPayload,
@@ -161,6 +162,13 @@ export async function buildWithResolvedMaxGasInternal(
         senderAccount?: SupraAccount | undefined;
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs | undefined;
         buildRawTxn: (optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction;
+        /**
+         * Builds the transaction that the max gas estimate simulates, when that is not the transaction that is sent
+         * (`buildRawTxn`), for a transaction that the node simulates only in another form.
+         */
+        buildEstimateRawTxn?:
+            | ((optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction)
+            | undefined;
         /** The reservation of the transaction's sequence number, when the number came from the client's counter. */
         reservation?: SequenceNumberReservation | undefined;
     },
@@ -175,7 +183,8 @@ export async function buildWithResolvedMaxGasInternal(
             senderAccount: args.senderAccount,
             reservation: args.reservation,
             optionalTransactionPayloadArgs: options,
-            buildRawTxn: (candidate) => args.buildRawTxn({ ...options, maxGas: candidate }),
+            buildRawTxn: (candidate) =>
+                (args.buildEstimateRawTxn ?? args.buildRawTxn)({ ...options, maxGas: candidate }),
         },
         config,
     );
@@ -388,8 +397,9 @@ export function getTransactionPayloadJSONInternal(
         let multisig_address = txPayload.value.multisig_address.toHexString().toString();
         let payload = txPayload.value.transaction_payload?.transaction_payload;
 
+        // An execution of a proposal whose payload is stored on chain carries no payload.
         if (!payload) {
-            throw new Error("Multisig payload is missing");
+            return { Multisig: { multisig_address } };
         }
 
         return {
@@ -566,23 +576,26 @@ export function multisigRawTxnObjectInternal(
         senderAddress: AccountAddressInput;
         senderSequenceNumber: bigint;
         multisigAddress: AccountAddressInput;
-        function: MoveFunctionId;
-        functionTypeArgs: TxnBuilderTypes.TypeTag[];
-        functionArgs: Uint8Array[];
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
-    },
+    } & MultisigExecutionPayloadArgs,
     config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
+    let transactionPayload: TxnBuilderTypes.MultiSigTransactionPayload | undefined;
+    if (args.function !== undefined) {
+        transactionPayload = new TxnBuilderTypes.MultiSigTransactionPayload(
+            buildEntryFunctionInternal({
+                function: args.function,
+                functionTypeArgs: args.functionTypeArgs,
+                functionArgs: args.functionArgs,
+            }),
+        );
+    } else if (args.functionTypeArgs !== undefined || args.functionArgs !== undefined) {
+        throw new TypeError("functionTypeArgs and functionArgs are given without a function");
+    }
     let payload = new TxnBuilderTypes.TransactionPayloadMultisig(
         new TxnBuilderTypes.MultiSig(
             new TxnBuilderTypes.AccountAddress(addressToBytes(args.multisigAddress)),
-            new TxnBuilderTypes.MultiSigTransactionPayload(
-                buildEntryFunctionInternal({
-                    function: args.function,
-                    functionTypeArgs: args.functionTypeArgs,
-                    functionArgs: args.functionArgs,
-                }),
-            ),
+            transactionPayload,
         ),
     );
     return rawTxnObjectInnerInternal(

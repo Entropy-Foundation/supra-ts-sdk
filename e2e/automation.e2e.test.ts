@@ -6,6 +6,7 @@ import {
     SupraTransactionFailedError,
     TransactionStatus,
     TransactionType,
+    standardizeAddress,
 } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
@@ -152,7 +153,8 @@ describeE2E("automation tasks", () => {
         expect(payload.Move.V2?.task_priority).toBe(Number(priority));
 
         // The registry stores the task type (1, a user task) and the priority in the task's auxiliary data.
-        expect(task.owner).toBe(owner.address().toString());
+        // The node renders an address without its leading zeros.
+        expect(standardizeAddress(task.owner)).toBe(owner.address().toString());
         expect(task.aux_data).toEqual(["0x01", u64Hex(priority)]);
 
         // The SDK's response types describe the node's answer.
@@ -239,8 +241,12 @@ describeE2E("automation tasks", () => {
         expect(response.status).toBe(TransactionStatus.Success);
         const committed = await rawWaitForCommit(ctx, response.hash);
         expect(committed.hash.toLowerCase()).toBe(response.hash.toLowerCase());
-        expect(eventsOf(committed, "0x1::automation_registry::TaskCancelledV2")).toEqual([
-            expect.objectContaining({ task_index: task.task_index, owner: owner.address().toString() }),
+        const cancelled = eventsOf(committed, "0x1::automation_registry::TaskCancelledV2") as Array<{
+            owner: string;
+            task_index: string;
+        }>;
+        expect(cancelled.map((event) => [event.task_index, standardizeAddress(event.owner)])).toEqual([
+            [task.task_index, owner.address().toString()],
         ]);
     });
 
@@ -264,7 +270,7 @@ describeE2E("automation tasks", () => {
             owner: string;
             tasks: Array<{ task_index: string }>;
         }>;
-        expect(stopped?.owner).toBe(owner.address().toString());
+        expect(stopped === undefined ? undefined : standardizeAddress(stopped.owner)).toBe(owner.address().toString());
         expect(stopped?.tasks.map((task) => task.task_index)).toEqual([first.task_index, second.task_index]);
     });
 

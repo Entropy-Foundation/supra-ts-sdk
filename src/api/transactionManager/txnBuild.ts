@@ -2,6 +2,7 @@ import { SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type {
     AutomationTaskType,
+    MultisigExecutionPayloadArgs,
     OptionalTransactionPayloadArgs,
     SendTxnPayload,
 } from "../../types/transactionManager/transactionBuild";
@@ -308,13 +309,22 @@ export class Build {
     }
 
     /**
-     * Create raw transaction object for `multisig_payload` type txn
+     * Create raw transaction object for `multisig_payload` type txn: the execution of a multisig proposal.
+     *
+     * Give `function`, `functionTypeArgs` and `functionArgs` to execute a proposal that stores only the hash of its
+     * payload (`create_transaction_with_hash`), or to have the node check the payload stored on chain against them.
+     * Give none of the three to execute a proposal whose payload is stored on chain (`create_transaction`); the
+     * transaction then carries no payload and the node reads it from the proposal. `supra.multisig.executeMultisigTransaction`
+     * reads the proposal and chooses.
+     *
+     * A transaction without a payload cannot be simulated (`transaction.simulate.simple`, `transaction.simulate.serialized`,
+     * `enableTransactionSimulation` when it is submitted): the node refuses with `MISSING_DATA`.
      * @param args.senderAddress - Sender account address
      * @param args.senderSequenceNumber - Sender account sequence number
      * @param args.multisigAddress - Multisig account address
-     * @param args.function - Target function name as MoveFunctionId
-     * @param args.functionTypeArgs - Target function type args
-     * @param args.functionArgs - Target function args
+     * @param args.function - Target function name as MoveFunctionId; absent for a proposal whose payload is stored on chain
+     * @param args.functionTypeArgs - Target function type args; absent when `function` is
+     * @param args.functionArgs - Target function args; absent when `function` is
      * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
      * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
@@ -355,13 +365,23 @@ export class Build {
         senderAddress: AccountAddressInput;
         senderSequenceNumber: bigint;
         multisigAddress: AccountAddressInput;
-        function: MoveFunctionId;
-        functionTypeArgs: TxnBuilderTypes.TypeTag[];
-        functionArgs: Uint8Array[];
+        function?: MoveFunctionId;
+        functionTypeArgs?: TxnBuilderTypes.TypeTag[];
+        functionArgs?: Uint8Array[];
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     }): ExtendedRawTransaction {
+        const { function: targetFunction, functionTypeArgs, functionArgs, ...common } = args;
+        let execution: MultisigExecutionPayloadArgs = {};
+        if (targetFunction !== undefined) {
+            if (functionTypeArgs === undefined || functionArgs === undefined) {
+                throw new TypeError("function, functionTypeArgs and functionArgs are given together or not at all");
+            }
+            execution = { function: targetFunction, functionTypeArgs, functionArgs };
+        } else if (functionTypeArgs !== undefined || functionArgs !== undefined) {
+            throw new TypeError("function, functionTypeArgs and functionArgs are given together or not at all");
+        }
         return extendedRawTransaction(
-            { rawTxn: multisigRawTxnObjectInternal(args, this.networkInformation) },
+            { rawTxn: multisigRawTxnObjectInternal({ ...common, ...execution }, this.networkInformation) },
             this.networkInformation,
         );
     }

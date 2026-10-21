@@ -6,7 +6,7 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false,
+    "sourceMap": true,
     "rootDir": ".",
     "types": ["node", "jest"]
   },

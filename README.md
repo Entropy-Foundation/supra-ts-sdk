@@ -566,6 +566,57 @@ await supra.coin.transferSupraCoin({
 });
 ```
 
+### Multisig accounts
+
+`supra.multisig` covers the lifecycle of a multisig account (`0x1::multisig_account`). Every method that sends a
+transaction takes the sender's `SupraAccount` and the usual `optionalTransactionArgs`, and uses the client's sequence
+numbers, chain ID check and gas estimate like the other helpers.
+
+```ts
+const { multisigAddress } = await supra.multisig.createMultisigAccount({
+    senderAccount: first,
+    additionalOwners: [second.address()],
+    signaturesRequired: 2,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+// The payload is stored on chain; the executor needs no payload.
+await supra.multisig.proposeMultisigTransaction({
+    senderAccount: first,
+    multisigAddress,
+    payload: { function: '0x1::supra_account::transfer', functionArgs: ['0x2', 1000n] },
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+// Or only its hash is stored; the executor passes the payload to executeMultisigTransaction.
+// await supra.multisig.proposeMultisigTransactionWithHash({ ... same arguments ... });
+
+const { next } = await supra.multisig.getMultisigSequenceNumbers({ multisigAddress });
+await supra.multisig.approveMultisigTransaction({
+    senderAccount: second,
+    multisigAddress,
+    sequenceNumber: next - 1n,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+await supra.multisig.executeMultisigTransaction({ senderAccount: first, multisigAddress });
+
+// A proposal that the owners reject is removed with:
+// await supra.multisig.rejectMultisigTransaction({ senderAccount: first, multisigAddress, sequenceNumber });
+// await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: first, multisigAddress });
+```
+
+`createMultisigAccount` returns the account's address, derived from the sender and the creating transaction's sequence
+number (`deriveMultisigAccountAddress`); the account exists once the transaction has executed. The default
+`timeoutDurationSecs` of a proposal is seven days. `executeMultisigTransaction` reads the next proposal first: for a
+proposal that stores its payload it sends the transaction without a payload, and for a proposal that stores only a hash
+it sends the `payload` of the call, throwing `SupraMultisigPayloadError` before submitting when that payload is missing
+or does not match the hash. `transaction.build.multisigRawTxnObject` builds the same execution; leave out `function`,
+`functionTypeArgs` and `functionArgs` for a proposal that stores its payload. The nodes refuse to simulate an execution
+without a payload (`MISSING_DATA`), so the helper simulates the execution with the stored payload for the max gas
+estimate and for `enableTransactionSimulation`, and sends the execution without it. A simulation does not check the
+approvals, the timeout or the payload against the proposal: `enableTransactionSimulation` does not detect missing
+approvals or an expired proposal, and the node refuses such an execution when it validates it. The propose and approve
+calls above wait for their commit so that the sequence-number read and the execution see them.
+
 ### `bigint` values
 
 Move `u64`, `u128` and `u256` values are `bigint` in several objects the SDK returns: built transactions, the

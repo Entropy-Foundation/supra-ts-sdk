@@ -1,4 +1,18 @@
-import type { MoveInnerAuthenticator } from "../move";
+import type { TxnBuilderTypes } from "supra-l1-sdk-core";
+import type { MoveFunctionId, MoveInnerAuthenticator } from "../move";
+
+/**
+ * The payload of a multisig execution: the entry function in `function`, `functionTypeArgs` and `functionArgs` (for a
+ * proposal that stores only the payload's hash), or none of the three (for a proposal whose payload is stored on
+ * chain by `create_transaction`).
+ */
+export type MultisigExecutionPayloadArgs =
+    | {
+          function: MoveFunctionId;
+          functionTypeArgs: TxnBuilderTypes.TypeTag[];
+          functionArgs: Uint8Array[];
+      }
+    | { function?: undefined; functionTypeArgs?: undefined; functionArgs?: undefined };
 
 /**
  * Per-transaction settings. Each one that is set replaces the client's setting for this transaction. The SDK does not
@@ -123,6 +137,10 @@ export interface EntryFunctionJSON {
     args: Array<Array<number>>;
 }
 
+/**
+ * JSON form of a multisig execution. `transaction_payload` is absent when the proposal's payload is stored on chain
+ * (`create_transaction`) and the execution carries none.
+ */
 export interface MultisigPayloadJSON {
     Multisig: {
         multisig_address: string;

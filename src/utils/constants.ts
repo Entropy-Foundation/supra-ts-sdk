@@ -45,6 +45,14 @@ export const SUPRA_COIN_TYPE = "0x1::supra_coin::SupraCoin";
 /** The address of the SUPRA fungible asset: the fungible asset that `0x1::supra_coin::SupraCoin` is paired with. */
 export const SUPRA_FUNGIBLE_ASSET_ADDRESS = "0x000000000000000000000000000000000000000000000000000000000000000a";
 export const OBJECT_CORE = "0x1::object::ObjectCore";
+/**
+ * The time, in seconds, that `createMultisigAccount` gives a proposal to be executed when the call sets no
+ * `timeoutDurationSecs`: seven days. After it, the proposal can no longer be executed and any owner can remove it with
+ * `executeRejectedMultisigTransaction`.
+ */
+export const DEFAULT_MULTISIG_TIMEOUT_DURATION_SECS = 604_800;
+/** The shortest `timeoutDurationSecs` the framework accepts for a multisig account, in seconds. */
+export const MIN_MULTISIG_TIMEOUT_DURATION_SECS = 300;
 
 export const DEFAULT_ENABLE_SIMULATION = false;
 export const DEFAULT_WAIT_FOR_TX_COMPLETION = false;
