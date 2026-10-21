@@ -266,7 +266,7 @@ describe("executeMultisigTransactionInternal", () => {
         expect(mockSubmit.mock.calls[0]![0].buildEstimateRawTxn).toBeUndefined();
     });
 
-    test("sends no payload when the payload given equals the stored one", async () => {
+    test("sends the payload given when it equals the stored one, so that the node checks the match", async () => {
         queueWith({ payload: hex(transferPayloadBytes(500n)) });
         await executeMultisigTransactionInternal(
             { senderAccount: sender, multisigAddress: MULTISIG, payload: transfer(500n) },
@@ -274,7 +274,84 @@ describe("executeMultisigTransactionInternal", () => {
         );
         const rawTxn = builtTransaction();
         const multisig = (rawTxn.payload as TxnBuilderTypes.TransactionPayloadMultisig).value;
-        expect(multisig.transaction_payload).toBeUndefined();
+        expect(multisig.transaction_payload && hex(BCS.bcsToBytes(multisig.transaction_payload))).toBe(
+            hex(transferPayloadBytes(500n)),
+        );
+        expect(mockSubmit.mock.calls[0]![0].buildEstimateRawTxn).toBeUndefined();
+    });
+
+    describe("a stored payload that cannot be decoded", () => {
+        const noGasConfig: NetworkConfig = { name: "custom", chainId: 255, rpcUrl: "http://localhost:1" };
+        const stored = hex(transferPayloadBytes(500n));
+        const cases: Array<[string, string]> = [
+            ["has another variant", `0x01${stored.slice(4)}`],
+            ["has trailing bytes", `${stored}00`],
+            ["is not BCS", "0x01"],
+            ["is not hex", "0xzz"],
+        ];
+
+        test.each(cases)(
+            "is refused before a sequence number is reserved when the payload %s",
+            async (_name, bytes) => {
+                queueWith({ payload: bytes });
+                for (const options of [
+                    undefined,
+                    { enableTransactionWaitAndSimulationArgs: { enableTransactionSimulation: true } },
+                    {
+                        optionalTransactionPayloadArgs: { maxGas: 5_000n },
+                        enableTransactionWaitAndSimulationArgs: { enableTransactionSimulation: true },
+                    },
+                ]) {
+                    const error = await executeMultisigTransactionInternal(
+                        { senderAccount: sender, multisigAddress: MULTISIG, optionalTransactionArgs: options },
+                        noGasConfig,
+                    ).catch((caught: unknown) => caught);
+                    expect(error).toBeInstanceOf(SupraMultisigPayloadError);
+                    expect(error).toMatchObject({ reason: "stored-undecodable", sequenceNumber: 4n });
+                }
+                expect(mockSubmit).not.toHaveBeenCalled();
+            },
+        );
+
+        test("is sent without a simulation form when the call gives a max gas and no simulation", async () => {
+            queueWith({ payload: "0x01" });
+            await executeMultisigTransactionInternal(
+                {
+                    senderAccount: sender,
+                    multisigAddress: MULTISIG,
+                    optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n } },
+                },
+                noGasConfig,
+            );
+            expect(mockSubmit).toHaveBeenCalledTimes(1);
+            expect(mockSubmit.mock.calls[0]![0].buildEstimateRawTxn).toBeUndefined();
+        });
+
+        test("is sent when the call turns the estimate off and enables no simulation", async () => {
+            queueWith({ payload: "0x01" });
+            await executeMultisigTransactionInternal(
+                {
+                    senderAccount: sender,
+                    multisigAddress: MULTISIG,
+                    optionalTransactionArgs: { optionalTransactionPayloadArgs: { estimateMaxGas: false } },
+                },
+                noGasConfig,
+            );
+            expect(mockSubmit).toHaveBeenCalledTimes(1);
+        });
+
+        test("is decoded without Buffer", async () => {
+            queueWith({ payload: stored });
+            const original = globalThis.Buffer;
+            // @ts-expect-error The browsers have no Buffer.
+            globalThis.Buffer = undefined;
+            try {
+                await executeMultisigTransactionInternal({ senderAccount: sender, multisigAddress: MULTISIG }, config);
+            } finally {
+                globalThis.Buffer = original;
+            }
+            expect(mockSubmit.mock.calls[0]![0].buildEstimateRawTxn).toBeDefined();
+        });
     });
 
     test("refuses a payload that is not the stored one", async () => {

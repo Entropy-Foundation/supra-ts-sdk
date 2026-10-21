@@ -284,8 +284,11 @@ export class Build {
      * Give `function`, `functionTypeArgs` and `functionArgs` to execute a proposal that stores only the hash of its
      * payload (`create_transaction_with_hash`), or to have the node check the payload stored on chain against them.
      * Give none of the three to execute a proposal whose payload is stored on chain (`create_transaction`); the
-     * transaction then carries no payload and the node reads it from the proposal. `supra.multisig.executeTransaction`
+     * transaction then carries no payload and the node reads it from the proposal. `supra.multisig.executeMultisigTransaction`
      * reads the proposal and chooses.
+     *
+     * A transaction without a payload cannot be simulated (`transaction.simulate.simple`, `transaction.simulate.serialized`,
+     * `enableTransactionSimulation` when it is submitted): the node refuses with `MISSING_DATA`.
      * @param args.senderAddress - Sender account address
      * @param args.senderSequenceNumber - Sender account sequence number
      * @param args.multisigAddress - Multisig account address

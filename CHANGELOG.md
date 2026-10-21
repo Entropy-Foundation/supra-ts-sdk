@@ -193,12 +193,13 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `rejectMultisigTransaction`, `executeMultisigTransaction`, `executeRejectedMultisigTransaction`, and the reads
   `getMultisigSequenceNumbers`, `getMultisigProposal` and `getNextMultisigProposal`. They use the client's sequence
   numbers, chain ID check, estimated max gas and hash derivation. `executeMultisigTransaction` reads the next proposal
-  and sends no payload when the proposal stores it, or the call's `payload` when only its hash is stored; it throws
-  `SupraMultisigPayloadError` before submitting when a needed payload is missing or does not match, and
-  `SupraMultisigNoProposalError` when the queue is empty. The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an
-  execution without a payload (`MISSING_DATA`), so the max gas estimate and
+  and sends no payload when the proposal stores it and the call gives none, the call's `payload` when it matches the
+  stored one or the stored hash; it throws `SupraMultisigPayloadError` before submitting when a needed payload is
+  missing or does not match, and `SupraMultisigNoProposalError` when the queue is empty. The nodes of v11.7.0 and
+  v12.0.0.rc6 do not simulate an execution without a payload (`MISSING_DATA`), so the max gas estimate and
   `enableTransactionSimulation` simulate it with the stored payload carried, while the transaction that is sent
-  carries none.
+  carries none; a stored payload that cannot be decoded throws `SupraMultisigPayloadError` (`stored-undecodable`) when
+  the call needs that simulation. A simulation does not detect missing approvals or an expired proposal.
   `deriveMultisigAccountAddress`, the types `MultisigProposal`,
   `MultisigVote`, `MultisigSequenceNumbers`, `MultisigEntryFunctionPayload`, `CreateMultisigAccountResponse` and
   `MultisigExecutionPayloadArgs`, and the constants `DEFAULT_MULTISIG_TIMEOUT_DURATION_SECS` (seven days) and

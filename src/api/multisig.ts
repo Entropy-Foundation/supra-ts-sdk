@@ -330,21 +330,25 @@ export class Multisig {
      * Executes the next proposal of a multisig account, the one after the last executed or removed. The method reads
      * the proposal first and sends the transaction that matches it:
      *
-     * - A proposal that stores its payload (`proposeMultisigTransaction`) is executed without a payload; the node reads
-     *   it from the proposal. When the call gives a `payload` too, it must encode to the stored bytes.
+     * - A proposal that stores its payload (`proposeMultisigTransaction`) is executed without a payload when the call
+     *   gives none; the node reads it from the proposal. When the call gives a `payload`, it must encode to the stored
+     *   bytes, and it is sent, so that the node checks the match when it executes the transaction.
      * - A proposal that stores only a hash (`proposeMultisigTransactionWithHash`) is executed with the call's
      *   `payload`, whose SHA3-256 hash must be the stored one.
      *
      * The sender pays the gas and the proposal runs as the multisig account. The node executes the proposal only when
      * it has enough approvals (counting the sender's implicit approval) and has not timed out; otherwise it refuses
-     * the transaction. The proposal can change between the read and the submission (another owner executes it first);
-     * the transaction then runs the proposal that is next when the node executes it, or is refused when that is a
-     * proposal that stores only a hash.
+     * the transaction. The proposal can change between the read and the submission (another owner executes it first).
+     * A call that gave a `payload` is then refused by the node, because the payload is not the next proposal's; a call
+     * without a `payload` runs the proposal that is next when the node executes it, or is refused when that is a
+     * proposal that stores only a hash. Give the `payload` when the queue is shared.
      *
      * The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an execution without a payload (they report
      * `MISSING_DATA`). The max gas estimate and `enableTransactionSimulation` therefore simulate the execution with the
      * stored payload carried, and the sent transaction, its signature and its hash are those of the execution without
-     * a payload.
+     * a payload. A simulation skips the multisig checks of the node: it does not detect missing approvals, an expired
+     * proposal or a payload that is not the stored one, so `enableTransactionSimulation` does not tell whether the node
+     * will accept the execution.
      * @param args.senderAccount - An owner of the multisig account.
      * @param args.multisigAddress - The address of the multisig account.
      * @param args.payload - The entry function of the proposal. Required for a proposal that stores only a hash;
@@ -355,7 +359,9 @@ export class Multisig {
      * proposal's own function succeeded is in the transaction's events.
      * @throws {SupraMultisigNoProposalError} When the multisig account has no pending proposal.
      * @throws {SupraMultisigPayloadError} Before submitting, when the proposal stores only a hash and `payload` is
-     * missing or hashes to another value, or when the proposal stores its payload and `payload` encodes to other bytes.
+     * missing or hashes to another value, when the proposal stores its payload and `payload` encodes to other bytes, or
+     * when the stored payload cannot be decoded and the call needs a simulation (it has no `maxGas`, or enables
+     * `enableTransactionSimulation`; give `maxGas` and leave the simulation off).
      * @example
      * ```typescript
      * import { Network, SupraAccount, SupraClient } from "supra-ts-sdk";

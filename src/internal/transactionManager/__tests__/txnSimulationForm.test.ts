@@ -74,7 +74,12 @@ const storedPayload = new TxnBuilderTypes.MultiSigTransactionPayload(
 );
 
 /** `buildAndSubmitInternal` of an execution that is sent without a payload and simulated with `storedPayload`. */
-function execute(client: SupraClient, sender: SupraAccount, expiry: bigint): Promise<unknown> {
+function execute(
+    client: SupraClient,
+    sender: SupraAccount,
+    expiry: bigint,
+    extra: { maxGas?: bigint; onSubmission?: (rawTxn: { sequence_number: bigint | number }) => void } = {},
+): Promise<unknown> {
     const config = client.networkInformation;
     return buildAndSubmitInternal(
         {
@@ -105,9 +110,18 @@ function execute(client: SupraClient, sender: SupraAccount, expiry: bigint): Pro
                     config,
                 ),
             optionalTransactionArgs: {
-                optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n, txExpiryTime: expiry },
+                optionalTransactionPayloadArgs: {
+                    ...("maxGas" in extra
+                        ? extra.maxGas === undefined
+                            ? {}
+                            : { maxGas: extra.maxGas }
+                        : { maxGas: 5_000n }),
+                    gasUnitPrice: 100_000n,
+                    txExpiryTime: expiry,
+                },
                 enableTransactionWaitAndSimulationArgs: { enableTransactionSimulation: true },
             },
+            onSubmission: extra.onSubmission,
         },
         config,
     );
@@ -147,6 +161,27 @@ describe("the simulation form of a transaction", () => {
         expect(sent.authenticator.Ed25519.signature).toBe(await expectedSignature(sender, expiry, 5n));
     });
 
+    test("is the transaction that the max gas estimate simulates, when the call has no max gas", async () => {
+        start(5);
+        const sender = new SupraAccount();
+        const expiry = BigInt(node.blockSeconds() + 500);
+
+        await execute(newClient(), sender, expiry, { maxGas: undefined });
+
+        // The estimate simulation and the simulation before submission both carry the stored payload.
+        expect(recorded.simulations).toHaveLength(2);
+        for (const body of recorded.simulations) {
+            expect(parsed(body).raw_txn.payload.Multisig.transaction_payload).toBeDefined();
+        }
+        const sent = parsed(recorded.submissions[0] as string);
+        expect(sent.raw_txn.payload).toStrictEqual({ Multisig: { multisig_address: expect.any(String) } });
+        // The mock node reports 1,000 gas units used; the max gas is that times 1.5.
+        expect(
+            (JSON.parse(recorded.submissions[0] as string) as { Move: { raw_txn: { max_gas_amount: number } } }).Move
+                .raw_txn.max_gas_amount,
+        ).toBe(1_500);
+    });
+
     test("follows the transaction when it is signed again with a lower sequence number", async () => {
         start(5);
         const clock = new ClientClock();
@@ -167,8 +202,12 @@ describe("the simulation form of a transaction", () => {
         recorded.submissions.length = 0;
         const expiry = later();
 
-        await execute(client, sender, expiry);
+        const reported: bigint[] = [];
+        await execute(client, sender, expiry, {
+            onSubmission: (rawTxn) => reported.push(BigInt(rawTxn.sequence_number)),
+        });
 
+        expect(reported).toEqual([6n]);
         const numbers = recorded.simulations.map((body) => parsed(body).raw_txn.sequence_number);
         // 8 is too new, then 6 (signed again) is too new, and 6 is simulated at the chain's number 5.
         expect(numbers).toEqual([8, 6, 5]);

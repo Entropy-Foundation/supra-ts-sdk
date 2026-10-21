@@ -28,18 +28,22 @@ export class SupraMultisigNoProposalError extends SupraError {
  * - `"hash-mismatch"`: the proposal stores only the hash of its payload and the SHA3-256 hash of the call's payload is
  *   another one.
  * - `"stored-mismatch"`: the proposal stores its payload and the call's payload encodes to other bytes.
+ * - `"stored-undecodable"`: the proposal stores a payload that is not an entry function payload in the BCS form the SDK
+ *   writes (another variant, trailing bytes, or bytes that do not decode), and the call has no `maxGas` or enables
+ *   `enableTransactionSimulation`: the node refuses to simulate an execution without a payload, and the SDK simulates
+ *   it with the stored payload. Give `maxGas` (on the call or the client) and leave `enableTransactionSimulation` off.
  * @group Errors
  */
 export class SupraMultisigPayloadError extends SupraError {
     /** Why the payload cannot execute the proposal. */
-    readonly reason: "required" | "hash-mismatch" | "stored-mismatch";
+    readonly reason: "required" | "hash-mismatch" | "stored-mismatch" | "stored-undecodable";
     /** The address of the multisig account. */
     readonly multisigAddress: string;
     /** The number of the proposal that the call would have executed. */
     readonly sequenceNumber: bigint;
 
     constructor(args: {
-        reason: "required" | "hash-mismatch" | "stored-mismatch";
+        reason: "required" | "hash-mismatch" | "stored-mismatch" | "stored-undecodable";
         multisigAddress: string;
         sequenceNumber: bigint;
     }) {
@@ -48,6 +52,9 @@ export class SupraMultisigPayloadError extends SupraError {
             required: `${where} stores only the hash of its payload, and the call gave no payload to execute it with`,
             "hash-mismatch": `the hash of the payload of the call is not the hash that ${where} stores`,
             "stored-mismatch": `the payload of the call is not the payload that ${where} stores`,
+            "stored-undecodable":
+                `the payload that ${where} stores cannot be decoded, so the execution cannot be simulated; ` +
+                `give maxGas and leave enableTransactionSimulation off`,
         }[args.reason];
         super(`The payload cannot execute the proposal: ${detail}`);
         this.name = "SupraMultisigPayloadError";

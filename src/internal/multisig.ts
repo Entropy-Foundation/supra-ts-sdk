@@ -3,7 +3,7 @@ import sha3 from "js-sha3";
 import { SupraMultisigNoProposalError, SupraMultisigPayloadError } from "../errors/multisigError";
 import { SupraError } from "../errors/supraError";
 import { addressToBytes, standardizeAddress } from "../helper/account";
-import { uint8ArrayToHexString } from "../helper/general";
+import { uint8ArrayToHexString, vectorU8ToBytes } from "../helper/general";
 import { deriveMultisigAccountAddress } from "../helper/multisig";
 import type { AccountAddressInput } from "../types/account";
 import type {
@@ -251,12 +251,13 @@ export async function executeMultisigTransactionInternal(
 
     let carried: typeof given;
     if (proposal.payload !== undefined) {
-        // The payload is stored on chain: the execution carries none. A payload that the call gave is checked against
-        // the stored one so that the call executes what it names.
+        // The payload is stored on chain. A payload that the call gave is checked against the stored one so that the
+        // call executes what it names, and is sent, so that the node checks the match at execution. Without one the
+        // execution carries none.
         if (given !== undefined && `0x${uint8ArrayToHexString(given.bytes)}` !== proposal.payload.toLowerCase()) {
             throw new SupraMultisigPayloadError({ reason: "stored-mismatch", multisigAddress, sequenceNumber });
         }
-        carried = undefined;
+        carried = given;
     } else {
         if (given === undefined) {
             throw new SupraMultisigPayloadError({ reason: "required", multisigAddress, sequenceNumber });
@@ -267,7 +268,12 @@ export async function executeMultisigTransactionInternal(
         carried = given;
     }
 
+    // An execution without a payload is simulated with the stored payload, which has to be decoded for that. Without
+    // a simulation (an explicit max gas and no `enableTransactionSimulation`) the stored payload is not needed.
     const storedPayload = carried === undefined ? decodeStoredPayload(proposal.payload) : undefined;
+    if (carried === undefined && storedPayload === undefined && needsSimulation(args.optionalTransactionArgs, config)) {
+        throw new SupraMultisigPayloadError({ reason: "stored-undecodable", multisigAddress, sequenceNumber });
+    }
     return buildAndSubmitInternal(
         {
             senderAccount: args.senderAccount,
@@ -288,9 +294,10 @@ export async function executeMultisigTransactionInternal(
                     },
                     config,
                 ),
-            // The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an execution without a payload (`MISSING_DATA`), so the max gas
-            // estimate and the simulation before submission simulate the execution with the stored payload, which the
-            // node accepts as it is the stored one.
+            // The nodes of v11.7.0 and v12.0.0.rc6 do not simulate an execution without a payload (`MISSING_DATA`), so
+            // the max gas estimate and the simulation before submission simulate the execution with the stored
+            // payload. A simulation skips the multisig prologue: approvals, the timeout and the match of a payload
+            // with the stored one are checked when the transaction is validated and executed, not in a simulation.
             buildEstimateRawTxn:
                 storedPayload === undefined
                     ? undefined
@@ -315,15 +322,33 @@ export async function executeMultisigTransactionInternal(
     );
 }
 
-/** The payload that a proposal stores, or `undefined` when it stores none or its bytes are not a payload. */
+/** Whether the call's max gas estimate or its simulation before submission simulates the transaction. */
+function needsSimulation(options: OptionalTransactionArgs | undefined, config: NetworkConfig): boolean {
+    if (options?.enableTransactionWaitAndSimulationArgs?.enableTransactionSimulation === true) {
+        return true;
+    }
+    const gas = options?.optionalTransactionPayloadArgs;
+    if ((gas?.maxGas ?? config.maxGas) !== undefined) {
+        return false;
+    }
+    return (gas?.estimateMaxGas ?? config.estimateMaxGas ?? true) !== false;
+}
+
+/**
+ * The payload that a proposal stores, or `undefined` when it stores none or its bytes are not an entry function
+ * payload that the SDK's encoding writes back identically (which excludes another variant and trailing bytes).
+ */
 function decodeStoredPayload(stored: string | undefined): TxnBuilderTypes.MultiSigTransactionPayload | undefined {
     if (stored === undefined) {
         return undefined;
     }
     try {
-        return TxnBuilderTypes.MultiSigTransactionPayload.deserialize(
-            new BCS.Deserializer(new Uint8Array(Buffer.from(stored.replace(/^0x/, ""), "hex"))),
-        );
+        const bytes = vectorU8ToBytes(stored);
+        const payload = TxnBuilderTypes.MultiSigTransactionPayload.deserialize(new BCS.Deserializer(bytes));
+        const written = BCS.bcsToBytes(payload);
+        return written.length === bytes.length && written.every((byte, index) => byte === bytes[index])
+            ? payload
+            : undefined;
     } catch {
         return undefined;
     }

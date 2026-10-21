@@ -583,12 +583,18 @@ await supra.multisig.proposeMultisigTransaction({
     senderAccount: first,
     multisigAddress,
     payload: { function: '0x1::supra_account::transfer', functionArgs: ['0x2', 1000n] },
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
 });
 // Or only its hash is stored; the executor passes the payload to executeMultisigTransaction.
 // await supra.multisig.proposeMultisigTransactionWithHash({ ... same arguments ... });
 
 const { next } = await supra.multisig.getMultisigSequenceNumbers({ multisigAddress });
-await supra.multisig.approveMultisigTransaction({ senderAccount: second, multisigAddress, sequenceNumber: next - 1n });
+await supra.multisig.approveMultisigTransaction({
+    senderAccount: second,
+    multisigAddress,
+    sequenceNumber: next - 1n,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
 await supra.multisig.executeMultisigTransaction({ senderAccount: first, multisigAddress });
 
 // A proposal that the owners reject is removed with:
@@ -602,7 +608,12 @@ number (`deriveMultisigAccountAddress`); the account exists once the transaction
 proposal that stores its payload it sends the transaction without a payload, and for a proposal that stores only a hash
 it sends the `payload` of the call, throwing `SupraMultisigPayloadError` before submitting when that payload is missing
 or does not match the hash. `transaction.build.multisigRawTxnObject` builds the same execution; leave out `function`,
-`functionTypeArgs` and `functionArgs` for a proposal that stores its payload.
+`functionTypeArgs` and `functionArgs` for a proposal that stores its payload. The nodes refuse to simulate an execution
+without a payload (`MISSING_DATA`), so the helper simulates the execution with the stored payload for the max gas
+estimate and for `enableTransactionSimulation`, and sends the execution without it. A simulation does not check the
+approvals, the timeout or the payload against the proposal: `enableTransactionSimulation` does not detect missing
+approvals or an expired proposal, and the node refuses such an execution when it validates it. The propose and approve
+calls above wait for their commit so that the sequence-number read and the execution see them.
 
 ### `bigint` values
 
