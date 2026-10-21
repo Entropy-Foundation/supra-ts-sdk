@@ -149,11 +149,8 @@ export class Transaction {
      * transaction the node has not seen yet. The timeout is wall-clock time from the start of the call.
      *
      * @param args.transactionHash - The transaction hash should be a hex-encoded bytes string with a 0x prefix.
-     * @param args.options.timeoutMs - The longest time to wait for a final status, in milliseconds. Default
-     * `waitTimeoutMs` of `SupraConfig`, else 60000.
-     * @param args.options.timeoutSecs - Deprecated: the same timeout in seconds. `timeoutMs` takes precedence.
-     * @param args.options.checkSuccess - Throw `SupraTransactionFailedError` for a final status other than `Success`.
-     * Default true.
+     * @param args.options - The timeout and whether a final status other than `Success` throws; see
+     * {@link WaitForTransactionOptions}. Optional.
      * @returns A Promise that resolves to the transaction with its final status: `Success`, or any final status when
      * `checkSuccess` is false.
      * @throws `SupraTransactionFailedError` (with `hash`, `status`, `vm_status`, `major_status`, `sub_status` and

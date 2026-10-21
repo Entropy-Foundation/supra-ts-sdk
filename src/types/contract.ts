@@ -10,7 +10,7 @@ import type {
 export type MoveModules = DeepReadonly<MoveModule[]>;
 
 /** The fixed-point structs, whose arguments and results are their raw integer values. */
-type FixedPointType = "0x1::fixed_point32::FixedPoint32" | "0x1::fixed_point64::FixedPoint64";
+export type FixedPointType = "0x1::fixed_point32::FixedPoint32" | "0x1::fixed_point64::FixedPoint64";
 
 /**
  * The TypeScript type of an argument of Move type `T`. A `FixedPoint32` or `FixedPoint64` argument is its raw
@@ -34,7 +34,13 @@ export type MoveResultToTS<T extends string> = T extends FixedPointType
             ? MoveResultToTS<U> | null
             : MoveToTS<T>;
 
-type MoveToTSOther<T extends string> =
+/**
+ * The TypeScript type of an argument of Move type `T` other than the fixed-point structs: integers, `bool`, `signer`,
+ * `address`, `0x1::object::Object<U>` (an address), `0x1::string::String`, and `vector<U>` and `0x1::option::Option<U>`
+ * of these. Any other struct type is its type name as a string literal type, and a type it does not recognise is
+ * `unknown`. `MoveToTS` selects it.
+ */
+export type MoveToTSOther<T extends string> =
     // ----------------------------
     // Numeric types
     // ----------------------------

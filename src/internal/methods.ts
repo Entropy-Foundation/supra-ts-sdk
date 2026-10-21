@@ -11,7 +11,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
  * @param args.typeArguments - An array of type arguments for the function.
  * @param args.functionArguments - An array of arguments for the function.
  * @returns A Promise that resolves to an array of MoveValue objects.
- * @note This is for fully typed and parsed data.
+ * @remarks This is for fully typed and parsed data.
  * Abi type conversion and parsing is handled internally
  */
 export async function viewInternal<T extends Array<MoveValue>>(
@@ -43,7 +43,7 @@ export async function viewInternal<T extends Array<MoveValue>>(
  * @param args.typeArguments - An array of type arguments for the function.
  * @param args.functionArguments - An array of arguments for the function.
  * @returns A Promise that resolves to an array of MoveValue objects.
- * @note This is for raw data without type conversion or parsing.
+ * @remarks This is for raw data without type conversion or parsing.
  */
 export async function viewRawInternal<T extends Array<unknown>>(
     args: InputViewRawFunctionData,

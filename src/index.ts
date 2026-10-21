@@ -12,6 +12,7 @@ export * from "./api/transaction";
 export * from "./api/transactionManager/txnBuild";
 export * from "./api/transactionManager/txnSimulate";
 export * from "./api/transactionManager/txnSubmit";
+export type { ExtendedRawTransaction } from "./internal/transactionManager/txnBuild";
 
 //utils
 export * from "./utils/apiEndpoints";
