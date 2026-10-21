@@ -744,6 +744,23 @@ for (const txn of block.transactions ?? []) {
 }
 ```
 
+- `AutomationRegistrationParamsV2`, the version 2 automation registration in a transaction response, types
+  `task_type` as `"user" | "system"` and `task_priority` as `number | null`, the values the node sends. Compare
+  `task_type` with the lower-case names; the registration builder still takes `"User"` or `"System"`
+  (`AutomationTaskType`):
+
+```typescript
+import { TransactionType } from "supra-ts-sdk";
+
+const txn = await supra.getTransactionByHash({ transactionHash: "0x..." });
+if (txn?.txn_type === TransactionType.User && "Move" in txn.payload) {
+    const move = txn.payload.Move;
+    if (move.type === "automation_registration_payload" && move.V2 !== undefined) {
+        console.log(move.V2.task_type === "user", move.V2.task_priority ?? "assigned by the registry");
+    }
+}
+```
+
 ### `isAccountExists` throws failures
 
 `isAccountExists` returns `false` only when the node reports the account as absent (HTTP 404 on v12 nodes, HTTP 400

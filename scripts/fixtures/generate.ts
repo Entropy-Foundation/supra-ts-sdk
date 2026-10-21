@@ -6,17 +6,18 @@
  *   node scripts/fixtures/generate.ts --cli <supra> --rpc <url> --out <file> \
  *       [--also-cli <supra> --also-rpc <url>]
  *   node scripts/fixtures/generate.ts --sdk-signed-only --rpc <url> --out <file> [--also-rpc <url>]
+ *       [--case <name> ...]
  *
  * `--cli` is a Supra node CLI binary and `--rpc` the RPC service of a localnet that serves a faucet.
  * `--also-cli` and `--also-rpc` name a second node (another release) against which every recorded
  * transaction is submitted again; the run fails when the second node reports a different hash or
- * signature. `--sdk-signed-only` records only the entry function cases that the SDK signs (a module
- * publish and the two multisig proposals), without the CLI, and replaces those cases in the existing
- * `--out` file. The tool runs TypeScript directly, so it needs Node 22.18 or later, and it imports the
+ * signature. `--sdk-signed-only` records only the single-signer cases that the SDK signs (a module
+ * publish, the two multisig proposals and the two version 2 automation registrations), without the CLI,
+ * and replaces those cases in the existing `--out` file; `--case` limits them to the names given. The tool runs TypeScript directly, so it needs Node 22.18 or later, and it imports the
  * built SDK: run `pnpm build` first. Details are in `scripts/fixtures/README.md`.
  */
 import { spawnSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -318,7 +319,10 @@ function buildRawTransaction(node: Node, raw: FixtureRaw) {
                 functionTypeArgs: typeTags(strings("typeArguments")),
                 functionArgs: strings("arguments").map(bytes),
             });
-        case "automation_registration":
+        case "automation_registration": {
+            // A payload with `taskType` is a version 2 registration; its `priority` is a decimal string or `null`.
+            const taskType = payload["taskType"] as "User" | "System" | undefined;
+            const priority = payload["priority"] as string | null | undefined;
             return node.client.transaction.build.automationRegistrationRawTxnObject({
                 ...common,
                 function: payload["function"] as `${string}::${string}::${string}`,
@@ -329,7 +333,10 @@ function buildRawTransaction(node: Node, raw: FixtureRaw) {
                 automationFeeCapForEpoch: BigInt(payload["feeCapForEpoch"] as string),
                 automationExpirationTimestampSecs: BigInt(payload["expirationTimestampSecs"] as string),
                 automationAuxData: strings("auxData").map(bytes),
+                ...(taskType === undefined ? {} : { automationTaskType: taskType }),
+                ...(typeof priority === "string" ? { automationPriority: BigInt(priority) } : {}),
             });
+        }
         default:
             return fail(`Unknown payload type ${raw.payload.type}`);
     }
@@ -923,6 +930,94 @@ async function sdkEntryFunctionFixture(node: Node, runId: string, kind: SdkEntry
 }
 
 /**
+ * Automation registrations with version 2 of the registration parameters, which the node CLI does not build, recorded
+ * with `--sdk-signed-only`: a user task with a priority, and a user task whose priority the registry assigns.
+ */
+const SDK_AUTOMATION_KINDS = ["automation_registration_v2_priority", "automation_registration_v2_no_priority"] as const;
+type SdkAutomationKind = (typeof SDK_AUTOMATION_KINDS)[number];
+
+/**
+ * A version 2 automation registration that the SDK signs and submits. The fixture records the hash the node reports,
+ * and the run fails unless it equals the hash the SDK derives.
+ */
+async function sdkAutomationFixture(node: Node, runId: string, kind: SdkAutomationKind): Promise<Fixture> {
+    const signer = await newSigner(node, runId, kind);
+    const receiver = signerOf("secondary", seedFor(runId, "receiver")).address;
+    const raw: FixtureRaw = {
+        sender: signer.address,
+        sequenceNumber: "0",
+        maxGasAmount: String(MAX_GAS),
+        gasUnitPrice: String(GAS_PRICE),
+        // The second node receives the same transaction later; a v12 node refuses an expiration time more than
+        // 600 s ahead.
+        expirationTimestampSecs: String(Math.floor(Date.now() / 1000) + 540),
+        payload: {
+            type: "automation_registration",
+            function: "0x1::supra_account::transfer",
+            typeArguments: [],
+            arguments: [addressArgument(receiver), u64Argument(1000n)],
+            maxGasAmount: "500",
+            gasPriceCap: "200000",
+            feeCapForEpoch: "1000000000",
+            expirationTimestampSecs: String(Math.floor(Date.now() / 1000) + 60 * 60),
+            auxData: [],
+            taskType: "User",
+            // A random priority from 2^32 to 2^32 + 2^47; the node's JSON number holds it exactly.
+            priority: kind === "automation_registration_v2_priority" ? String(2n ** 32n + BigInt(randomInt(2 ** 47))) : null,
+        },
+    };
+    const rawTxn = buildRawTransaction(node, raw);
+    const account = accountOf(signer);
+    const signed = await rawTxn.signedTransaction(account);
+    const derived = bare(node.client.transaction.deriveTransactionHash({ signedTransaction: signed }));
+    const nodeHash = await submitSigned(node, signer, rawTxn, kind);
+    if (derived !== nodeHash) {
+        fail(`${kind}: the SDK hash ${derived} differs from the node's ${nodeHash}`);
+    }
+    const signature = await node.client.transaction.signTransaction({ senderAccount: account, rawTxn });
+
+    return {
+        name: kind,
+        description:
+            kind === "automation_registration_v2_priority"
+                ? "The registration of a user automation task with version 2 parameters and a priority."
+                : "The registration of a user automation task with version 2 parameters and no priority.",
+        authenticator: "ed25519",
+        chainId: node.chainId,
+        signers: [signer],
+        raw,
+        expected: {
+            rawTransactionBcs: hex(BCS.bcsToBytes(rawTxn)),
+            signingMessage: hex(node.client.transaction.getTransactionSignatureMessage({ rawTxn })),
+            signatures: [hex(signature.toUint8Array())],
+            signedTransactionBcs: hex(BCS.bcsToBytes(signed)),
+            transactionHash: nodeHash,
+        },
+        provenance: {
+            inputs: "specification",
+            rawTransactionBcs: "specification",
+            signingMessage: "specification",
+            signatures: "node-verified",
+            signedTransactionBcs: "specification",
+            transactionHash: "node",
+        },
+    };
+}
+
+/**
+ * Submits the transaction of an `SdkAutomationKind` fixture to `other`, from the same account funded there, and fails
+ * unless that node reports the same hash.
+ */
+async function crossCheckSdkAutomation(other: Node, fixture: Fixture): Promise<void> {
+    const signer = fixture.signers[0] ?? fail("A fixture needs a signer");
+    await fund(other, signer.address);
+    const nodeHash = await submitSigned(other, signer, buildRawTransaction(other, fixture.raw), fixture.name);
+    if (nodeHash !== fixture.expected.transactionHash) {
+        fail(`${fixture.name}: ${other.label} reports hash ${nodeHash}, expected ${fixture.expected.transactionHash}`);
+    }
+}
+
+/**
  * Submits the transaction of an `SdkEntryKind` fixture to `other`, after the same preparation by the same account,
  * and fails unless that node reports the same hash.
  */
@@ -1105,6 +1200,7 @@ async function main(): Promise<void> {
             "also-rpc": { type: "string" },
             "run-id": { type: "string" },
             "sdk-signed-only": { type: "boolean" },
+            case: { type: "string", multiple: true },
         },
     });
     const { cli, rpc, out } = values;
@@ -1138,8 +1234,13 @@ async function main(): Promise<void> {
               await sdkSignedFixture(primary, runId, "multi_agent"),
               await sdkSignedFixture(primary, runId, "fee_payer"),
           ];
-    for (const kind of SDK_ENTRY_KINDS) {
+    // `--case` limits the SDK-signed cases recorded to the names given.
+    const selected = (name: string) => values.case === undefined || values.case.includes(name);
+    for (const kind of SDK_ENTRY_KINDS.filter(selected)) {
         fixtures.push(await sdkEntryFunctionFixture(primary, runId, kind));
+    }
+    for (const kind of SDK_AUTOMATION_KINDS.filter(selected)) {
+        fixtures.push(await sdkAutomationFixture(primary, runId, kind));
     }
 
     if (secondary !== undefined) {
@@ -1147,6 +1248,8 @@ async function main(): Promise<void> {
             const kind = SDK_ENTRY_KINDS.find((name) => name === fixture.name);
             if (kind !== undefined) {
                 await crossCheckSdkEntry(secondary, runId, fixture, kind);
+            } else if (SDK_AUTOMATION_KINDS.some((name) => name === fixture.name)) {
+                await crossCheckSdkAutomation(secondary, fixture);
             } else {
                 await crossCheck(secondary, runId, fixture);
             }
@@ -1164,9 +1267,12 @@ async function main(): Promise<void> {
         // The cases recorded here replace those of the same name in the file; the others are kept.
         const existing = JSON.parse(readFileSync(out, "utf8")) as typeof file;
         const names = new Set(fixtures.map((fixture) => fixture.name));
+        // With `--case`, the SDK-signed cases recorded by an earlier run stay listed.
+        const earlier = existing.generatedWith["sdkSignedCases"] as { cases?: string[] } | undefined;
+        const listed = values.case === undefined ? names : new Set([...(earlier?.cases ?? []), ...names]);
         file = {
             schema: existing.schema,
-            generatedWith: { ...existing.generatedWith, sdkSignedCases: { ...generatedWith, cases: [...names] } },
+            generatedWith: { ...existing.generatedWith, sdkSignedCases: { ...generatedWith, cases: [...listed] } },
             cases: [...existing.cases.filter((fixture) => !names.has(fixture.name)), ...fixtures],
         };
     } else {

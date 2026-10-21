@@ -195,8 +195,8 @@ and the chain ID inside the transaction are the node's, and throws `SupraChainId
 is not; nothing is signed or sent. The check covers `signTransaction`, the `signedTransaction`, `sendTxnPayload`,
 `signTransaction`, `simulate` and `submitTransaction` methods of a built transaction, `transaction.build.signedTransaction`
 and `transaction.build.sendTxnPayload`, the `transaction.submit` methods that take a `senderAccount`, the coin and
-fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`. These signing methods return
-promises.
+fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`.
+These signing methods return promises.
 
 `getChainId()` resolves to the node's chain ID, and `validateChainId()` throws `SupraChainIdMismatchError` when the
 configured chain ID differs from it; both use the same stored value.
@@ -325,7 +325,8 @@ retried. POST requests (submit, simulate, view) are never retried.
 ### Transaction outcomes
 
 Every submit helper (`transaction.submit.*`, the submit methods of a built transaction, the coin and fungible asset
-transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handles the outcome the same way:
+transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`) handles the
+outcome the same way:
 
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws
   `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too. A gas unit price below the node's
@@ -399,8 +400,8 @@ try {
 
 A transaction carries the sender's sequence number, and the node executes a transaction only when its number is the
 account's next number. `transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
-`migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the number from a
-counter that the `SupraClient` keeps for each account:
+`migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry functions
+of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
 
 - The counter records every transaction the client submits: those the node accepted, and those whose submission
   request failed without an answer (a timeout, a lost connection, a 5xx other than 503), which the node may have
@@ -513,8 +514,8 @@ The gas unit price of a transaction is, in this order:
 3. the node's estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`
    (`supra.getEstimatedGasUnitPrice()` returns it). The median is taken over the last transactions the RPC node
    executed and can be below the node's current minimum. The estimate is read for each transaction that needs it. In the
-   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of
-   `Contract.fromABI`) the read starts when the call is made, before the sender's account lock is requested, and is
+   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage`, the automation task helpers
+   and the entry functions of `Contract.fromABI`) the read starts when the call is made, before the sender's account lock is requested, and is
    awaited in the call's turn, so calls from one account keep the order of the calls, except SUPRA fungible asset
    transfers, whose balance check is awaited before the lock is requested. `transaction.build.simple` awaits the read
    before it builds. The same price is used for the max gas estimate and the transaction. A failed read throws its
@@ -530,7 +531,8 @@ estimate: without a price on the call or the client they throw a `RangeError` be
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas
 used. When neither the call nor the client sets `maxGas`:
 
-- The coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI` estimate it.
+- The coin and fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of
+  `Contract.fromABI` estimate it.
   They read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and
   use `ceil(gas used × 1.5)`, at least 1,500 units and at most what the balance pays for. A simulation whose status is
   not `Success` (an abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and
@@ -602,6 +604,49 @@ const [rate] = await supra.methods.view<[{ value: bigint }]>({
     functionArguments: [],
 });
 console.log(rate.value); // 6442450944n
+```
+
+### Automation tasks
+
+The node runs the entry function of an automation task as automated transactions of the task's owner, from the
+automation cycle after its registration until the task expires. A task is registered with an automation
+registration transaction built by `transaction.build.automationRegistrationRawTxnObject`. With
+`automationTaskType` or `automationPriority` the registration carries version 2 parameters; without them, version 1.
+Nodes of the v11.7.0 and v12 lines accept both. A task registered without a priority gets its task index as its
+priority. Only accounts that the Supra framework has authorised can register `"System"` tasks.
+
+```ts
+const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
+const registration = supra.transaction.build.automationRegistrationRawTxnObject({
+    senderAddress: owner.address(),
+    senderSequenceNumber: (await supra.getAccountInfo({ accountAddress: owner.address() })).sequence_number,
+    function: '0x1::supra_account::transfer',
+    functionTypeArgs: [],
+    functionArgs: [receiver.toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
+    automationMaxGasAmount: 500n,
+    automationGasPriceCap: 2n * gasUnitPrice,
+    automationFeeCapForEpoch: 1_000_000_000n,
+    automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
+    automationAuxData: [],
+    automationTaskType: 'User',
+    automationPriority: 10n,
+    optionalTransactionPayloadArgs: { gasUnitPrice },
+});
+const registered = await registration.submitTransaction({
+    senderAccount: owner,
+    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+});
+```
+
+The registration emits a `0x1::automation_registry::AutomationTaskMetaData` event whose `task_index` identifies the
+task. `automation.cancelAutomationTask` (`0x1::automation_registry::cancel_task`) cancels a task: one that has not run
+yet is removed, an active one runs until the end of the current automation cycle. `automation.stopAutomationTasks`
+(`0x1::automation_registry::stop_tasks`) removes tasks at once. Both take the sender's sequence number from the
+client's counter, like the transfer helpers, and refunds follow the registry's rules.
+
+```ts
+await supra.automation.cancelAutomationTask({ senderAccount: owner, taskIndex: 42n });
+await supra.automation.stopAutomationTasks({ senderAccount: owner, taskIndexes: [43n, 44n] });
 ```
 
 ## 📚 More Examples

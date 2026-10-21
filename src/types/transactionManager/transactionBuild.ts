@@ -22,7 +22,8 @@ import type { MoveInnerAuthenticator } from "../move";
  *
  * The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`; the sender is
  * charged for the gas used. An estimate is made by the methods that build and submit a transaction with a signing
- * account: the coin and fungible asset transfers, `publishPackage` and contract entry calls. They read the sender's
+ * account: the coin and fungible asset transfers, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks`
+ * and contract entry calls. They read the sender's
  * SUPRA balance and simulate the transaction with a max gas of the largest number of gas units that balance pays for at
  * the gas unit price, at most `MAX_GAS_UNITS_PER_TRANSACTION`. The max gas is then
  * `ceil(gas used × DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER)` (or the client's `maxGasEstimateMultiplier`), at least
@@ -67,7 +68,8 @@ export interface OptionalTransactionPayloadArgs {
     /**
      * The sequence number of the transaction. Used by the helpers that build and submit the transaction
      * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
-     * `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI`). When it is set,
+     * `migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry
+     * functions of `Contract.fromABI`). When it is set,
      * the helper uses it as given and does not wait for the other calls of the account; the client's counter records
      * the submitted transaction like its own and does not hand out its number while the transaction can commit. When
      * it is absent, the helper takes the next number of the client's counter. The builders of `transaction.build`
@@ -171,8 +173,15 @@ export type ScriptArgumentJson =
     | { Bool: boolean };
 
 export interface AutomationRegistrationPayloadJSON {
-    AutomationRegistration: AutomationRegistrationParamV1JSON;
+    AutomationRegistration: AutomationRegistrationParamV1JSON | AutomationRegistrationParamV2JSON;
 }
+
+/**
+ * The type of an automation task registered with version 2 of the registration parameters. `User` is the task of
+ * any account. `System` is the task of an account that the Supra framework has authorised to register system tasks;
+ * the registration of a `System` task by any other account aborts.
+ */
+export type AutomationTaskType = "User" | "System";
 
 export interface AutomationRegistrationParamV1JSON {
     V1: {
@@ -183,5 +192,20 @@ export interface AutomationRegistrationParamV1JSON {
         automation_fee_cap_for_epoch: bigint | number;
         expiration_timestamp_secs: bigint | number;
         aux_data: Array<Array<number>>;
+    };
+}
+
+export interface AutomationRegistrationParamV2JSON {
+    V2: {
+        automated_function: EntryFunctionJSON;
+        // `u64` fields, emitted as `bigint`. See `RawTxnJSON`.
+        max_gas_amount: bigint | number;
+        gas_price_cap: bigint | number;
+        automation_fee_cap_for_epoch: bigint | number;
+        expiration_timestamp_secs: bigint | number;
+        aux_data: Array<Array<number>>;
+        task_type: AutomationTaskType;
+        /** `null` when the registry assigns the priority. */
+        priority_value: bigint | number | null;
     };
 }
