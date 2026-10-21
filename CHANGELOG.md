@@ -186,6 +186,19 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - [`RELEASING.md`](./RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
 - The types that public signatures reference are exported: `ExtendedRawTransaction` (returned by the `Build` methods),
   `FixedPointType` and `MoveToTSOther` (used by `MoveToTS`).
+- **Automation registrations with version 2 parameters.** `transaction.build.automationRegistrationRawTxnObject` takes
+  `automationTaskType` (`AutomationTaskType`: `"User"` or `"System"`) and `automationPriority` (a `u64` `bigint`).
+  With either one the registration carries version 2 parameters (`RegistrationParamsV2` of the node: the version 1
+  fields followed by the task type and the optional priority), with task type `"User"` when only the priority is
+  given; without them it carries version 1 parameters as before. Nodes of the v11.7.0 and v12 lines accept both.
+  Without a priority the registry assigns the task index. Only an account that the Supra framework has authorised can register a `"System"`
+  task. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
+  `AutomationRegistrationParamV2JSON` is the JSON form of the submitted payload.
+- **`automation.cancelAutomationTask({ senderAccount, taskIndex, optionalTransactionArgs? })`** submits
+  `0x1::automation_registry::cancel_task`, and **`automation.stopAutomationTasks({ senderAccount, taskIndexes,
+  optionalTransactionArgs? })`** submits `0x1::automation_registry::stop_tasks`, for the user automation tasks of the
+  sender. Like the transfers, they take the sequence number from the client's counter and estimate the max gas. The
+  `Automation` class is also mixed into the client (`supra.cancelAutomationTask`, `supra.stopAutomationTasks`).
 
 ### Changed
 
@@ -369,6 +382,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `block_header: null`.
 - **Breaking:** `FinalizedBlockHeader.transactions` is optional, since the node omits it unless the block is
   requested with `withFinalizedTransactions: true`, and is typed `CommittedTransactionResponse[]`.
+- **Breaking:** `AutomationRegistrationParamsV2`, the version 2 registration in a transaction response, types
+  `task_type` as `"user" | "system"` and `task_priority` as `number | null`, which is what v11.7.0 and v12 nodes send.
+  They were declared `"User" | "System"` and an optional `number`.
 - The `type` option of `getBlockByHeight` and `getTransactionsByBlockHash` is `TransactionQueryType`, which adds
   `"record"` and `"settlement"`.
 - **Breaking:** `isAccountExists` returns `false` only when the node reports the account as absent (HTTP 404 on

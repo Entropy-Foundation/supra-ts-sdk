@@ -1,11 +1,18 @@
 import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type {
+    AutomationTaskType,
     OptionalTransactionPayloadArgs,
     RawTxnJSON,
     SendTxnPayload,
     TransactionPayloadJSON,
 } from "../../types/transactionManager/transactionBuild";
+import {
+    AutomationRegistrationParamsV2,
+    AutomationRegistrationParamsV2Data,
+    validateAutomationTaskType,
+    validateU64,
+} from "./automationRegistration";
 import {
     DEFAULT_MAX_GAS_UNITS,
     DEFAULT_TX_EXPIRATION_DURATION,
@@ -350,6 +357,30 @@ export function getTransactionPayloadJSONInternal(
                     },
                 },
             };
+        } else if (txPayload.value instanceof AutomationRegistrationParamsV2) {
+            const params = txPayload.value.value;
+            return {
+                AutomationRegistration: {
+                    V2: {
+                        automated_function: {
+                            module: {
+                                address: params.automated_function.module_name.address.toHexString().toString(),
+                                name: params.automated_function.module_name.name.value,
+                            },
+                            function: params.automated_function.function_name.value,
+                            ty_args: parseFunctionTypeArgs(params.automated_function.ty_args),
+                            args: fromUint8ArrayToJSArray(params.automated_function.args),
+                        },
+                        max_gas_amount: params.max_gas_amount,
+                        gas_price_cap: params.gas_price_cap,
+                        automation_fee_cap_for_epoch: params.automation_fee_cap_for_epoch,
+                        expiration_timestamp_secs: params.expiration_timestamp_secs,
+                        aux_data: fromUint8ArrayToJSArray(params.aux_data),
+                        task_type: params.task_type,
+                        priority_value: params.priority_value ?? null,
+                    },
+                },
+            };
         } else {
             throw new Error("Unknown variant of `AutomationRegistrationParams`");
         }
@@ -464,6 +495,11 @@ export function scriptRawTxnObjectInternal(
     );
 }
 
+/**
+ * Builds an automation registration. The registration parameters are version 2 (`RegistrationParamsV2`) when
+ * `automationTaskType` or `automationPriority` is given, with task type `User` when only the priority is given, and
+ * version 1 otherwise.
+ */
 export function automationRegistrationRawTxnObjectInternal(
     args: {
         senderAddress: AccountAddressInput;
@@ -476,26 +512,44 @@ export function automationRegistrationRawTxnObjectInternal(
         automationFeeCapForEpoch: bigint;
         automationExpirationTimestampSecs: bigint;
         automationAuxData: Uint8Array[];
+        automationTaskType?: AutomationTaskType;
+        automationPriority?: bigint;
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
     config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
-    let payload = new TxnBuilderTypes.TransactionPayloadAutomationRegistration(
-        new TxnBuilderTypes.AutomationRegistrationParamsV1(
-            new TxnBuilderTypes.AutomationRegistrationParamsV1Data(
-                buildEntryFunctionInternal({
-                    function: args.function,
-                    functionTypeArgs: args.functionTypeArgs,
-                    functionArgs: args.functionArgs,
-                }),
-                args.automationMaxGasAmount,
-                args.automationGasPriceCap,
-                args.automationFeeCapForEpoch,
-                args.automationExpirationTimestampSecs,
-                args.automationAuxData,
-            ),
-        ),
-    );
+    const automatedFunction = buildEntryFunctionInternal({
+        function: args.function,
+        functionTypeArgs: args.functionTypeArgs,
+        functionArgs: args.functionArgs,
+    });
+    const params =
+        args.automationTaskType === undefined && args.automationPriority === undefined
+            ? new TxnBuilderTypes.AutomationRegistrationParamsV1(
+                  new TxnBuilderTypes.AutomationRegistrationParamsV1Data(
+                      automatedFunction,
+                      args.automationMaxGasAmount,
+                      args.automationGasPriceCap,
+                      args.automationFeeCapForEpoch,
+                      args.automationExpirationTimestampSecs,
+                      args.automationAuxData,
+                  ),
+              )
+            : new AutomationRegistrationParamsV2(
+                  new AutomationRegistrationParamsV2Data(
+                      automatedFunction,
+                      args.automationMaxGasAmount,
+                      args.automationGasPriceCap,
+                      args.automationFeeCapForEpoch,
+                      args.automationExpirationTimestampSecs,
+                      args.automationAuxData,
+                      validateAutomationTaskType(args.automationTaskType ?? "User"),
+                      args.automationPriority === undefined
+                          ? undefined
+                          : validateU64(args.automationPriority, "automationPriority"),
+                  ),
+              );
+    let payload = new TxnBuilderTypes.TransactionPayloadAutomationRegistration(params);
     return rawTxnObjectInnerInternal(
         {
             senderAddress: args.senderAddress,

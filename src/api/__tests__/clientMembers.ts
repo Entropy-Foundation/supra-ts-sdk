@@ -62,6 +62,9 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     transferSupraFungibleAsset: true,
     transferFungibleAsset: true,
     migrateCoinToFungibleStore: true,
+    automation: true,
+    cancelAutomationTask: true,
+    stopAutomationTasks: true,
 };
 
 /** `build`, `simulate` and `submit` are members of `supra.transaction`, not of the client. */
