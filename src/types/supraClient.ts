@@ -30,12 +30,15 @@ export interface RetryConfig {
  *
  * Sequence numbers: the client keeps a sequence-number counter for each account its helpers send from (the coin and
  * fungible asset transfers, `migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`,
- * `stopAutomationTasks` and the entry functions of `Contract.fromABI`), and submits the calls of one account one after another. A call holds the account from taking its
+ * `stopAutomationTasks`, the multisig helpers and the entry functions of `Contract.fromABI`), and submits the calls of
+ * one account one after another. A call holds the account from taking its
  * number until the node answers its submission (accepted, refused, or the request fails); the wait for the final
  * status comes after that. A call without `maxGas` (here or on the call) holds the account while its max gas is
  * estimated; a call with `maxGas` waits only until the calls ahead of it have been submitted or have failed. To submit
  * faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A call with an explicit
- * `sequenceNumber` does not take part in this order.
+ * `sequenceNumber` does not take part in this order. Calls request the account in the order they are made, except that
+ * SUPRA fungible asset transfers (balance checks) and the multisig propose and execute helpers (the ABI of the
+ * proposal's function, the next proposal) await reads before they request it.
  *
  * The counter records every transaction of the account that the client submitted (accepted, or whose submission
  * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time and hash (for a

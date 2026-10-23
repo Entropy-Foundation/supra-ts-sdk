@@ -365,8 +365,8 @@ export class SupraClient {
      * The client keeps, per account, the account's sequence number on the chain and a record of each transaction that
      * it submitted and that can still commit, for the transactions that its helpers (`transferSupraCoin`,
      * `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`, `migrateCoinToFungibleStore`,
-     * `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry functions of `Contract.fromABI`)
-     * send, and for the transactions submitted through
+     * `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks`, the multisig helpers and the entry functions of
+     * `Contract.fromABI`) send, and for the transactions submitted through
      * its submit methods (see `SupraConfig`). The chain is read again automatically when the node reports a stale
      * number, including after the account has sent transactions by other means (another client or process, a wallet);
      * a call whose number such a transaction holds while it is pending is refused.
