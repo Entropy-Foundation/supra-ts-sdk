@@ -25,9 +25,9 @@ export type MultisigExecutionPayloadArgs =
  *   transaction. In the helpers that submit, the read starts when the call is made and is awaited in the call's turn
  *   for the sender's account (SUPRA fungible asset transfers check the sender's balances first, and the multisig
  *   propose and execute helpers read the ABI of the proposal's function or the next proposal first, before the account
- *   is requested); `transaction.build.simple` awaits it before it builds. The max gas estimate uses the same price. A
- *   price below the node's minimum is refused by the node with
- *   `SupraGasUnitPriceBelowMinimumError` (its `cause` is the original error); the SDK does not change it. A failed read
+ *   is requested, and for these the price read starts after those reads, not when the call is made);
+ *   `transaction.build.simple` awaits it before it builds. The max gas estimate uses the same price. A price below the
+ *   node's minimum is refused by the node with `SupraGasUnitPriceBelowMinimumError` (its `cause` is the original error); the SDK does not change it. A failed read
  *   of the estimate throws its error and nothing is submitted.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
  *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole

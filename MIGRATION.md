@@ -20,8 +20,8 @@ The changes that most programs meet first:
   `SupraChainIdMismatchError` ([Chain ID](#chain-id)).
 - Failures are thrown as typed errors: a waited transaction that fails, a simulation that does not succeed, a wait
   that times out ([Transactions](#transactions-submit-wait-and-simulate)).
-- The max gas of the transfers, `publishPackage` and contract entry functions is estimated, and the default max gas
-  is 20,000 units ([Gas](#gas)).
+- The max gas of the transfers, `publishPackage`, the automation task helpers, the multisig helpers and contract entry
+  functions is estimated, and the default max gas is 20,000 units ([Gas](#gas)).
 - The default gas unit price is read from the node, `SupraConfig.minGasUnitPrice` is renamed `gasUnitPrice`, and the
   builders that make no request need a price ([The gas unit price comes from the node](#the-gas-unit-price-comes-from-the-node)).
 - The helpers take sequence numbers from a counter in the client ([Sequence numbers](#sequence-numbers)).
@@ -209,8 +209,8 @@ SDK defines. They keep their names and are still not `SupraAPIError`s.
 ### A failed transaction throws when the SDK waits for it
 
 With `enableWaitForTransaction: true`, every submit helper (`transaction.submit.*`, the submit methods of a built
-transaction, the coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`)
-throws `SupraTransactionFailedError` when the transaction ends with `Fail` or `Invalid`; it resolved with the failed
+transaction, the coin and fungible asset transfers, `publishPackage`, the automation task helpers, the multisig
+helpers and the entry functions of `Contract.fromABI`) throws `SupraTransactionFailedError` when the transaction ends with `Fail` or `Invalid`; it resolved with the failed
 transaction. A wait that ends without a final status throws `SupraTransactionTimeoutError`; it threw a `SupraAPIError`
 with status 500. `checkSuccess: false` returns the transaction whatever its final status.
 
@@ -259,7 +259,8 @@ A simulation throws `SupraSimulationFailedError` (`status`, `vm_status`, `major_
 `transaction`) for `Fail`, `Invalid` and `PendingAfterExecution` (for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or
 `SEQUENCE_NUMBER_TOO_NEW`). 1.2.0 threw a `SupraAPIError` with status 400 for `Fail` only and returned the other
 statuses. With `enableTransactionSimulation: true`, a failed simulation means the transaction is not submitted. The
-max gas estimate ([Gas](#gas)) simulates too, so the transfers, `publishPackage` and contract entry functions throw
+max gas estimate ([Gas](#gas)) simulates too, so the transfers, `publishPackage`, the automation task helpers, the
+multisig helpers and contract entry functions throw
 `SupraSimulationFailedError` for a transaction that would not succeed, before submitting it. A simulation refused for a
 gas unit price below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead
 ([The gas unit price comes from the node](#the-gas-unit-price-comes-from-the-node)).
@@ -475,8 +476,8 @@ that relied on the default. In 2.0.0 the price of a transaction is the call's `g
   from one account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited
   before the lock is requested, and the multisig propose and execute helpers (`proposeMultisigTransaction`,
   `proposeMultisigTransactionWithHash`, `executeMultisigTransaction`), whose reads of the proposal's function ABI and of
-  the next proposal are awaited before the lock is requested. `transaction.build.simple` awaits the read before it
-  builds.
+  the next proposal are awaited before the lock is requested; for these two the price read starts after those reads,
+  not when the call is made. `transaction.build.simple` awaits the read before it builds.
 - `getEstimatedGasUnitPrice()` is new; `getGasPrice()` (the median) and `getMinGasUnitPrice()` (the minimum) are
   unchanged.
 

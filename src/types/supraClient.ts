@@ -81,9 +81,9 @@ export interface RetryConfig {
  * of an earlier response or with `GET /rpc/v3/transactions/chain_id`, and keeps it for the client's lifetime.
  * Every signature (`signTransaction`, the `signedTransaction`, `sendTxnPayload`, `signTransaction`, `simulate` and
  * `submitTransaction` methods of a built transaction, the submit helpers that take a `senderAccount`, the coin and
- * fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of
- * `Contract.fromABI`) throws `SupraChainIdMismatchError` before signing when the configured chain ID or the chain ID of the transaction differs
- * from the node's. `verifyChainId: false` turns the check off: the configured chain ID is used and signing sends no
+ * fungible asset transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry
+ * functions of `Contract.fromABI`) throws `SupraChainIdMismatchError` before signing when the configured chain ID or
+ * the chain ID of the transaction differs from the node's. `verifyChainId: false` turns the check off: the configured chain ID is used and signing sends no
  * request, which allows signing offline.
  */
 export type SupraConfig =

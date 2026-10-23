@@ -195,8 +195,8 @@ and the chain ID inside the transaction are the node's, and throws `SupraChainId
 is not; nothing is signed or sent. The check covers `signTransaction`, the `signedTransaction`, `sendTxnPayload`,
 `signTransaction`, `simulate` and `submitTransaction` methods of a built transaction, `transaction.build.signedTransaction`
 and `transaction.build.sendTxnPayload`, the `transaction.submit` methods that take a `senderAccount`, the coin and
-fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`.
-These signing methods return promises.
+fungible asset transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry functions
+of `Contract.fromABI`. These signing methods return promises.
 
 `getChainId()` resolves to the node's chain ID, and `validateChainId()` throws `SupraChainIdMismatchError` when the
 configured chain ID differs from it; both use the same stored value.
@@ -325,8 +325,8 @@ retried. POST requests (submit, simulate, view) are never retried.
 ### Transaction outcomes
 
 Every submit helper (`transaction.submit.*`, the submit methods of a built transaction, the coin and fungible asset
-transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`) handles the
-outcome the same way:
+transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry functions of
+`Contract.fromABI`) handles the outcome the same way:
 
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws
   `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too. A gas unit price below the node's
@@ -521,7 +521,9 @@ The gas unit price of a transaction is, in this order:
    the calls, except SUPRA fungible asset transfers, whose balance check is awaited before the lock is requested, and
    the multisig propose and execute helpers (`proposeMultisigTransaction`, `proposeMultisigTransactionWithHash`,
    `executeMultisigTransaction`), whose reads of the proposal's function ABI and of the next proposal are awaited before
-   the lock is requested. `transaction.build.simple` awaits the read before it builds. The same price is used for the max gas estimate and the transaction. A failed read throws its
+   the lock is requested. For these two the price read starts after those reads, not when the call is made.
+   `transaction.build.simple` awaits the read before it builds. The same price is used for the max gas estimate and the
+   transaction. A failed read throws its
    error, like a failed build, and nothing is submitted.
 
 A price set by the call or the client is used as given and makes no request. When it is below the node's minimum, the

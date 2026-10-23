@@ -141,7 +141,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `x-supra-chain-id` header of an earlier response or with `GET /rpc/v3/transactions/chain_id`, and keeps it for its
   lifetime; concurrent first signatures share one request. Every signing path (`signTransaction`, the signing methods
   of `transaction.build` and of a built transaction, the `transaction.submit` methods that take a `senderAccount`, the
-  coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`) throws
+  coin and fungible asset transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry
+  functions of `Contract.fromABI`) throws
   **`SupraChainIdMismatchError`** (extends `SupraError`; carries `configuredChainId`, `nodeChainId` and
   `transactionChainId`) before signing when the configured chain ID or the transaction's chain ID is not the node's.
 - **`SupraConfig.verifyChainId`**: `false` turns the check off for offline signing. The client signs with its
@@ -303,7 +304,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited before the
   lock is requested, and the multisig propose and execute helpers (`proposeMultisigTransaction`,
   `proposeMultisigTransactionWithHash`, `executeMultisigTransaction`), whose reads of the proposal's function ABI and of
-  the next proposal are awaited before the lock is requested; `transaction.build.simple` awaits it before it builds);
+  the next proposal are awaited before the lock is requested, and for these two the price read starts after those
+  reads, not when the call is made; `transaction.build.simple` awaits it before it builds);
   the same price is used for the max gas estimate. It was `SupraConfig.minGasUnitPrice`, else
   `DEFAULT_GAS_PRICE` (100,000 quants), without reading the node. A failed read of the estimate throws its error and
   nothing is submitted. A price of the call or the client is used as given.
