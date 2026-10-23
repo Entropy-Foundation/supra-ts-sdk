@@ -410,7 +410,8 @@ of `Contract.fromABI` take the number from a counter that the `SupraClient` keep
   the timestamp of the latest block has reached its expiration time, can no longer commit.
 - A record is dropped when the account's sequence number on the chain passes it, when the timestamp of a latest block
   the client reads (`GET /rpc/v3/block`) has reached its expiration time, or when a read of the transaction through
-  the client returns `Invalid`. Reads of a block by height or by hash do not drop records. An HTTP 404 does not drop a
+  the client returns `Invalid`; the next call then reads the account's number from the chain, because another sender may
+  have committed the discarded transaction's number. Reads of a block by height or by hash do not drop records. An HTTP 404 does not drop a
   record: an RPC node answers 404 for a pending transaction that another RPC node behind the same URL received.
 - A submission whose outcome is unknown holds its number until its expiration time or `resetSequenceNumber`, including
   when its expiration time was beyond what a node accepts.

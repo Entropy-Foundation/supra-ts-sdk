@@ -174,6 +174,57 @@ describe("transfers whose transactions the node drops or never receives", () => 
         expect(mock.chain).toBe(7);
     });
 
+    it.each([
+        ["the estimated max gas", {}],
+        ["an explicit max gas", { maxGas: 5_000n }],
+    ] as Array<[string, TransferOptions]>)(
+        "sends the retry after a waited transaction reads Invalid with a stale number at the chain's number, with %s",
+        async (_name, gas) => {
+            const mock = start();
+            let discarded = false;
+            global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+                const response = await mock.fetch(input, init);
+                if (String(input).includes("/transactions/submit")) {
+                    if (!discarded) {
+                        // Another sender of the account commits 5 before this transaction does.
+                        discarded = true;
+                        mock.drop(5, "Invalid");
+                        mock.chain = 6;
+                    } else {
+                        mock.tick();
+                    }
+                }
+                return response;
+            }) as typeof fetch;
+            const supra = newClient();
+            const sender = new SupraAccount();
+
+            await transfer(supra, sender, { ...gas, wait: true, waitTimeoutMs: 2_000 });
+
+            // The retry took number 6 from a read of the chain, and the node committed it.
+            expect(acceptedNumbers(mock)).toEqual([5, 6]);
+            expect(mock.submissions.every((submission) => submission.status === 200)).toBe(true);
+            expect(mock.chain).toBe(7);
+        },
+    );
+
+    it("reuses the number of a transaction that reads Invalid while the chain's number has not moved", async () => {
+        const mock = start();
+        const supra = newClient();
+        const sender = new SupraAccount();
+        await transfer(supra, sender);
+        mock.drop(5, "Invalid");
+        const read = await supra.getTransactionByHash({ transactionHash: mock.submissionHash(5) });
+        expect(read.status).toBe("Invalid");
+
+        await transfer(supra, sender);
+
+        expect(acceptedNumbers(mock)).toEqual([5, 5]);
+        expect(mock.pooled()).toEqual([5]);
+        mock.tick();
+        expect(mock.chain).toBe(6);
+    });
+
     it("waits behind an unknown outcome that the node never accepted, then fills its number once it has expired", async () => {
         const mock = start();
         const clock = new ClientClock();

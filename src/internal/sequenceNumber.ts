@@ -257,8 +257,9 @@ export class SequenceNumberTracker {
 
     /**
      * A read of the transaction `hash` returned `status`. For a recorded transaction: `Invalid` (the transaction was
-     * discarded and did not use its number) drops its record; `Success` or `Fail` (the transaction committed) shows the
-     * account's sequence number on the chain above its number.
+     * discarded and did not use its number) drops its record and asks for a read of the account's sequence number on
+     * the chain before the next number, because the discard may be a stale number (another sender committed it);
+     * `Success` or `Fail` (the transaction committed) shows the account's sequence number on the chain above its number.
      */
     observeTransaction(hash: string, status: TransactionStatus): void {
         if (
@@ -281,6 +282,7 @@ export class SequenceNumberTracker {
                 }
                 if (status === TransactionStatus.Invalid) {
                     state.submissions.delete(sequenceNumber);
+                    state.readChain = true;
                 } else {
                     this.observeChainSequenceNumber(address, sequenceNumber + 1n);
                 }

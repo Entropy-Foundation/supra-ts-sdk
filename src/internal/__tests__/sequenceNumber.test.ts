@@ -746,8 +746,9 @@ describe("sequence numbers of the transfer helpers", () => {
         finalStatus = TransactionStatus.Success;
         await transfer(supra, sender);
 
+        // The discard may be a stale number, so the next transfer reads the chain again before taking 7.
         expect(submitted).toEqual([7, 7]);
-        expect(accountReads).toBe(1);
+        expect(accountReads).toBe(2);
     });
 
     it("gives the number of a discarded transaction that checkSuccess false returns to the next transfer", async () => {
@@ -769,7 +770,7 @@ describe("sequence numbers of the transfer helpers", () => {
         await transfer(supra, sender);
 
         expect(submitted).toEqual([7, 7]);
-        expect(accountReads).toBe(1);
+        expect(accountReads).toBe(2);
     });
 
     it("does not use a number for a call whose waitTimeoutMs is invalid", async () => {

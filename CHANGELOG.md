@@ -94,7 +94,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   transaction the node accepted either commits or, once the timestamp of the latest block has reached its expiration
   time, can no longer commit. A record is dropped when the chain's number passes it, when the timestamp of a latest
   block the client reads (`GET /rpc/v3/block`; not a block read by height or hash) has reached its expiration time, or
-  when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it, since an RPC node answers 404 for a
+  when a read of the transaction returns `Invalid` (the next call then reads the account's number from the chain, since
+  another sender may have committed the number); an HTTP 404 does not drop it, since an RPC node answers 404 for a
   pending transaction that another RPC node received. A submission whose outcome is unknown holds its number until the
   transaction's expiration time or `resetSequenceNumber`, including when its expiration time was beyond what a node
   accepts. The next number is the lowest number at or above the
