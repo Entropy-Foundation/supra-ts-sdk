@@ -380,8 +380,16 @@ export class SequenceNumberTracker {
     /** The next number of the account, after a read of the chain when one is needed. */
     private async take(state: AccountState, readChain: () => Promise<bigint>): Promise<bigint> {
         if (this.needsChainRead(state)) {
-            const chain = await readChain();
+            // The flag is cleared before the read, so that an `Invalid` observed while the read is in flight (which
+            // sets it, without the lock) asks for another read at the next number; a failed read keeps the request.
             state.readChain = false;
+            let chain: bigint;
+            try {
+                chain = await readChain();
+            } catch (error) {
+                state.readChain = true;
+                throw error;
+            }
             if (state.chain === undefined || chain > state.chain) {
                 state.chain = chain;
             }

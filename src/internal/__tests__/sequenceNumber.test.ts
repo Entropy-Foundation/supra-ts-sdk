@@ -403,6 +403,71 @@ describe("SequenceNumberTracker records and chain time", () => {
         expect([...tracker.recorded(ADDRESS).keys()]).toEqual([3n, 5n]);
     });
 
+    it("reads the chain at the next reservation after a recorded transaction reads Invalid", async () => {
+        const tracker = new SequenceNumberTracker();
+        const fetchChain = jest.fn(async () => 5n);
+        accept(tracker, await tracker.reserve(ADDRESS, fetchChain));
+        expect(fetchChain).toHaveBeenCalledTimes(1);
+
+        tracker.observeTransaction(hashOf(5), TransactionStatus.Invalid);
+        const reservation = await tracker.reserve(ADDRESS, fetchChain);
+
+        expect(fetchChain).toHaveBeenCalledTimes(2);
+        expect(reservation.sequenceNumber).toBe(5n);
+    });
+
+    it("does not read the chain after an Invalid for a hash without a record", async () => {
+        const tracker = new SequenceNumberTracker();
+        const fetchChain = jest.fn(async () => 5n);
+        tracker.release(await tracker.reserve(ADDRESS, fetchChain));
+
+        tracker.observeTransaction(hashOf(9), TransactionStatus.Invalid);
+        await tracker.reserve(ADDRESS, fetchChain);
+
+        expect(fetchChain).toHaveBeenCalledTimes(1);
+    });
+
+    it("reads the chain at the following reservation when an Invalid arrives during a chain read", async () => {
+        const tracker = new SequenceNumberTracker();
+        tracker.record(ADDRESS, 5n, FAR, hashOf(5));
+        let finishRead: (chain: bigint) => void = () => undefined;
+        const pendingRead = new Promise<bigint>((resolve) => {
+            finishRead = resolve;
+        });
+        const fetchChain = jest.fn(() => pendingRead);
+        const first = tracker.reserve(ADDRESS, fetchChain);
+        // The read is in flight: the reservation has not been handed out.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(fetchChain).toHaveBeenCalledTimes(1);
+
+        tracker.observeTransaction(hashOf(5), TransactionStatus.Invalid);
+        finishRead(5n);
+        tracker.release(await first);
+        const secondRead = jest.fn(async () => 6n);
+        const second = await tracker.reserve(ADDRESS, secondRead);
+
+        expect(fetchChain).toHaveBeenCalledTimes(1);
+        expect(secondRead).toHaveBeenCalledTimes(1);
+        expect(second.sequenceNumber).toBe(6n);
+    });
+
+    it("keeps the request for a read of the chain when the read fails", async () => {
+        const tracker = new SequenceNumberTracker();
+        accept(tracker, await tracker.reserve(ADDRESS, async () => 5n));
+        tracker.observeTransaction(hashOf(5), TransactionStatus.Invalid);
+
+        await expect(
+            tracker.reserve(ADDRESS, async () => {
+                throw new Error("read failed");
+            }),
+        ).rejects.toThrow("read failed");
+        const retryRead = jest.fn(async () => 6n);
+        const reservation = await tracker.reserve(ADDRESS, retryRead);
+
+        expect(retryRead).toHaveBeenCalledTimes(1);
+        expect(reservation.sequenceNumber).toBe(6n);
+    });
+
     it("drops the records up to a transaction that reads Success or Fail", () => {
         const tracker = new SequenceNumberTracker();
         [3, 4, 5].forEach((n) => tracker.record(ADDRESS, BigInt(n), FAR, hashOf(n)));
