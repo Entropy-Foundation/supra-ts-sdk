@@ -64,7 +64,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **`WaitForTransactionOptions.timeoutMs`** sets the wait timeout of one `waitForTransaction` call in milliseconds.
   `timeoutSecs` is deprecated and still honoured; `timeoutMs` takes precedence.
 - **Max gas estimate.** Without a `maxGas` on the call or the client, the coin and fungible asset transfers,
-  `publishPackage` and the entry functions of `Contract.fromABI` read the sender's SUPRA balance, simulate the
+  `publishPackage`, the automation task helpers, the multisig helpers and the entry functions of `Contract.fromABI`
+  read the sender's SUPRA balance, simulate the
   transaction with the largest max gas that balance pays for (at most `MAX_GAS_UNITS_PER_TRANSACTION`), and submit it
   with `ceil(gas used × 1.5)`, at least `MIN_ESTIMATED_MAX_GAS_UNITS` (1,500) and at most what the balance pays for.
   `SupraConfig.maxGasEstimateMultiplier` replaces the factor (`DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER`). The simulation
@@ -94,7 +95,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   transaction the node accepted either commits or, once the timestamp of the latest block has reached its expiration
   time, can no longer commit. A record is dropped when the chain's number passes it, when the timestamp of a latest
   block the client reads (`GET /rpc/v3/block`; not a block read by height or hash) has reached its expiration time, or
-  when a read of the transaction returns `Invalid`; an HTTP 404 does not drop it, since an RPC node answers 404 for a
+  when a read of the transaction returns `Invalid` (the next call then reads the account's number from the chain, since
+  another sender may have committed the number); an HTTP 404 does not drop it, since an RPC node answers 404 for a
   pending transaction that another RPC node received. A submission whose outcome is unknown holds its number until the
   transaction's expiration time or `resetSequenceNumber`, including when its expiration time was beyond what a node
   accepts. The next number is the lowest number at or above the
@@ -130,15 +132,17 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   client's accepts `txExpirySecs: 600`.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
-  `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage` and
-  the entry functions of `Contract.fromABI`.
+  `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage`,
+  `automation.cancelAutomationTask`, `automation.stopAutomationTasks`, the multisig helpers and the entry functions of
+  `Contract.fromABI`.
   The helper uses it as given and does not take part in the order of the calls; the counter records the submitted
   transaction like its own and does not hand out its number while it can commit.
 - **Chain ID check before signing.** Before its first signature a client reads the chain ID of its node, from the
   `x-supra-chain-id` header of an earlier response or with `GET /rpc/v3/transactions/chain_id`, and keeps it for its
   lifetime; concurrent first signatures share one request. Every signing path (`signTransaction`, the signing methods
   of `transaction.build` and of a built transaction, the `transaction.submit` methods that take a `senderAccount`, the
-  coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`) throws
+  coin and fungible asset transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry
+  functions of `Contract.fromABI`) throws
   **`SupraChainIdMismatchError`** (extends `SupraError`; carries `configuredChainId`, `nodeChainId` and
   `transactionChainId`) before signing when the configured chain ID or the transaction's chain ID is not the node's.
 - **`SupraConfig.verifyChainId`**: `false` turns the check off for offline signing. The client signs with its
@@ -209,8 +213,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   With either one the registration carries version 2 parameters (`RegistrationParamsV2` of the node: the version 1
   fields followed by the task type and the optional priority), with task type `"User"` when only the priority is
   given; without them it carries version 1 parameters as before. Nodes of the v11.7.0 and v12 lines accept both.
-  Without a priority the registry assigns the task index. Only an account that the Supra framework has authorised can register a `"System"`
-  task. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
+  Without a priority the registry uses the task's index as its priority. Only an account that the Supra framework has
+  authorised can register a `"System"` task. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
   `AutomationRegistrationParamV2JSON` is the JSON form of the submitted payload.
 - **`automation.cancelAutomationTask({ senderAccount, taskIndex, optionalTransactionArgs? })`** submits
   `0x1::automation_registry::cancel_task`, and **`automation.stopAutomationTasks({ senderAccount, taskIndexes,
@@ -254,7 +258,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   transaction ends with `Fail` or `Invalid`, unless `checkSuccess: false` is passed. It resolved with the failed
   transaction. This applies to every submit helper: `transaction.submit.*`, the submit methods of a built transaction,
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
-  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI`.
+  `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage`, `automation.cancelAutomationTask`,
+  `automation.stopAutomationTasks`, the multisig helpers and the entry functions of `Contract.fromABI`.
 - **Breaking:** a simulation throws `SupraSimulationFailedError` for every status other than `Success`, including
   `PendingAfterExecution` (for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or `SEQUENCE_NUMBER_TOO_NEW`) and `Invalid`.
   It threw a `SupraAPIError` with status 400 for `Fail` only. With `enableTransactionSimulation: true`, a failed
@@ -284,6 +289,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   hex digits in pairs after its `0x` prefix. They sent the transaction, which the node refused.
 - **Breaking:** `getTransactionByHash` takes no type argument. It returns `TransactionResponse`, which is narrowed
   by `txn_type`; the type argument did not change the value returned.
+- **Breaking:** `AutomationRegistrationPayloadJSON.AutomationRegistration` is
+  `AutomationRegistrationParamV1JSON | AutomationRegistrationParamV2JSON` (it was `AutomationRegistrationParamV1JSON`),
+  since a registration can carry version 2 parameters. Code that reads `.V1` of it no longer compiles until it narrows
+  the union first, for example with `"V1" in payload.AutomationRegistration`.
 - **Breaking:** `DEFAULT_MAX_GAS_UNITS` is 20,000 units (was 1,000). It is the max gas of a transaction that sets
   none when the estimate is turned off or the estimating simulation could not run to a result (a request error, a
   response without `gas_used`), and of the builders that cannot estimate. The node requires the sender's balance to pay
@@ -293,7 +302,11 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `max(median_gas_price, min_configured_gas_price)`, read from the node for each transaction (in the helpers that submit
   the read starts when the call is made and is awaited in the call's turn for the sender's account, so calls from one
   account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited before the
-  lock is requested; `transaction.build.simple` awaits it before it builds); the same price is used for the max gas estimate. It was `SupraConfig.minGasUnitPrice`, else
+  lock is requested, and the multisig propose and execute helpers (`proposeMultisigTransaction`,
+  `proposeMultisigTransactionWithHash`, `executeMultisigTransaction`), whose reads of the proposal's function ABI and of
+  the next proposal are awaited before the lock is requested, and for these two the price read starts after those
+  reads, not when the call is made; `transaction.build.simple` awaits it before it builds);
+  the same price is used for the max gas estimate. It was `SupraConfig.minGasUnitPrice`, else
   `DEFAULT_GAS_PRICE` (100,000 quants), without reading the node. A failed read of the estimate throws its error and
   nothing is submitted. A price of the call or the client is used as given.
 - **Breaking:** `SupraConfig.minGasUnitPrice` and `NetworkConfig.minGasUnitPrice` are renamed `gasUnitPrice`, without an
@@ -314,7 +327,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `DEFAULT_MAX_GAS_UNITS`.
 - **Breaking:** `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
   `fungibleAsset.transferFungibleAsset`, `transaction.publishPackage` and the entry functions of `Contract.fromABI` (and
-  the new `fungibleAsset.migrateCoinToFungibleStore`) take the sequence number from the client's counter instead of
+  the new `fungibleAsset.migrateCoinToFungibleStore`, the automation task helpers and the multisig helpers) take the sequence number from the client's counter instead of
   reading it from the chain on every call, and the calls of one client from one account are submitted one after
   another (see the counter under Added); they ran independently of each other. Transactions sent by other means from
   the same account (another client or process, a wallet) make the counter stale: a helper call whose number such a

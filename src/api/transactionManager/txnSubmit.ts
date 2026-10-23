@@ -16,8 +16,8 @@ import type { AccountAddressInput } from "../../types/account";
  * The Submit class provides methods for submitting transactions to the Supra network.
  *
  * Every submission in the SDK (the methods of this class, the submit methods of a built transaction, the coin and
- * fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of
- * `Contract.fromABI`) behaves as follows,
+ * fungible asset transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry
+ * functions of `Contract.fromABI`) behaves as follows,
  * controlled by `enableTransactionWaitAndSimulationArgs`:
  *
  * 1. With `enableTransactionSimulation`, the transaction is simulated first. A simulated status other than `Success`

@@ -20,8 +20,8 @@ The changes that most programs meet first:
   `SupraChainIdMismatchError` ([Chain ID](#chain-id)).
 - Failures are thrown as typed errors: a waited transaction that fails, a simulation that does not succeed, a wait
   that times out ([Transactions](#transactions-submit-wait-and-simulate)).
-- The max gas of the transfers, `publishPackage` and contract entry functions is estimated, and the default max gas
-  is 20,000 units ([Gas](#gas)).
+- The max gas of the transfers, `publishPackage`, the automation task helpers, the multisig helpers and contract entry
+  functions is estimated, and the default max gas is 20,000 units ([Gas](#gas)).
 - The default gas unit price is read from the node, `SupraConfig.minGasUnitPrice` is renamed `gasUnitPrice`, and the
   builders that make no request need a price ([The gas unit price comes from the node](#the-gas-unit-price-comes-from-the-node)).
 - The helpers take sequence numbers from a counter in the client ([Sequence numbers](#sequence-numbers)).
@@ -209,8 +209,8 @@ SDK defines. They keep their names and are still not `SupraAPIError`s.
 ### A failed transaction throws when the SDK waits for it
 
 With `enableWaitForTransaction: true`, every submit helper (`transaction.submit.*`, the submit methods of a built
-transaction, the coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`)
-throws `SupraTransactionFailedError` when the transaction ends with `Fail` or `Invalid`; it resolved with the failed
+transaction, the coin and fungible asset transfers, `publishPackage`, the automation task helpers, the multisig
+helpers and the entry functions of `Contract.fromABI`) throws `SupraTransactionFailedError` when the transaction ends with `Fail` or `Invalid`; it resolved with the failed
 transaction. A wait that ends without a final status throws `SupraTransactionTimeoutError`; it threw a `SupraAPIError`
 with status 500. `checkSuccess: false` returns the transaction whatever its final status.
 
@@ -259,7 +259,8 @@ A simulation throws `SupraSimulationFailedError` (`status`, `vm_status`, `major_
 `transaction`) for `Fail`, `Invalid` and `PendingAfterExecution` (for example `SENDING_ACCOUNT_DOES_NOT_EXIST` or
 `SEQUENCE_NUMBER_TOO_NEW`). 1.2.0 threw a `SupraAPIError` with status 400 for `Fail` only and returned the other
 statuses. With `enableTransactionSimulation: true`, a failed simulation means the transaction is not submitted. The
-max gas estimate ([Gas](#gas)) simulates too, so the transfers, `publishPackage` and contract entry functions throw
+max gas estimate ([Gas](#gas)) simulates too, so the transfers, `publishPackage`, the automation task helpers, the
+multisig helpers and contract entry functions throw
 `SupraSimulationFailedError` for a transaction that would not succeed, before submitting it. A simulation refused for a
 gas unit price below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead
 ([The gas unit price comes from the node](#the-gas-unit-price-comes-from-the-node)).
@@ -384,8 +385,8 @@ this `RangeError` for a malformed address before any request, and so do `submitM
 
 ### The max gas is estimated
 
-Without a `maxGas` on the call or the client, the coin and fungible asset transfers, `publishPackage` and the entry
-functions of `Contract.fromABI` read the sender's SUPRA balance, simulate the transaction, and submit it with
+Without a `maxGas` on the call or the client, the coin and fungible asset transfers, `publishPackage`, the automation
+task helpers, the multisig helpers and the entry functions of `Contract.fromABI` read the sender's SUPRA balance, simulate the transaction, and submit it with
 `ceil(gas used × 1.5)`, at least 1,500 units and at most what the balance pays for. Each of these calls makes a
 balance read and a simulation request before the submission. `transaction.build.simple` makes a balance read and uses
 `DEFAULT_MAX_GAS_UNITS`, at most what the balance pays for.
@@ -473,7 +474,10 @@ that relied on the default. In 2.0.0 the price of a transaction is the call's `g
 - A failed read of the estimate throws that read's error, like a failed build, and nothing is submitted. In the helpers
   that submit, the read starts when the call is made and is awaited in the call's turn for the sender's account, so calls
   from one account keep the order of the calls, except SUPRA fungible asset transfers, whose balance check is awaited
-  before the lock is requested. `transaction.build.simple` awaits the read before it builds.
+  before the lock is requested, and the multisig propose and execute helpers (`proposeMultisigTransaction`,
+  `proposeMultisigTransactionWithHash`, `executeMultisigTransaction`), whose reads of the proposal's function ABI and of
+  the next proposal are awaited before the lock is requested; for these two the price read starts after those reads,
+  not when the call is made. `transaction.build.simple` awaits the read before it builds.
 - `getEstimatedGasUnitPrice()` is new; `getGasPrice()` (the median) and `getMinGasUnitPrice()` (the minimum) are
   unchanged.
 
@@ -512,8 +516,8 @@ console.log(priced.networkInformation.gasUnitPrice);
 
 ## Sequence numbers
 
-The transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the
-sequence number from a counter in the client instead of reading it from the chain on every call. The counter records
+The transfers, `migrateCoinToFungibleStore`, `publishPackage`, the automation task helpers, the multisig helpers and the
+entry functions of `Contract.fromABI` take the sequence number from a counter in the client instead of reading it from the chain on every call. The counter records
 each transaction the client submitted, with its expiration time, until the chain's number passes it, a latest block the
 client reads has reached its expiration time, or a read of it returns `Invalid`, and hands out the lowest number at or above
 the chain's that has no record. A refusal for a stale number reads the chain again and sends the transaction once
@@ -673,6 +677,21 @@ import type { FunctionTypeArgs } from "supra-ts-sdk";
 
 function structName(typeArg: FunctionTypeArgs): string | undefined {
     return typeof typeArg === "object" && "struct" in typeArg ? typeArg.struct.name : undefined;
+}
+```
+
+- `AutomationRegistrationPayloadJSON.AutomationRegistration`, the automation registration of a transaction payload in
+  JSON form, is `AutomationRegistrationParamV1JSON | AutomationRegistrationParamV2JSON`; it was
+  `AutomationRegistrationParamV1JSON`, and a registration can now carry version 2 parameters. Code that reads `.V1`
+  narrows first:
+
+```typescript
+import type { AutomationRegistrationPayloadJSON } from "supra-ts-sdk";
+
+function maxGasOfRegistration(payload: AutomationRegistrationPayloadJSON): bigint | number {
+    const registration = payload.AutomationRegistration;
+    // 1.2.0: payload.AutomationRegistration.V1.max_gas_amount
+    return "V1" in registration ? registration.V1.max_gas_amount : registration.V2.max_gas_amount;
 }
 ```
 

@@ -195,8 +195,8 @@ and the chain ID inside the transaction are the node's, and throws `SupraChainId
 is not; nothing is signed or sent. The check covers `signTransaction`, the `signedTransaction`, `sendTxnPayload`,
 `signTransaction`, `simulate` and `submitTransaction` methods of a built transaction, `transaction.build.signedTransaction`
 and `transaction.build.sendTxnPayload`, the `transaction.submit` methods that take a `senderAccount`, the coin and
-fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`.
-These signing methods return promises.
+fungible asset transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry functions
+of `Contract.fromABI`. These signing methods return promises.
 
 `getChainId()` resolves to the node's chain ID, and `validateChainId()` throws `SupraChainIdMismatchError` when the
 configured chain ID differs from it; both use the same stored value.
@@ -325,8 +325,8 @@ retried. POST requests (submit, simulate, view) are never retried.
 ### Transaction outcomes
 
 Every submit helper (`transaction.submit.*`, the submit methods of a built transaction, the coin and fungible asset
-transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`) handles the
-outcome the same way:
+transfers, `publishPackage`, the automation task helpers, the multisig helpers and the entry functions of
+`Contract.fromABI`) handles the outcome the same way:
 
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws
   `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too. A gas unit price below the node's
@@ -400,8 +400,8 @@ try {
 
 A transaction carries the sender's sequence number, and the node executes a transaction only when its number is the
 account's next number. `transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
-`migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry functions
-of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
+`migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks`, the multisig helpers and
+the entry functions of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
 
 - The counter records every transaction the client submits: those the node accepted, and those whose submission
   request failed without an answer (a timeout, a lost connection, a 5xx other than 503), which the node may have
@@ -410,7 +410,8 @@ of `Contract.fromABI` take the number from a counter that the `SupraClient` keep
   the timestamp of the latest block has reached its expiration time, can no longer commit.
 - A record is dropped when the account's sequence number on the chain passes it, when the timestamp of a latest block
   the client reads (`GET /rpc/v3/block`) has reached its expiration time, or when a read of the transaction through
-  the client returns `Invalid`. Reads of a block by height or by hash do not drop records. An HTTP 404 does not drop a
+  the client returns `Invalid`; the next call then reads the account's number from the chain, because another sender may
+  have committed the discarded transaction's number. Reads of a block by height or by hash do not drop records. An HTTP 404 does not drop a
   record: an RPC node answers 404 for a pending transaction that another RPC node behind the same URL received.
 - A submission whose outcome is unknown holds its number until its expiration time or `resetSequenceNumber`, including
   when its expiration time was beyond what a node accepts.
@@ -514,11 +515,15 @@ The gas unit price of a transaction is, in this order:
 3. the node's estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`
    (`supra.getEstimatedGasUnitPrice()` returns it). The median is taken over the last transactions the RPC node
    executed and can be below the node's current minimum. The estimate is read for each transaction that needs it. In the
-   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage`, the automation task helpers
-   and the entry functions of `Contract.fromABI`) the read starts when the call is made, before the sender's account lock is requested, and is
-   awaited in the call's turn, so calls from one account keep the order of the calls, except SUPRA fungible asset
-   transfers, whose balance check is awaited before the lock is requested. `transaction.build.simple` awaits the read
-   before it builds. The same price is used for the max gas estimate and the transaction. A failed read throws its
+   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage`, the automation task helpers,
+   the multisig helpers and the entry functions of `Contract.fromABI`) the read starts when the call is made, before the
+   sender's account lock is requested, and is awaited in the call's turn, so calls from one account keep the order of
+   the calls, except SUPRA fungible asset transfers, whose balance check is awaited before the lock is requested, and
+   the multisig propose and execute helpers (`proposeMultisigTransaction`, `proposeMultisigTransactionWithHash`,
+   `executeMultisigTransaction`), whose reads of the proposal's function ABI and of the next proposal are awaited before
+   the lock is requested. For these two the price read starts after those reads, not when the call is made.
+   `transaction.build.simple` awaits the read before it builds. The same price is used for the max gas estimate and the
+   transaction. A failed read throws its
    error, like a failed build, and nothing is submitted.
 
 A price set by the call or the client is used as given and makes no request. When it is below the node's minimum, the
@@ -531,8 +536,8 @@ estimate: without a price on the call or the client they throw a `RangeError` be
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas
 used. When neither the call nor the client sets `maxGas`:
 
-- The coin and fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of
-  `Contract.fromABI` estimate it.
+- The coin and fungible asset transfers, `publishPackage`, the automation task helpers, the multisig helpers and the
+  entry functions of `Contract.fromABI` estimate it.
   They read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and
   use `ceil(gas used × 1.5)`, at least 1,500 units and at most what the balance pays for. A simulation whose status is
   not `Success` (an abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and
@@ -587,9 +592,6 @@ await supra.multisig.proposeMultisigTransaction({
     payload: { function: '0x1::supra_account::transfer', functionArgs: ['0x2', 1000n] },
     optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
 });
-// Or only its hash is stored; the executor passes the payload to executeMultisigTransaction.
-// await supra.multisig.proposeMultisigTransactionWithHash({ ... same arguments ... });
-
 const { next } = await supra.multisig.getMultisigSequenceNumbers({ multisigAddress });
 await supra.multisig.approveMultisigTransaction({
     senderAccount: second,
@@ -603,6 +605,38 @@ await supra.multisig.executeMultisigTransaction({ senderAccount: first, multisig
 // await supra.multisig.rejectMultisigTransaction({ senderAccount: first, multisigAddress, sequenceNumber });
 // await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: first, multisigAddress });
 ```
+
+A proposal can store only the hash of its payload, which keeps the payload off chain until the execution. The executor
+then passes the payload to `executeMultisigTransaction`:
+
+```ts
+const payload: MultisigEntryFunctionPayload = {
+    function: '0x1::supra_account::transfer',
+    functionArgs: ['0x2', 1000n],
+};
+
+await supra.multisig.proposeMultisigTransactionWithHash({
+    senderAccount: first,
+    multisigAddress,
+    payload,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+const { next: nextNumber } = await supra.multisig.getMultisigSequenceNumbers({ multisigAddress });
+await supra.multisig.approveMultisigTransaction({
+    senderAccount: second,
+    multisigAddress,
+    sequenceNumber: nextNumber - 1n,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+// Without the payload this call throws SupraMultisigPayloadError before it submits anything.
+await supra.multisig.executeMultisigTransaction({ senderAccount: first, multisigAddress, payload });
+```
+
+Creating a proposal counts as the proposer's approval: `create_transaction` and `create_transaction_with_hash` record
+the creator's vote as an approval. With `signaturesRequired: 2`, as above, one more owner has to approve before the
+execution.
 
 `createMultisigAccount` returns the account's address, derived from the sender and the creating transaction's sequence
 number (`deriveMultisigAccountAddress`); the account exists once the transaction has executed. The default

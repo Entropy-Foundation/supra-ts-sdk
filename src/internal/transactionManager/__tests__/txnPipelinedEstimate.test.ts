@@ -540,8 +540,8 @@ describe("a read of a transaction this client submitted", () => {
 
         await transfer(supra, sender);
 
-        // Only the record of the discarded transaction is dropped; the chain is not read again.
-        expect(accountReads).toBe(readsBefore);
+        // The record of the discarded transaction is dropped, and the chain is read once more before the next number.
+        expect(accountReads).toBe(readsBefore + 1);
         expect(submissions.map((s) => s.sequenceNumber)).toEqual([3, 3]);
     });
 
