@@ -107,7 +107,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "js-sha3": "^0.9.3",
+    "js-sha3": "^0.13.0",
     "supra-l1-sdk-core": "^2.0.1"
   },
   "pnpm": {
