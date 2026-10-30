@@ -1,11 +1,19 @@
 import { BCS, HexString, SupraAccount, TxnBuilderTypes } from "supra-l1-sdk-core";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import type {
+    AutomationTaskType,
+    MultisigExecutionPayloadArgs,
     OptionalTransactionPayloadArgs,
     RawTxnJSON,
     SendTxnPayload,
     TransactionPayloadJSON,
 } from "../../types/transactionManager/transactionBuild";
+import {
+    AutomationRegistrationParamsV2,
+    AutomationRegistrationParamsV2Data,
+    validateAutomationTaskType,
+    validateU64,
+} from "./automationRegistration";
 import {
     DEFAULT_MAX_GAS_UNITS,
     DEFAULT_TX_EXPIRATION_DURATION,
@@ -154,6 +162,13 @@ export async function buildWithResolvedMaxGasInternal(
         senderAccount?: SupraAccount | undefined;
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs | undefined;
         buildRawTxn: (optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction;
+        /**
+         * Builds the transaction that the max gas estimate simulates, when that is not the transaction that is sent
+         * (`buildRawTxn`), for a transaction that the node simulates only in another form.
+         */
+        buildEstimateRawTxn?:
+            | ((optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs) => TxnBuilderTypes.RawTransaction)
+            | undefined;
         /** The reservation of the transaction's sequence number, when the number came from the client's counter. */
         reservation?: SequenceNumberReservation | undefined;
     },
@@ -168,7 +183,8 @@ export async function buildWithResolvedMaxGasInternal(
             senderAccount: args.senderAccount,
             reservation: args.reservation,
             optionalTransactionPayloadArgs: options,
-            buildRawTxn: (candidate) => args.buildRawTxn({ ...options, maxGas: candidate }),
+            buildRawTxn: (candidate) =>
+                (args.buildEstimateRawTxn ?? args.buildRawTxn)({ ...options, maxGas: candidate }),
         },
         config,
     );
@@ -350,6 +366,30 @@ export function getTransactionPayloadJSONInternal(
                     },
                 },
             };
+        } else if (txPayload.value instanceof AutomationRegistrationParamsV2) {
+            const params = txPayload.value.value;
+            return {
+                AutomationRegistration: {
+                    V2: {
+                        automated_function: {
+                            module: {
+                                address: params.automated_function.module_name.address.toHexString().toString(),
+                                name: params.automated_function.module_name.name.value,
+                            },
+                            function: params.automated_function.function_name.value,
+                            ty_args: parseFunctionTypeArgs(params.automated_function.ty_args),
+                            args: fromUint8ArrayToJSArray(params.automated_function.args),
+                        },
+                        max_gas_amount: params.max_gas_amount,
+                        gas_price_cap: params.gas_price_cap,
+                        automation_fee_cap_for_epoch: params.automation_fee_cap_for_epoch,
+                        expiration_timestamp_secs: params.expiration_timestamp_secs,
+                        aux_data: fromUint8ArrayToJSArray(params.aux_data),
+                        task_type: params.task_type,
+                        priority_value: params.priority_value ?? null,
+                    },
+                },
+            };
         } else {
             throw new Error("Unknown variant of `AutomationRegistrationParams`");
         }
@@ -357,8 +397,9 @@ export function getTransactionPayloadJSONInternal(
         let multisig_address = txPayload.value.multisig_address.toHexString().toString();
         let payload = txPayload.value.transaction_payload?.transaction_payload;
 
+        // An execution of a proposal whose payload is stored on chain carries no payload.
         if (!payload) {
-            throw new Error("Multisig payload is missing");
+            return { Multisig: { multisig_address } };
         }
 
         return {
@@ -464,6 +505,11 @@ export function scriptRawTxnObjectInternal(
     );
 }
 
+/**
+ * Builds an automation registration. The registration parameters are version 2 (`RegistrationParamsV2`) when
+ * `automationTaskType` or `automationPriority` is given, with task type `User` when only the priority is given, and
+ * version 1 otherwise.
+ */
 export function automationRegistrationRawTxnObjectInternal(
     args: {
         senderAddress: AccountAddressInput;
@@ -476,26 +522,44 @@ export function automationRegistrationRawTxnObjectInternal(
         automationFeeCapForEpoch: bigint;
         automationExpirationTimestampSecs: bigint;
         automationAuxData: Uint8Array[];
+        automationTaskType?: AutomationTaskType;
+        automationPriority?: bigint;
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
     },
     config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
-    let payload = new TxnBuilderTypes.TransactionPayloadAutomationRegistration(
-        new TxnBuilderTypes.AutomationRegistrationParamsV1(
-            new TxnBuilderTypes.AutomationRegistrationParamsV1Data(
-                buildEntryFunctionInternal({
-                    function: args.function,
-                    functionTypeArgs: args.functionTypeArgs,
-                    functionArgs: args.functionArgs,
-                }),
-                args.automationMaxGasAmount,
-                args.automationGasPriceCap,
-                args.automationFeeCapForEpoch,
-                args.automationExpirationTimestampSecs,
-                args.automationAuxData,
-            ),
-        ),
-    );
+    const automatedFunction = buildEntryFunctionInternal({
+        function: args.function,
+        functionTypeArgs: args.functionTypeArgs,
+        functionArgs: args.functionArgs,
+    });
+    const params =
+        args.automationTaskType === undefined && args.automationPriority === undefined
+            ? new TxnBuilderTypes.AutomationRegistrationParamsV1(
+                  new TxnBuilderTypes.AutomationRegistrationParamsV1Data(
+                      automatedFunction,
+                      args.automationMaxGasAmount,
+                      args.automationGasPriceCap,
+                      args.automationFeeCapForEpoch,
+                      args.automationExpirationTimestampSecs,
+                      args.automationAuxData,
+                  ),
+              )
+            : new AutomationRegistrationParamsV2(
+                  new AutomationRegistrationParamsV2Data(
+                      automatedFunction,
+                      args.automationMaxGasAmount,
+                      args.automationGasPriceCap,
+                      args.automationFeeCapForEpoch,
+                      args.automationExpirationTimestampSecs,
+                      args.automationAuxData,
+                      validateAutomationTaskType(args.automationTaskType ?? "User"),
+                      args.automationPriority === undefined
+                          ? undefined
+                          : validateU64(args.automationPriority, "automationPriority"),
+                  ),
+              );
+    let payload = new TxnBuilderTypes.TransactionPayloadAutomationRegistration(params);
     return rawTxnObjectInnerInternal(
         {
             senderAddress: args.senderAddress,
@@ -512,23 +576,26 @@ export function multisigRawTxnObjectInternal(
         senderAddress: AccountAddressInput;
         senderSequenceNumber: bigint;
         multisigAddress: AccountAddressInput;
-        function: MoveFunctionId;
-        functionTypeArgs: TxnBuilderTypes.TypeTag[];
-        functionArgs: Uint8Array[];
         optionalTransactionPayloadArgs?: OptionalTransactionPayloadArgs;
-    },
+    } & MultisigExecutionPayloadArgs,
     config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
+    let transactionPayload: TxnBuilderTypes.MultiSigTransactionPayload | undefined;
+    if (args.function !== undefined) {
+        transactionPayload = new TxnBuilderTypes.MultiSigTransactionPayload(
+            buildEntryFunctionInternal({
+                function: args.function,
+                functionTypeArgs: args.functionTypeArgs,
+                functionArgs: args.functionArgs,
+            }),
+        );
+    } else if (args.functionTypeArgs !== undefined || args.functionArgs !== undefined) {
+        throw new TypeError("functionTypeArgs and functionArgs are given without a function");
+    }
     let payload = new TxnBuilderTypes.TransactionPayloadMultisig(
         new TxnBuilderTypes.MultiSig(
             new TxnBuilderTypes.AccountAddress(addressToBytes(args.multisigAddress)),
-            new TxnBuilderTypes.MultiSigTransactionPayload(
-                buildEntryFunctionInternal({
-                    function: args.function,
-                    functionTypeArgs: args.functionTypeArgs,
-                    functionArgs: args.functionArgs,
-                }),
-            ),
+            transactionPayload,
         ),
     );
     return rawTxnObjectInnerInternal(
@@ -579,6 +646,10 @@ export function multisigProposalTxRawTxnObjectInternal(
     );
 }
 
+/**
+ * A `RawTransaction` bound to the client's network configuration. The `Build` methods return it; it serializes the
+ * transaction and signs it, which checks the chain ID first.
+ */
 export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     constructor(
         private config: NetworkConfig, // pass whatever you need
@@ -605,7 +676,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
 
     /**
      * Create a signed transaction
-     * @param args.senderAccount - Sender KeyPair
+     * @param senderAccount - Sender KeyPair
      * @returns `SignedTransaction`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
@@ -622,7 +693,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
 
     /**
      * Create a send transaction payload
-     * @param args.senderAccount - Sender KeyPair
+     * @param senderAccount - Sender KeyPair
      * @returns `SendTxnPayload`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
@@ -639,7 +710,7 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
 
     /**
      * Simulate the transaction
-     * @param args.senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
+     * @param senderAccountOrAuthenticator - Sender KeyPair or MoveInnerAuthenticator
      * @returns `TransactionResponse` of the simulation, whose status is `Success`
      * @throws `SupraSimulationFailedError` when the simulated status is not `Success`
      * @throws `SupraGasUnitPriceBelowMinimumError` instead when the status is `Invalid` because the gas unit price is

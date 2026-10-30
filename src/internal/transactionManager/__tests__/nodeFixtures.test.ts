@@ -5,6 +5,7 @@ import { SupraClient } from "../../../api/supraClient";
 import { SupraSubmissionOutcomeUnknownError } from "../../../errors/transactionError";
 import type { MoveFunctionId } from "../../../types/move";
 import type { OptionalTransactionPayloadArgs } from "../../../types/transactionManager/transactionBuild";
+import { deserializeRawTransaction } from "../automationRegistration";
 
 /**
  * Byte-equality tests against fixtures recorded from a Supra node. Each case lists the inputs of one
@@ -63,6 +64,10 @@ interface AutomationRegistrationFixture {
     feeCapForEpoch: string;
     expirationTimestampSecs: string;
     auxData: string[];
+    /** Present for a registration with version 2 parameters. */
+    taskType?: "User" | "System";
+    /** The priority of a version 2 registration as a decimal string, or `null` when the registry assigns it. */
+    priority?: string | null;
 }
 
 type FixturePayload = EntryFunctionFixture | ScriptFixture | MultisigFixture | AutomationRegistrationFixture;
@@ -187,6 +192,8 @@ function buildRawTransaction(fixture: TransactionFixture) {
                 automationFeeCapForEpoch: BigInt(payload.feeCapForEpoch),
                 automationExpirationTimestampSecs: BigInt(payload.expirationTimestampSecs),
                 automationAuxData: payload.auxData.map(bytes),
+                ...(payload.taskType === undefined ? {} : { automationTaskType: payload.taskType }),
+                ...(typeof payload.priority === "string" ? { automationPriority: BigInt(payload.priority) } : {}),
             });
     }
 }
@@ -301,6 +308,8 @@ describe("fixtures recorded from a Supra node", () => {
                 "module_publish",
                 "multisig_create_transaction",
                 "multisig_create_transaction_with_hash",
+                "automation_registration_v2_priority",
+                "automation_registration_v2_no_priority",
             ]),
         );
     });
@@ -324,8 +333,10 @@ describe("fixtures recorded from a Supra node", () => {
         });
 
         test("the raw transaction deserializes from the recorded bytes and serializes back to them", () => {
+            // The deserializer of the SDK's submit and simulate methods, which also reads version 2 automation
+            // registration parameters.
             const recorded = bytes(fixture.expected.rawTransactionBcs);
-            const parsed = TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(recorded));
+            const parsed = deserializeRawTransaction(recorded);
             expect(hex(BCS.bcsToBytes(parsed))).toBe(fixture.expected.rawTransactionBcs);
             expect(parsed.chain_id.value).toBe(fixture.chainId);
             expect(parsed.sequence_number).toBe(BigInt(fixture.raw.sequenceNumber));

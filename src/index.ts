@@ -1,4 +1,5 @@
 export * from "./api/account";
+export * from "./api/automation";
 export * from "./api/block";
 export * from "./api/coin";
 export * from "./api/contract";
@@ -6,12 +7,14 @@ export * from "./api/events";
 export * from "./api/faucet";
 export * from "./api/fungibleAsset";
 export * from "./api/methods";
+export * from "./api/multisig";
 export * from "./api/supraClient";
 export * from "./api/table";
 export * from "./api/transaction";
 export * from "./api/transactionManager/txnBuild";
 export * from "./api/transactionManager/txnSimulate";
 export * from "./api/transactionManager/txnSubmit";
+export type { ExtendedRawTransaction } from "./internal/transactionManager/txnBuild";
 
 //utils
 export * from "./utils/apiEndpoints";
@@ -25,6 +28,7 @@ export * from "./types/faucet";
 export * from "./types/fungibleAsset";
 export * from "./types/methods";
 export * from "./types/move";
+export * from "./types/multisig";
 export * from "./types/supraClient";
 export * from "./types/table";
 export * from "./types/transaction";
@@ -39,12 +43,14 @@ export * from "./errors/transactionError";
 export * from "./errors/chainIdError";
 export * from "./errors/fungibleAssetError";
 export * from "./errors/moveVmErrors";
+export * from "./errors/multisigError";
 export { parseVmStatus, type ParsedVmStatus } from "./errors/vmStatus";
 
 //function
 export { standardizeAddress } from "./helper/account";
 export { addAddressPadding, getFunctionParts } from "./helper/general";
 export { parseTypeArgument } from "./helper/typeTag";
+export { deriveMultisigAccountAddress } from "./helper/multisig";
 export { stringifyWithBigInt } from "./utils/json";
 
 //constants

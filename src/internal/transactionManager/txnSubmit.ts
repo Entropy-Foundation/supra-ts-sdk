@@ -1,4 +1,4 @@
-import { BCS, HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
+import { HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
 import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
@@ -15,7 +15,11 @@ import {
     withSequenceNumberInternal,
     type ReservationBinding,
 } from "../sequenceNumber";
-import type { RawTxnJSON, SendTxnPayload } from "../../types/transactionManager/transactionBuild";
+import type {
+    OptionalTransactionPayloadArgs,
+    RawTxnJSON,
+    SendTxnPayload,
+} from "../../types/transactionManager/transactionBuild";
 import type {
     EnableTransactionWaitAndSimulationArgs,
     OptionalTransactionArgs,
@@ -40,6 +44,17 @@ import {
 } from "./txnBuild";
 import type { AccountAddressInput } from "../../types/account";
 import type { Ed25519Signature } from "../../types/move";
+import { deserializeRawTransaction } from "./automationRegistration";
+
+const simulationForms = new WeakMap<SendTxnPayload, SendTxnPayload>();
+
+/**
+ * Records `form` as the transaction that the simulation before the submission of `payload` simulates, for a transaction
+ * that the node simulates only in another form than the one that is sent. `payload` is what is submitted.
+ */
+export function bindSimulationForm(payload: SendTxnPayload, form: SendTxnPayload): void {
+    simulationForms.set(payload, form);
+}
 
 /**
  * Validates the options of a submission. The helpers that reserve a sequence number call it before reserving, so
@@ -70,14 +85,15 @@ async function simulateBeforeSubmission(
 ): Promise<SendTxnPayload> {
     let current = payload;
     for (let checks = 0; ; checks += 1) {
+        // The transaction that is simulated: the one that is sent, or its recorded simulation form.
+        const signed = simulationForms.get(current) ?? current;
         try {
-            await simulateUnmappedTxnInternal({ sendTxPayload: current }, config);
+            await simulateUnmappedTxnInternal({ sendTxPayload: signed }, config);
             return current;
         } catch (error) {
             if (!isSequenceNumberTooNew(error) || checks >= MAX_TOO_NEW_CHECKS) {
                 throw error;
             }
-            const signed = current;
             const rawTxn = signed.Move.raw_txn;
             let address: string;
             try {
@@ -174,6 +190,11 @@ export async function submitTxnInternal(
         sendTxJsonPayload: SendTxnPayload;
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
         deferGasPriceRefusalMapping?: boolean;
+        /**
+         * Called with the raw transaction that is about to be sent, after the simulation before submission, which can
+         * sign the transaction again with a lower sequence number.
+         */
+        onSubmission?: ((rawTxn: RawTxnJSON) => void) | undefined;
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
@@ -191,6 +212,7 @@ async function submitUnmappedTxnInternal(
     args: {
         sendTxJsonPayload: SendTxnPayload;
         enableTransactionWaitAndSimulationArgs?: EnableTransactionWaitAndSimulationArgs;
+        onSubmission?: ((rawTxn: RawTxnJSON) => void) | undefined;
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
@@ -228,6 +250,8 @@ async function submitUnmappedTxnInternal(
     if (options.waitTimeoutMs !== undefined) {
         waitOptions.timeoutMs = options.waitTimeoutMs;
     }
+
+    args.onSubmission?.(rawTxn);
 
     let answer: unknown;
     try {
@@ -313,7 +337,52 @@ export async function buildAndSubmitEntryFunctionInternal(
     },
     config: NetworkConfig,
 ): Promise<SubmitTransactionResponse> {
+    return buildAndSubmitInternal(
+        {
+            senderAccount: args.senderAccount,
+            buildRawTxn: (senderSequenceNumber, optionalTransactionPayloadArgs) =>
+                rawTxnObjectInternal(
+                    {
+                        ...args.payload,
+                        senderAddress: args.senderAccount.address(),
+                        senderSequenceNumber,
+                        optionalTransactionPayloadArgs,
+                    },
+                    config,
+                ),
+            optionalTransactionArgs: args.optionalTransactionArgs,
+        },
+        config,
+    );
+}
+
+/**
+ * Builds, signs and submits the transaction that `buildRawTxn` makes, for the helpers of `senderAccount`, with the
+ * sequence number, lock, gas, simulation and wait behaviour described for `buildAndSubmitEntryFunctionInternal`.
+ * `buildRawTxn` is called with the sequence number and the resolved gas settings, and again with another max gas when
+ * the estimate simulates the transaction. `onSubmission` is called with the raw transaction that is sent.
+ */
+export async function buildAndSubmitInternal(
+    args: {
+        senderAccount: SupraAccount;
+        buildRawTxn: (
+            senderSequenceNumber: bigint,
+            optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs,
+        ) => TxnBuilderTypes.RawTransaction;
+        /** Builds the transaction the max gas estimate simulates, when that is not the one that is sent. */
+        buildEstimateRawTxn?:
+            | ((
+                  senderSequenceNumber: bigint,
+                  optionalTransactionPayloadArgs: OptionalTransactionPayloadArgs,
+              ) => TxnBuilderTypes.RawTransaction)
+            | undefined;
+        optionalTransactionArgs?: OptionalTransactionArgs | undefined;
+        onSubmission?: ((rawTxn: RawTxnJSON) => void) | undefined;
+    },
+    config: NetworkConfig,
+): Promise<SubmitTransactionResponse> {
     const senderAddress = args.senderAccount.address();
+    const buildEstimate = args.buildEstimateRawTxn;
     validateSubmitOptions(args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {});
     const callOptions = args.optionalTransactionArgs?.optionalTransactionPayloadArgs;
     // The read of the node's gas unit price estimate starts before the account's lock is requested and is awaited
@@ -334,26 +403,38 @@ export async function buildAndSubmitEntryFunctionInternal(
                     senderAccount: args.senderAccount,
                     reservation,
                     optionalTransactionPayloadArgs,
-                    buildRawTxn: (options) =>
-                        rawTxnObjectInternal(
-                            {
-                                ...args.payload,
-                                senderAddress,
-                                senderSequenceNumber,
-                                optionalTransactionPayloadArgs: options,
-                            },
-                            config,
-                        ),
+                    buildRawTxn: (options) => args.buildRawTxn(senderSequenceNumber, options),
+                    buildEstimateRawTxn:
+                        buildEstimate === undefined
+                            ? undefined
+                            : (options) => buildEstimate(senderSequenceNumber, options),
                 },
                 config,
             );
-            const sendTxPayload = await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn }, config);
+            // The payload that is sent, with the simulation form of the transaction when it has one.
+            const signWithSimulationForm = async (signedRawTxn: TxnBuilderTypes.RawTransaction) => {
+                const payload = await sendTxnPayloadInternal(
+                    { senderAccount: args.senderAccount, rawTxn: signedRawTxn },
+                    config,
+                );
+                if (buildEstimate !== undefined) {
+                    const form = buildEstimate(signedRawTxn.sequence_number, {
+                        ...optionalTransactionPayloadArgs,
+                        maxGas: signedRawTxn.max_gas_amount,
+                        gasUnitPrice: signedRawTxn.gas_unit_price,
+                        txExpiryTime: signedRawTxn.expiration_timestamp_secs,
+                    });
+                    bindSimulationForm(
+                        payload,
+                        await sendTxnPayloadInternal({ senderAccount: args.senderAccount, rawTxn: form }, config),
+                    );
+                }
+                return payload;
+            };
+            const sendTxPayload = await signWithSimulationForm(rawTxn);
             if (reservation !== undefined) {
                 bindReservation(sendTxPayload, reservation, (sequenceNumber) =>
-                    sendTxnPayloadInternal(
-                        { senderAccount: args.senderAccount, rawTxn: withSequenceNumber(rawTxn, sequenceNumber) },
-                        config,
-                    ),
+                    signWithSimulationForm(withSequenceNumber(rawTxn, sequenceNumber)),
                 );
             }
             return await submitTxnInternal(
@@ -362,6 +443,7 @@ export async function buildAndSubmitEntryFunctionInternal(
                     enableTransactionWaitAndSimulationArgs:
                         args.optionalTransactionArgs?.enableTransactionWaitAndSimulationArgs ?? {},
                     deferGasPriceRefusalMapping: true,
+                    onSubmission: args.onSubmission,
                 },
                 config,
             );
@@ -382,7 +464,7 @@ export async function submitSerializedRawTransactionInternal(
     let sendTxPayload = await sendTxnPayloadInternal(
         {
             senderAccount: args.senderAccount,
-            rawTxn: TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction)),
+            rawTxn: deserializeRawTransaction(args.serializedRawTransaction),
         },
         config,
     );
@@ -407,7 +489,7 @@ export async function submitSerializedRawTransactionAndSignatureInternal(
 ): Promise<SubmitTransactionResponse> {
     const publicKey = hexBytesOf(args.senderPubkey, "senderPubkey");
     const signature = hexBytesOf(args.signature, "signature");
-    const rawTxn = TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction));
+    const rawTxn = deserializeRawTransaction(args.serializedRawTransaction);
     const sendTxPayload = withTransactionHash(
         {
             Move: {

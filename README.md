@@ -18,6 +18,8 @@ It provides strongly-typed helpers for:
 - Calling view / entry functions on Move modules
 - Working with Move structs and ABIs
 
+The [API reference](https://entropy-foundation.github.io/supra-ts-sdk/) documents every exported class, function and type of the latest release.
+
 
 ## ✨ Features
 
@@ -52,12 +54,12 @@ pnpm add supra-ts-sdk@devnet
 ```
 
 A tag moves to a new version when the node release that version supports reaches the tag's network.
-[RELEASING.md](./RELEASING.md) describes the versioning policy and the release process.
+[RELEASING.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/RELEASING.md) describes the versioning policy and the release process.
 
 ### Compatibility
 
 2.0.0 supports Supra node v11.7.0 (Mainnet and Testnet) and the v12.0.0 release candidates (Devnet).
-[`compatibility.json`](./compatibility.json) states, for each SDK release, the node releases it supports and the RPC
+[`compatibility.json`](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/compatibility.json) states, for each SDK release, the node releases it supports and the RPC
 API versions it calls. The package ships it, so an application can read it as `supra-ts-sdk/compatibility.json`:
 
 ```json
@@ -88,8 +90,8 @@ Node releases are written `v<major>.<minor>.<patch>`, with `-rc<N>` for a releas
 
 ### Upgrading from 1.x
 
-[MIGRATION.md](./MIGRATION.md) lists every breaking change from 1.2.0 to 2.0.0 and the code to change.
-[CHANGELOG.md](./CHANGELOG.md) lists every change of each release.
+[MIGRATION.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/MIGRATION.md) lists every breaking change from 1.2.0 to 2.0.0 and the code to change.
+[CHANGELOG.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/CHANGELOG.md) lists every change of each release.
 
 ## Requirements
 
@@ -128,7 +130,7 @@ console.log(`Transfer ${transfer.hash}: ${transfer.status}`);
 
 The helper estimates the max gas, takes the sequence number from the client's counter and checks the chain ID of the
 node before it signs. On a network without a faucet, use an account that holds SUPRA, for example one made with
-`SupraAccount.fromSupraAccountObject`. The [examples](./examples/README.md) run against Devnet, Testnet and localnets.
+`SupraAccount.fromSupraAccountObject`. The [examples](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/README.md) run against Devnet, Testnet and localnets.
 
 ### Querying Accounts
 
@@ -193,8 +195,8 @@ and the chain ID inside the transaction are the node's, and throws `SupraChainId
 is not; nothing is signed or sent. The check covers `signTransaction`, the `signedTransaction`, `sendTxnPayload`,
 `signTransaction`, `simulate` and `submitTransaction` methods of a built transaction, `transaction.build.signedTransaction`
 and `transaction.build.sendTxnPayload`, the `transaction.submit` methods that take a `senderAccount`, the coin and
-fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI`. These signing methods return
-promises.
+fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`.
+These signing methods return promises.
 
 `getChainId()` resolves to the node's chain ID, and `validateChainId()` throws `SupraChainIdMismatchError` when the
 configured chain ID differs from it; both use the same stored value.
@@ -323,7 +325,8 @@ retried. POST requests (submit, simulate, view) are never retried.
 ### Transaction outcomes
 
 Every submit helper (`transaction.submit.*`, the submit methods of a built transaction, the coin and fungible asset
-transfers, `publishPackage` and the entry functions of `Contract.fromABI`) handles the outcome the same way:
+transfers, `publishPackage`, the automation task helpers and the entry functions of `Contract.fromABI`) handles the
+outcome the same way:
 
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws
   `SupraSimulationFailedError` and nothing is submitted. `simulate` throws it too. A gas unit price below the node's
@@ -397,8 +400,8 @@ try {
 
 A transaction carries the sender's sequence number, and the node executes a transaction only when its number is the
 account's next number. `transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
-`migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the number from a
-counter that the `SupraClient` keeps for each account:
+`migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry functions
+of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
 
 - The counter records every transaction the client submits: those the node accepted, and those whose submission
   request failed without an answer (a timeout, a lost connection, a 5xx other than 503), which the node may have
@@ -511,8 +514,8 @@ The gas unit price of a transaction is, in this order:
 3. the node's estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`
    (`supra.getEstimatedGasUnitPrice()` returns it). The median is taken over the last transactions the RPC node
    executed and can be below the node's current minimum. The estimate is read for each transaction that needs it. In the
-   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of
-   `Contract.fromABI`) the read starts when the call is made, before the sender's account lock is requested, and is
+   helpers that submit (the transfers, `migrateCoinToFungibleStore`, `publishPackage`, the automation task helpers
+   and the entry functions of `Contract.fromABI`) the read starts when the call is made, before the sender's account lock is requested, and is
    awaited in the call's turn, so calls from one account keep the order of the calls, except SUPRA fungible asset
    transfers, whose balance check is awaited before the lock is requested. `transaction.build.simple` awaits the read
    before it builds. The same price is used for the max gas estimate and the transaction. A failed read throws its
@@ -528,7 +531,8 @@ estimate: without a price on the call or the client they throw a `RangeError` be
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas
 used. When neither the call nor the client sets `maxGas`:
 
-- The coin and fungible asset transfers, `publishPackage` and the entry functions of `Contract.fromABI` estimate it.
+- The coin and fungible asset transfers, `publishPackage`, the automation task helpers and the entry functions of
+  `Contract.fromABI` estimate it.
   They read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and
   use `ceil(gas used × 1.5)`, at least 1,500 units and at most what the balance pays for. A simulation whose status is
   not `Success` (an abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and
@@ -561,6 +565,57 @@ await supra.coin.transferSupraCoin({
   optionalTransactionArgs: { optionalTransactionPayloadArgs: { maxGas: 5_000n, gasUnitPrice: 100_000n } },
 });
 ```
+
+### Multisig accounts
+
+`supra.multisig` covers the lifecycle of a multisig account (`0x1::multisig_account`). Every method that sends a
+transaction takes the sender's `SupraAccount` and the usual `optionalTransactionArgs`, and uses the client's sequence
+numbers, chain ID check and gas estimate like the other helpers.
+
+```ts
+const { multisigAddress } = await supra.multisig.createMultisigAccount({
+    senderAccount: first,
+    additionalOwners: [second.address()],
+    signaturesRequired: 2,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+// The payload is stored on chain; the executor needs no payload.
+await supra.multisig.proposeMultisigTransaction({
+    senderAccount: first,
+    multisigAddress,
+    payload: { function: '0x1::supra_account::transfer', functionArgs: ['0x2', 1000n] },
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+// Or only its hash is stored; the executor passes the payload to executeMultisigTransaction.
+// await supra.multisig.proposeMultisigTransactionWithHash({ ... same arguments ... });
+
+const { next } = await supra.multisig.getMultisigSequenceNumbers({ multisigAddress });
+await supra.multisig.approveMultisigTransaction({
+    senderAccount: second,
+    multisigAddress,
+    sequenceNumber: next - 1n,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+await supra.multisig.executeMultisigTransaction({ senderAccount: first, multisigAddress });
+
+// A proposal that the owners reject is removed with:
+// await supra.multisig.rejectMultisigTransaction({ senderAccount: first, multisigAddress, sequenceNumber });
+// await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: first, multisigAddress });
+```
+
+`createMultisigAccount` returns the account's address, derived from the sender and the creating transaction's sequence
+number (`deriveMultisigAccountAddress`); the account exists once the transaction has executed. The default
+`timeoutDurationSecs` of a proposal is seven days. `executeMultisigTransaction` reads the next proposal first: for a
+proposal that stores its payload it sends the transaction without a payload, and for a proposal that stores only a hash
+it sends the `payload` of the call, throwing `SupraMultisigPayloadError` before submitting when that payload is missing
+or does not match the hash. `transaction.build.multisigRawTxnObject` builds the same execution; leave out `function`,
+`functionTypeArgs` and `functionArgs` for a proposal that stores its payload. The nodes refuse to simulate an execution
+without a payload (`MISSING_DATA`), so the helper simulates the execution with the stored payload for the max gas
+estimate and for `enableTransactionSimulation`, and sends the execution without it. A simulation does not check the
+approvals, the timeout or the payload against the proposal: `enableTransactionSimulation` does not detect missing
+approvals or an expired proposal, and the node refuses such an execution when it validates it. The propose and approve
+calls above wait for their commit so that the sequence-number read and the execution see them.
 
 ### `bigint` values
 
@@ -602,11 +657,54 @@ const [rate] = await supra.methods.view<[{ value: bigint }]>({
 console.log(rate.value); // 6442450944n
 ```
 
+### Automation tasks
+
+The node runs the entry function of an automation task as automated transactions of the task's owner, from the
+automation cycle after its registration until the task expires. A task is registered with an automation
+registration transaction built by `transaction.build.automationRegistrationRawTxnObject`. With
+`automationTaskType` or `automationPriority` the registration carries version 2 parameters; without them, version 1.
+Nodes of the v11.7.0 and v12 lines accept both. A task registered without a priority gets its task index as its
+priority. Only accounts that the Supra framework has authorised can register `"System"` tasks.
+
+```ts
+const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
+const registration = supra.transaction.build.automationRegistrationRawTxnObject({
+    senderAddress: owner.address(),
+    senderSequenceNumber: (await supra.getAccountInfo({ accountAddress: owner.address() })).sequence_number,
+    function: '0x1::supra_account::transfer',
+    functionTypeArgs: [],
+    functionArgs: [receiver.toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
+    automationMaxGasAmount: 500n,
+    automationGasPriceCap: 2n * gasUnitPrice,
+    automationFeeCapForEpoch: 1_000_000_000n,
+    automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
+    automationAuxData: [],
+    automationTaskType: 'User',
+    automationPriority: 10n,
+    optionalTransactionPayloadArgs: { gasUnitPrice },
+});
+const registered = await registration.submitTransaction({
+    senderAccount: owner,
+    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+});
+```
+
+The registration emits a `0x1::automation_registry::AutomationTaskMetaData` event whose `task_index` identifies the
+task. `automation.cancelAutomationTask` (`0x1::automation_registry::cancel_task`) cancels a task: one that has not run
+yet is removed, an active one runs until the end of the current automation cycle. `automation.stopAutomationTasks`
+(`0x1::automation_registry::stop_tasks`) removes tasks at once. Both take the sender's sequence number from the
+client's counter, like the transfer helpers, and refunds follow the registry's rules.
+
+```ts
+await supra.automation.cancelAutomationTask({ senderAccount: owner, taskIndex: 42n });
+await supra.automation.stopAutomationTasks({ senderAccount: owner, taskIndexes: [43n, 44n] });
+```
+
 ## 📚 More Examples
 
 Every example runs against Devnet, Testnet or a localnet given `SUPRA_NETWORK` (or `SUPRA_RPC_URL` and
 `SUPRA_CHAIN_ID`) and, for the examples that send transactions, `SUPRA_PRIVATE_KEY` or `SUPRA_EXAMPLES_FUND=1`.
-[`examples/README.md`](./examples/README.md) lists what each one needs. From a clone of this repository:
+[`examples/README.md`](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/examples/README.md) lists what each one needs. From a clone of this repository:
 
 ```bash
 SUPRA_NETWORK=devnet SUPRA_EXAMPLES_FUND=1 pnpm examples
@@ -646,14 +744,14 @@ Please:
 
 ### Releasing
 
-[RELEASING.md](./RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
-[`compatibility.json`](./compatibility.json) and [CHANGELOG.md](./CHANGELOG.md) are updated with every release.
+[RELEASING.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
+[`compatibility.json`](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/compatibility.json) and [CHANGELOG.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/CHANGELOG.md) are updated with every release.
 
 
 ## 📄 License
 
 MIT License
 
-See the [LICENSE](./LICENSE) file for full details.
+See the [LICENSE](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/LICENSE) file for full details.
 
 Built with ❤️ for the Supra ecosystem. Happy coding! 🚀

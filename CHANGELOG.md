@@ -184,6 +184,39 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   API versions it calls. A unit test checks that its latest release is the version in `package.json`. The package
   ships it, readable as `supra-ts-sdk/compatibility.json`.
 - [`RELEASING.md`](./RELEASING.md) describes the versioning policy, the npm dist-tags and the release checklist.
+- The types that public signatures reference are exported: `ExtendedRawTransaction` (returned by the `Build` methods),
+  `FixedPointType` and `MoveToTSOther` (used by `MoveToTS`).
+- **Multisig helpers** on `supra.multisig` and the client: `createMultisigAccount` (`create_with_owners`; returns
+  `{ multisigAddress, transaction }`, the address derived from the sender and the creating transaction's sequence
+  number), `proposeMultisigTransaction` (`create_transaction`, payload stored on chain),
+  `proposeMultisigTransactionWithHash` (`create_transaction_with_hash`), `approveMultisigTransaction`,
+  `rejectMultisigTransaction`, `executeMultisigTransaction`, `executeRejectedMultisigTransaction`, and the reads
+  `getMultisigSequenceNumbers`, `getMultisigProposal` and `getNextMultisigProposal`. They use the client's sequence
+  numbers, chain ID check, estimated max gas and hash derivation. `executeMultisigTransaction` reads the next proposal
+  and sends no payload when the proposal stores it and the call gives none, the call's `payload` when it matches the
+  stored one or the stored hash; it throws `SupraMultisigPayloadError` before submitting when a needed payload is
+  missing or does not match, and `SupraMultisigNoProposalError` when the queue is empty. The nodes of v11.7.0 and
+  v12.0.0.rc6 do not simulate an execution without a payload (`MISSING_DATA`), so the max gas estimate and
+  `enableTransactionSimulation` simulate it with the stored payload carried, while the transaction that is sent
+  carries none; a stored payload that cannot be decoded throws `SupraMultisigPayloadError` (`stored-undecodable`) when
+  the call needs that simulation. A simulation does not detect missing approvals or an expired proposal.
+  `deriveMultisigAccountAddress`, the types `MultisigProposal`,
+  `MultisigVote`, `MultisigSequenceNumbers`, `MultisigEntryFunctionPayload`, `CreateMultisigAccountResponse` and
+  `MultisigExecutionPayloadArgs`, and the constants `DEFAULT_MULTISIG_TIMEOUT_DURATION_SECS` (seven days) and
+  `MIN_MULTISIG_TIMEOUT_DURATION_SECS` are exported.
+- **Automation registrations with version 2 parameters.** `transaction.build.automationRegistrationRawTxnObject` takes
+  `automationTaskType` (`AutomationTaskType`: `"User"` or `"System"`) and `automationPriority` (a `u64` `bigint`).
+  With either one the registration carries version 2 parameters (`RegistrationParamsV2` of the node: the version 1
+  fields followed by the task type and the optional priority), with task type `"User"` when only the priority is
+  given; without them it carries version 1 parameters as before. Nodes of the v11.7.0 and v12 lines accept both.
+  Without a priority the registry assigns the task index. Only an account that the Supra framework has authorised can register a `"System"`
+  task. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
+  `AutomationRegistrationParamV2JSON` is the JSON form of the submitted payload.
+- **`automation.cancelAutomationTask({ senderAccount, taskIndex, optionalTransactionArgs? })`** submits
+  `0x1::automation_registry::cancel_task`, and **`automation.stopAutomationTasks({ senderAccount, taskIndexes,
+  optionalTransactionArgs? })`** submits `0x1::automation_registry::stop_tasks`, for the user automation tasks of the
+  sender. Like the transfers, they take the sequence number from the client's counter and estimate the max gas. The
+  `Automation` class is also mixed into the client (`supra.cancelAutomationTask`, `supra.stopAutomationTasks`).
 
 ### Changed
 
@@ -367,6 +400,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `block_header: null`.
 - **Breaking:** `FinalizedBlockHeader.transactions` is optional, since the node omits it unless the block is
   requested with `withFinalizedTransactions: true`, and is typed `CommittedTransactionResponse[]`.
+- **Breaking:** `AutomationRegistrationParamsV2`, the version 2 registration in a transaction response, types
+  `task_type` as `"user" | "system"` and `task_priority` as `number | null`, which is what v11.7.0 and v12 nodes send.
+  They were declared `"User" | "System"` and an optional `number`.
 - The `type` option of `getBlockByHeight` and `getTransactionsByBlockHash` is `TransactionQueryType`, which adds
   `"record"` and `"settlement"`.
 - **Breaking:** `isAccountExists` returns `false` only when the node reports the account as absent (HTTP 404 on
@@ -417,6 +453,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 ### Fixed
 
+- `transaction.build.multisigRawTxnObject` builds the execution of a proposal whose payload is stored on chain
+  (`create_transaction`) when `function`, `functionTypeArgs` and `functionArgs` are left out. The payload JSON of the
+  submission carries no `transaction_payload` then; it threw `Multisig payload is missing`. The derived transaction
+  hash is the node's for this kind of transaction.
 - A submission that the node accepts with a 2xx status whose body is not a transaction hash (a body that is not JSON,
   an empty body, or a value that is not a hash) is handled as an accepted submission with the hash derived from the
   signed transaction: the wait or the read-back uses that hash. A body that was not JSON threw a `SupraAPIError` with

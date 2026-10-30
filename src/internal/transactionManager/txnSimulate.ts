@@ -1,4 +1,3 @@
-import { BCS, TxnBuilderTypes } from "supra-l1-sdk-core";
 import { post } from "../../client/post";
 import type { Ed25519Signature, MoveInnerAuthenticator, MultiAgentSignature } from "../../types/move";
 import { TransactionStatus, type TransactionResponse } from "../../types/transaction";
@@ -7,6 +6,7 @@ import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { getRawTxnJSONInternal } from "./txnBuild";
 import { SupraSimulationFailedError } from "../../errors/transactionError";
 import { mapGasUnitPriceRefusalInternal } from "./gasPrice";
+import { deserializeRawTransaction } from "./automationRegistration";
 
 /**
  * Simulates a transaction and returns the simulated transaction when its status is `Success`.
@@ -85,9 +85,7 @@ export async function simulateSerializedTxnInternal(
 ): Promise<TransactionResponse> {
     let sendTxPayload = {
         Move: {
-            raw_txn: getRawTxnJSONInternal(
-                TxnBuilderTypes.RawTransaction.deserialize(new BCS.Deserializer(args.serializedRawTransaction)),
-            ),
+            raw_txn: getRawTxnJSONInternal(deserializeRawTransaction(args.serializedRawTransaction)),
             authenticator: args.txAuthenticator,
         },
     };

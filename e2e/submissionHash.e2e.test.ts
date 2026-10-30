@@ -7,8 +7,10 @@ import {
     SupraNetworkError,
     SupraSubmissionOutcomeUnknownError,
     SupraTimeoutError,
+    SupraTransactionFailedError,
     TransactionStatus,
     TxnBuilderTypes,
+    standardizeAddress,
 } from "../src/index";
 import { createFundedAccount, createUnfundedAccount, fundFromFaucet } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
@@ -324,7 +326,8 @@ describeE2E("the transaction hash derived before submitting", () => {
             function: "0x1::multisig_account::create_transaction" as MoveFunctionId,
             functionTypeArgs: [],
             functionArgs: [
-                new HexString(multisigAddress).toUint8Array(),
+                // The node renders an address without its leading zeros.
+                new HexString(standardizeAddress(multisigAddress)).toUint8Array(),
                 BCS.bcsSerializeBytes(BCS.bcsToBytes(proposed)),
             ],
             optionalTransactionPayloadArgs: { maxGas: 20_000n, gasUnitPrice },
@@ -369,23 +372,43 @@ describeE2E("the transaction hash derived before submitting", () => {
 
     test("an automation registration", async () => {
         const sender = await createFundedAccount(ctx);
-        const rawTxn = ctx.supra.transaction.build.automationRegistrationRawTxnObject({
-            senderAddress: sender.address(),
-            senderSequenceNumber: await sequenceNumberOf(sender),
-            function: SUPRA_ACCOUNT_TRANSFER,
-            functionTypeArgs: [],
-            functionArgs: [createUnfundedAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
-            automationMaxGasAmount: 500n,
-            automationGasPriceCap: 200_000n,
-            automationFeeCapForEpoch: 1_000_000_000n,
-            automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 2 * 60 * 60),
-            automationAuxData: [],
-            optionalTransactionPayloadArgs: { maxGas: 20_000n, gasUnitPrice },
-        });
+        const registration = async () =>
+            ctx.supra.transaction.build.automationRegistrationRawTxnObject({
+                senderAddress: sender.address(),
+                senderSequenceNumber: await sequenceNumberOf(sender),
+                function: SUPRA_ACCOUNT_TRANSFER,
+                functionTypeArgs: [],
+                functionArgs: [createUnfundedAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
+                automationMaxGasAmount: 500n,
+                automationGasPriceCap: 200_000n,
+                automationFeeCapForEpoch: 1_000_000_000n,
+                automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 2 * 60 * 60),
+                automationAuxData: [],
+                optionalTransactionPayloadArgs: { maxGas: 20_000n, gasUnitPrice },
+            });
+        const rawTxn = await registration();
         const outcome = await withheldSubmission("connection", () =>
             rawTxn.submitTransaction({ senderAccount: sender }),
         );
-        await expectDerivedHash(ctx, outcome, "connection");
+        try {
+            await expectDerivedHash(ctx, outcome, "connection");
+        } catch (error) {
+            // The hash was checked before the wait. A registration that executes between two automation cycles
+            // aborts; it is sent once more with a new sequence number.
+            if (
+                !(error instanceof SupraTransactionFailedError) ||
+                !error.message.includes("ECYCLE_TRANSITION_IN_PROGRESS")
+            ) {
+                throw error;
+            }
+            const retried = await (
+                await registration()
+            ).submitTransaction({
+                senderAccount: sender,
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+            });
+            expect(retried.status).toBe(TransactionStatus.Success);
+        }
     });
 
     test("a module publish", async () => {

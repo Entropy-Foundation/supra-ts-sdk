@@ -35,8 +35,8 @@ importers:
   .:
     dependencies:
       js-sha3:
-        specifier: ^0.9.3
-        version: 0.9.3
+        specifier: ^0.13.0
+        version: 0.13.0
       supra-l1-sdk-core:
         specifier: ^2.0.1
         version: 2.0.1
@@ -1664,8 +1664,8 @@ packages:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
     engines: {node: '>=10'}
 
-  js-sha3@0.9.3:
-    resolution: {integrity: sha512-BcJPCQeLg6WjEx3FE591wVAevlli8lxsxm9/FzV4HXkV49TmBH38Yvrpce6fjbADGMKFrBMGTqrVz3qPIZ88Gg==}
+  js-sha3@0.13.0:
+    resolution: {integrity: sha512-v2qy9Guw8XMOYFauObtG1kXLfut7AcSRgBP2rq4R14gVFAO2fW5kjcHcPWkA2IUDbY0cGGZypDMUuP/kkbvNGw==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -4207,7 +4207,7 @@ snapshots:
 
   joycon@3.1.1: {}
 
-  js-sha3@0.9.3: {}
+  js-sha3@0.13.0: {}
 
   js-tokens@4.0.0: {}
 

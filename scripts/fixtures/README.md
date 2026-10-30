@@ -11,12 +11,14 @@ transaction and the transaction hash with the recorded bytes.
 Every case records where each value comes from in its `provenance` map:
 
 - `node`: produced or reported by a Supra node. For the cases signed by the node CLI (entry functions,
-  script, multisig, automation registration) these are the transaction fields, the signature, the
-  public key and the hash that the node reports for the committed transaction.
+  script, multisig, automation registration with version 1 parameters) these are the transaction fields,
+  the signature, the public key and the hash that the node reports for the committed transaction.
 - `node-verified`: produced by the SDK and accepted by the node. The multi-agent and fee payer cases, the
-  module publish (`module_publish`) and the two multisig proposals (`multisig_create_transaction`,
-  `multisig_create_transaction_with_hash`) are not built by the node CLI; the SDK signs them, a node
-  commits them, and the hash the node reports equals the hash the SDK derives.
+  module publish (`module_publish`), the two multisig proposals (`multisig_create_transaction`,
+  `multisig_create_transaction_with_hash`) and the two automation registrations with version 2 parameters
+  (`automation_registration_v2_priority`, `automation_registration_v2_no_priority`) are not built by the
+  node CLI; the SDK signs them, a node commits them, and the hash the node reports equals the hash the SDK
+  derives.
 - `specification`: derived from the definitions of the formats: the BCS of the raw transaction, the
   signing message (the SHA3-256 hash of the salt `SUPRA::RawTransaction` or
   `SUPRA::RawTransactionWithData` followed by the BCS bytes) and the BCS of the signed transaction. The
@@ -57,8 +59,9 @@ node scripts/fixtures/generate.ts --cli /path/to/supra --rpc http://127.0.0.1:<p
 Both localnets must use the same chain ID, which is part of the signed message. `--run-id` fixes the string
 the seeds are derived from; without it each run uses new accounts.
 
-`--sdk-signed-only` records only the module publish and the two multisig proposal cases, which need no CLI,
-and replaces those cases in the existing `--out` file, keeping the others. Their nodes are recorded under
+`--sdk-signed-only` records only the module publish, the two multisig proposal cases and the two version 2
+automation registrations, which need no CLI, and replaces those cases in the existing `--out` file, keeping
+the others. `--case <name>`, repeatable, records only the cases named. Their nodes are recorded under
 `generatedWith.sdkSignedCases`, by the commit each node's `/rpc/v3/version` reports. Run `pnpm format`
 afterwards, which formats the file as Prettier does:
 

@@ -164,7 +164,8 @@ export interface AutomationRegistrationParamsV1 {
 }
 
 /**
- * Automation registration payload for version 2
+ * Automation registration payload for version 2. `task_type` is in lower case, as the node writes it; the
+ * registration takes `AutomationTaskType` (`"User"` or `"System"`).
  */
 export interface AutomationRegistrationParamsV2 {
     automated_function: EntryFunctionPayload;
@@ -174,8 +175,9 @@ export interface AutomationRegistrationParamsV2 {
     automation_fee_cap: number;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     aux_data: any[];
-    task_type: "User" | "System";
-    task_priority?: number;
+    task_type: "user" | "system";
+    /** The priority given at registration; `null` when the registry assigned it. */
+    task_priority: number | null;
 }
 
 export interface BlockHeader {

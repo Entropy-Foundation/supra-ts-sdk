@@ -308,6 +308,76 @@ const assetTransfer = await supra.fungibleAsset.transferFungibleAsset({
 
 ---
 
+## Multisig Module
+
+`supra.multisig` covers the lifecycle of a multisig account. The methods that send a transaction take `senderAccount` and `optionalTransactionArgs` and behave like the other helpers (client sequence numbers, chain ID check, estimated max gas). `createMultisigAccount` returns `{ multisigAddress, transaction }`; the address is derived from the sender and the creating transaction's sequence number (`deriveMultisigAccountAddress`). `proposeMultisigTransaction` stores the payload on chain, `proposeMultisigTransactionWithHash` stores only its SHA3-256 hash. `executeMultisigTransaction` reads the next proposal and sends no payload when the proposal stores one, or the call's `payload` when only a hash is stored; it throws `SupraMultisigPayloadError` before submitting when a needed payload is missing or does not match, and `SupraMultisigNoProposalError` when the queue is empty. `transaction.build.multisigRawTxnObject` without `function`, `functionTypeArgs` and `functionArgs` builds an execution without a payload; the nodes refuse to simulate it (`MISSING_DATA`), and `executeMultisigTransaction` simulates it with the stored payload instead. A simulation does not check approvals, the timeout or the payload, so `enableTransactionSimulation` does not detect missing approvals or an expired proposal.
+
+```typescript
+const { multisigAddress } = await supra.multisig.createMultisigAccount({
+    senderAccount: account,
+    additionalOwners: ["0x2"],
+    signaturesRequired: 2,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+await supra.multisig.proposeMultisigTransaction({
+    senderAccount: account,
+    multisigAddress,
+    payload: { function: "0x1::supra_account::transfer", functionArgs: ["0x3", 1000n] },
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+
+const { lastResolved, next } = await supra.multisig.getMultisigSequenceNumbers({ multisigAddress });
+const proposal = await supra.multisig.getNextMultisigProposal({ multisigAddress }); // with its votes
+
+await supra.multisig.approveMultisigTransaction({
+    senderAccount: account,
+    multisigAddress,
+    sequenceNumber: next - 1n,
+    optionalTransactionArgs: { enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true } },
+});
+await supra.multisig.rejectMultisigTransaction({ senderAccount: account, multisigAddress, sequenceNumber: next - 1n });
+await supra.multisig.executeMultisigTransaction({ senderAccount: account, multisigAddress });
+await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: account, multisigAddress });
+```
+
+---
+
+## Automation Tasks
+
+An automation task is registered with `transaction.build.automationRegistrationRawTxnObject`, a builder that makes no request (pass `gasUnitPrice`, and `maxGas` for a sender with less than 20 SUPRA). Passing `automationTaskType` (`"User"` or `"System"`) or `automationPriority` (a `u64` `bigint`) makes it a version 2 registration; without them it is version 1. v11.7.0 and v12 nodes accept both. Without a priority the registry assigns the task index. A `"System"` task can be registered only by an account the Supra framework has authorised (others abort with `EUNAUTHORIZED_SYSTEM_ACCOUNT`). `automationGasPriceCap` must not be below the node's minimum gas unit price, and `automationAuxData` must be `[]`.
+
+The registration's `0x1::automation_registry::AutomationTaskMetaData` event carries the `task_index`. `supra.automation.cancelAutomationTask` (`cancel_task`) and `supra.automation.stopAutomationTasks` (`stop_tasks`) take it, submit through the client's sequence-number counter like the transfers, and estimate their max gas. Both abort for a task of another account and while the registry moves to the next automation cycle (`ECYCLE_TRANSITION_IN_PROGRESS`).
+
+```typescript
+const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
+const registration = supra.transaction.build.automationRegistrationRawTxnObject({
+    senderAddress: account.address(),
+    senderSequenceNumber: (await supra.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+    function: "0x1::supra_account::transfer",
+    functionTypeArgs: [],
+    functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
+    automationMaxGasAmount: 500n,
+    automationGasPriceCap: 2n * gasUnitPrice,
+    automationFeeCapForEpoch: 1_000_000_000n,
+    automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
+    automationAuxData: [],
+    automationTaskType: "User",
+    automationPriority: 10n,
+    optionalTransactionPayloadArgs: { gasUnitPrice },
+});
+const registered = await registration.submitTransaction({
+    senderAccount: account,
+    enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: true },
+});
+
+// task_index from the AutomationTaskMetaData event of the registration
+await supra.automation.cancelAutomationTask({ senderAccount: account, taskIndex: 42n });
+await supra.automation.stopAutomationTasks({ senderAccount: account, taskIndexes: [43n, 44n] });
+```
+
+---
+
 ## View Functions (Read-Only Contract Calls)
 
 Two approaches: typed `view` and untyped `viewRaw`.
@@ -511,7 +581,7 @@ const submittedSigned = await supra.transaction.submit.submitSerializedRawTransa
 });
 ```
 
-Outcome of a submission (every submit helper, transfer, `publishPackage` and contract entry function):
+Outcome of a submission (every submit helper, transfer, `publishPackage`, automation task helper and contract entry function):
 - With `enableTransactionSimulation: true`, a simulation with a status other than `Success` throws `SupraSimulationFailedError` and nothing is submitted; a gas unit price below the node's minimum throws `SupraGasUnitPriceBelowMinimumError` instead (see Gas). Behind pending transactions of the same client, the simulation uses the account's sequence number on the chain, as the max gas estimate does; a failed read of the account during that check is thrown.
 - With `enableWaitForTransaction: true`, the call waits for a final status. `Success` is returned; `Fail` (executed and failed) and `Invalid` (discarded) throw `SupraTransactionFailedError` unless `checkSuccess: false` is passed. No final status within `waitTimeoutMs` throws `SupraTransactionTimeoutError`.
 - Without `enableWaitForTransaction`, the call returns the transaction as the node reports it right after the submission (usually `Pending`), or `{ hash, status: "NotReadBack", readError }` when that read fails; the node has accepted the transaction in both cases.
@@ -559,7 +629,7 @@ const txnData = await supra.transaction.getTransactionByHash({
 
 ## Sequence Numbers
 
-A transaction executes only when its sequence number is the account's next number. The transfers, `migrateCoinToFungibleStore`, `publishPackage` and the entry functions of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
+A transaction executes only when its sequence number is the account's next number. The transfers, `migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry functions of `Contract.fromABI` take the number from a counter that the `SupraClient` keeps for each account:
 
 - The counter records every transaction the client submits (accepted, or whose submission request failed without an answer) with its expiration time and hash (for a request without an answer, the hash derived before the submission). A record is dropped when the chain's sequence number passes it, when the timestamp of a latest block the client reads (`GET /rpc/v3/block`, not a block read by height or hash) has reached its expiration time (the transaction can no longer commit), or when a read of the transaction returns `Invalid`; an HTTP 404 never drops it (another RPC node behind the same URL may hold the transaction). An unknown outcome holds its number until its expiration time or `resetSequenceNumber`, including when its expiration time was beyond what a node accepts.
 - The number handed out is the lowest number at or above the chain's sequence number that has no record, so transactions sent without waiting get consecutive numbers, also with `Promise.all`. The first use reads the account and the latest block; so does the next call after a refusal for a stale number or a full queue, and every call (once per call) while the estimated chain time (the client's clock shifted to the latest blocks read; it does not move backwards) has passed a record's expiration time by two seconds and no latest block read has reached it. A read never drops a record that can still commit.
@@ -606,7 +676,7 @@ The gas unit price of a transaction is the call's `gasUnitPrice`, else the clien
 
 The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`, and charges the gas used. Without a `maxGas` on the call or the client:
 
-- The transfers, `publishPackage` and contract entry functions estimate it: they read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and use `ceil(gas used × 1.5)` (`SupraConfig.maxGasEstimateMultiplier` replaces 1.5), at least 1,500 units and at most what the balance pays for. A simulation whose status is not `Success` (abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and nothing is submitted. When the balance read or the simulation request fails, `DEFAULT_MAX_GAS_UNITS` applies, at most what the balance pays for.
+- The transfers, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and contract entry functions estimate it: they read the sender's SUPRA balance, simulate the transaction with the largest max gas that balance pays for, and use `ceil(gas used × 1.5)` (`SupraConfig.maxGasEstimateMultiplier` replaces 1.5), at least 1,500 units and at most what the balance pays for. A simulation whose status is not `Success` (abort, `OUT_OF_GAS`, `PendingAfterExecution`, `Invalid`) throws `SupraSimulationFailedError` and nothing is submitted. When the balance read or the simulation request fails, `DEFAULT_MAX_GAS_UNITS` applies, at most what the balance pays for.
 - `transaction.build.simple` has no key pair to simulate with: it uses `DEFAULT_MAX_GAS_UNITS`, at most what the sender's balance pays for.
 - `rawTxnObject`, `scriptRawTxnObject`, `automationRegistrationRawTxnObject`, `multisigRawTxnObject` and `multisigProposalTxRawTxnObject` make no request and use `DEFAULT_MAX_GAS_UNITS`.
 
