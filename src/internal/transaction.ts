@@ -23,6 +23,7 @@ import { sleep } from "../utils/functions";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSubmit";
 import { checkChainIdBeforeSigningInternal } from "./chainId";
+import { checkExpiryBeforeSigningInternal } from "./txExpiry";
 import { sequenceNumberTrackerOf } from "./sequenceNumber";
 import sha3 from "js-sha3";
 
@@ -176,9 +177,11 @@ export function getTransactionSignatureMessageInternal(args: { rawTxn: AnyRawTra
 
 /**
  * Signs a raw, multi-agent or fee-payer transaction. Every signature of the SDK is made here, after
- * {@link checkChainIdBeforeSigningInternal}.
+ * {@link checkChainIdBeforeSigningInternal} and {@link checkExpiryBeforeSigningInternal}.
  * @throws {SupraChainIdMismatchError} Before signing, if the configured chain ID or the transaction's chain ID is not
  * the node's.
+ * @throws {RangeError} Before signing, if the transaction's expiration time is more than the node's maximum time to
+ * live after the client's clock.
  */
 export function signTransactionInternal(
     args: {
@@ -209,6 +212,7 @@ export async function signTransactionInternal(
     config: NetworkConfig,
 ): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519> {
     await checkChainIdBeforeSigningInternal(args.rawTxn, config);
+    await checkExpiryBeforeSigningInternal(args.rawTxn, config);
 
     let signatureBuffer = args.senderAccount.signBuffer(
         getTransactionSignatureMessageInternal({ rawTxn: args.rawTxn }),

@@ -94,6 +94,9 @@ function stubFetch(): void {
                 }),
             );
 
+        if (method === "GET" && path === "/transactions/parameters") {
+            return respond({ max_transaction_time_to_live_seconds: 600 });
+        }
         if (method === "GET" && path === "/transactions/chain_id") {
             const answer = node.chainIdAnswers.shift();
             return answer === undefined ? respond(NODE_CHAIN_ID) : respond(answer.body, answer.status);

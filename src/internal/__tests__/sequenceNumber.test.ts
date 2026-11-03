@@ -103,6 +103,9 @@ beforeEach(() => {
             const answer = submitAnswers.shift()?.() ?? json(HASH);
             return respond(answer);
         }
+        if (method === "GET" && path === "/transactions/parameters") {
+            return respond(json({ max_transaction_time_to_live_seconds: 600 }));
+        }
         if (method === "GET" && path === "/transactions/chain_id") {
             if (failingChainIdReads > 0) {
                 failingChainIdReads -= 1;

@@ -31,8 +31,12 @@ export type MultisigExecutionPayloadArgs =
  *   of the estimate throws its error and nothing is submitted.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
  *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole
- *   seconds when the transaction is built, at most 595 seconds after it (`MAX_TX_EXPIRATION_DURATION -
- *   TX_EXPIRATION_MARGIN_SECS`).
+ *   seconds when the transaction is built, at most `TX_EXPIRATION_MARGIN_SECS` (5) seconds less than the node's
+ *   maximum time to live (`max_transaction_time_to_live_seconds`, 600 on Mainnet, Testnet and Devnet). The builders
+ *   that send requests read the maximum once per client and throw the error of a failed read; the builders that send
+ *   none use the maximum the client has read, else `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600). Signing throws a
+ *   `RangeError` for an expiration time more than the node's maximum after the later of the client's clock and the
+ *   chain time it estimates from its reads of the latest block.
  * - `estimateMaxGas`: when no `maxGas` is set, estimate it (`true`) or use `DEFAULT_MAX_GAS_UNITS` (`false`). Default
  *   the client's `estimateMaxGas`, else `true`.
  *

@@ -483,12 +483,19 @@ it have been sent. The node holds at most 25 numbers per account by default and 
 (`enableWaitForTransaction: true`) when sending more than that.
 
 A transaction expires at `txExpiryTime` (seconds since the Unix epoch, used as given). Without it, a transaction expires
-`SupraConfig.txExpirySecs` seconds (default 60) after the client's clock in whole seconds, at most 595 seconds after
-it: the node refuses an expiration time more than 600 seconds after its own clock, and the 5 seconds left cover a
-node clock that is up to 5 seconds behind the client's, so `txExpirySecs: 600` is accepted. The node also refuses a
-transaction whose expiration time is not after its clock, so a client whose clock is far from the node's has its
-transactions refused (as expired, or as too far in the future); these refusals are thrown as they are. Set
-`txExpirySecs` or `txExpiryTime` for a transaction that is signed or submitted later.
+`SupraConfig.txExpirySecs` seconds (default 60) after the client's clock in whole seconds, at most 5 seconds less than
+the node's maximum time to live: the node refuses an expiration time more than that maximum after its own clock, and
+the 5 seconds left cover a node clock that is up to 5 seconds behind the client's, so a `txExpirySecs` equal to the
+maximum is accepted. The maximum is `max_transaction_time_to_live_seconds` of `GET /rpc/v3/transactions/parameters`
+(600 on Mainnet, Testnet and Devnet); `supra.getTransactionParameters()` returns it. The client reads it once, with
+the first builder that sends requests or the first signature that needs it, and keeps it; a failed read throws its
+error and nothing falls back to 600. A `txExpirySecs` above the maximum, or a transaction whose expiration time is more
+than the maximum after the client's clock, throws a `RangeError` before signing. Signing with `verifyChainId: false`
+sends no request and does not check the expiration time, and the builders that send no request (`rawTxnObject` and the
+like) use the maximum the client has read, else 600. The node also refuses a transaction whose expiration time is not
+after its clock, so a client whose clock is far from the node's has its transactions refused (as expired, or as too far
+in the future); these refusals are thrown as they are. Set `txExpirySecs` or `txExpiryTime` for a transaction that is
+signed or submitted later.
 
 ```ts
 const supra = new SupraClient({ network: Network.TESTNET });

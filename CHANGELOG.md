@@ -126,10 +126,20 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   submission whose sequence number is beyond the numbers it queues for the account ahead of the chain's (25 by
   default). The helpers do not send it again; the next call reads the chain before it takes a number.
 - **`SupraConfig.txExpirySecs`** sets how many seconds after the client's clock (in whole seconds) a transaction built
-  without `txExpiryTime` expires: an integer from 1 to `MAX_TX_EXPIRATION_DURATION` (600), default
-  `DEFAULT_TX_EXPIRATION_DURATION` (60). The expiration time is at most 595 seconds after the client's clock
-  (`MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`), so that a node whose clock is up to 5 seconds behind the
-  client's accepts `txExpirySecs: 600`.
+  without `txExpiryTime` expires: a positive integer, default `DEFAULT_TX_EXPIRATION_DURATION` (60). The expiration
+  time is at most `TX_EXPIRATION_MARGIN_SECS` (5) seconds less than the node's maximum time to live after the client's
+  clock, so that a node whose clock is up to 5 seconds behind the client's accepts it. A builder that sends requests
+  throws a `RangeError` when `txExpirySecs` is more than the node's maximum.
+- **`getTransactionParameters()`** reads `GET /rpc/v3/transactions/parameters` and returns
+  `{ max_transaction_time_to_live_seconds }`, the most seconds after the node's clock that the node accepts as a
+  transaction's expiration time (600 on Mainnet, Testnet and Devnet). The client reads it once, when a builder that
+  sends requests or a signature first needs it, and keeps it; `getTransactionParameters()` reads it again and the
+  client uses the new value. A failed read throws its error and is not kept: there is no fallback to 600. Signing
+  throws a `RangeError` before signing when a transaction's expiration time, whoever set it, is more than the node's
+  maximum after the later of the client's clock and the chain time estimated from the client's reads of the latest
+  block; with `verifyChainId: false` signing sends no request and does not check it. The builders that send no request
+  (`rawTxnObject` and the like) use the maximum the client has read, else `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600).
+  `ASSUMED_MAX_TX_EXPIRATION_DURATION` replaces `MAX_TX_EXPIRATION_DURATION`, which is no longer exported.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
   `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage`,
@@ -338,11 +348,14 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   node discarded after accepting it frees its number when any read of it through the client (`waitForTransaction`,
   `getTransactionByHash`, `isPendingTransaction`, a submission's wait or read-back) returns `Invalid`.
 - **Breaking:** a transaction built without `txExpiryTime` expires `DEFAULT_TX_EXPIRATION_DURATION` (now 60) seconds
-  after the client's clock in whole seconds, or `SupraConfig.txExpirySecs` seconds (at most 595); it expired 300
-  seconds after the client's clock. This applies to every builder, including `rawTxnObject` and the other builders of
-  `transaction.build`. The node refuses a transaction whose expiration time is not after its clock or more than 600
-  seconds after it, so a client whose clock is far from the node's has its transactions refused. Set `txExpiryTime`
-  (absolute, used as given) or `txExpirySecs` for a transaction that is signed or submitted later.
+  after the client's clock in whole seconds, or `SupraConfig.txExpirySecs` seconds (at most 5 seconds less than the
+  node's maximum time to live, which `GET /rpc/v3/transactions/parameters` serves); it expired 300 seconds after the
+  client's clock. This applies to every builder, including `rawTxnObject` and the other builders of
+  `transaction.build`. The node refuses a transaction whose expiration time is not after its clock or more than its
+  maximum after it, so a client whose clock is far from the node's has its transactions refused. A transaction whose
+  expiration time is more than the node's maximum after the client's clock is refused with a `RangeError` before
+  signing, where 1.2.0 sent it and the node refused it. Set `txExpiryTime` (absolute, used as given) or `txExpirySecs`
+  for a transaction that is signed or submitted later.
 - **Breaking:** `signTransaction`, `transaction.build.signedTransaction`, `transaction.build.sendTxnPayload` and the
   `signTransaction`, `signedTransaction` and `sendTxnPayload` methods of a built transaction return promises, since a
   client's first signature reads the node's chain ID. Code that already awaits them is unaffected.

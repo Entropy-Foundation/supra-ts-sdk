@@ -1,5 +1,6 @@
 import { TxnBuilderTypes } from "supra-l1-sdk-core";
-import type { SupraConfig } from "../types/supraClient";
+import type { SupraConfig, TransactionParameters } from "../types/supraClient";
+import { getTransactionParametersInternal } from "../internal/txExpiry";
 import { Network, NetworkInfo, type NetworkConfig } from "../utils/apiEndpoints";
 import { Account } from "./account";
 import { Contract } from "./contract";
@@ -280,6 +281,33 @@ export class SupraClient {
                 ? this.networkInformation.chainId
                 : await getNodeChainIdInternal(this.networkInformation);
         return new TxnBuilderTypes.ChainId(chainId);
+    }
+
+    /**
+     * Reads the node's transaction parameters with `GET /rpc/v3/transactions/parameters`:
+     * `max_transaction_time_to_live_seconds` is the most seconds after the node's clock that the node accepts as a
+     * transaction's expiration time (600 on Mainnet, Testnet and Devnet). The client reads it once, when a builder
+     * that sends requests or a signature first needs it, and checks expiration times against it; this method sends a
+     * new request and the client uses the value it returns from then on.
+     * @returns The node's transaction parameters
+     * @throws {SupraError} If the node's answer has no non-negative integer `max_transaction_time_to_live_seconds`.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    const parameters = await supra.getTransactionParameters();
+     *    console.log(parameters.max_transaction_time_to_live_seconds);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group SupraClient
+     */
+    async getTransactionParameters(): Promise<TransactionParameters> {
+        return getTransactionParametersInternal(this.networkInformation);
     }
 
     /**

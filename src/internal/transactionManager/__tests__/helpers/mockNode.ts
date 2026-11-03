@@ -112,6 +112,8 @@ export class MockNode {
     failEstimateReads = 0;
     /** The gas unit price of every submission, in order of arrival. */
     readonly gasUnitPrices: bigint[] = [];
+    /** `max_transaction_time_to_live_seconds` of `GET /transactions/parameters`. */
+    maxTimeToLive = 600;
 
     private seed: number;
     private readonly latencyMs: [number, number];
@@ -261,6 +263,13 @@ export class MockNode {
             this.count("chain_id");
             return this.respond({ status: 200, body: 255 });
         }
+        if (method === "GET" && path === "/transactions/parameters") {
+            this.count("parameters");
+            return this.respond({
+                status: 200,
+                body: { max_transaction_time_to_live_seconds: this.maxTimeToLive },
+            });
+        }
         if (method === "POST" && (path === "/transactions/simulate" || path === "/transactions/submit")) {
             const body = String(init?.body);
             const raw = (
@@ -388,12 +397,12 @@ export class MockNode {
                 `Transaction expiration timestamp is in the past: expiration time ${expiration}, submission time ` +
                     `${Math.floor(this.nowMs() / 1000)}, both in Unix seconds`,
             );
-        } else if (expiration > Math.floor(this.nowMs() / 1000) + 600) {
+        } else if (expiration > Math.floor(this.nowMs() / 1000) + this.maxTimeToLive) {
             const submission = Math.floor(this.nowMs() / 1000);
             answer = refused(
                 `Transaction expiration timestamp is too far in the future: expiration time ${expiration}, ` +
                     `submission time ${submission}, both in Unix seconds; time to live ${expiration - submission} ` +
-                    "seconds exceeds the maximum of 600 seconds",
+                    `seconds exceeds the maximum of ${this.maxTimeToLive} seconds`,
             );
         } else {
             answer = { status: 200, body: this.accept(sequenceNumber, expiration, body) };
