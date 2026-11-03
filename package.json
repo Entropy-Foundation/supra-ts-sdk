@@ -108,7 +108,7 @@
   },
   "dependencies": {
     "js-sha3": "^0.13.0",
-    "supra-l1-sdk-core": "^2.0.1"
+    "supra-l1-sdk-core": "^2.0.2"
   },
   "pnpm": {
     "overrides": {

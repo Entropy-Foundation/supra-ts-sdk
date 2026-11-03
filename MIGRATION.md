@@ -888,3 +888,20 @@ try {
 `account.getAccountCoinsCount` counts SUPRA held as a fungible asset when the account has no `CoinStore<SupraCoin>`,
 so an account whose SUPRA was migrated returns 1 where it returned 0. Other fungible assets are not counted.
 `account.getAccountSupraBalance` returns the SUPRA balance in total and per form.
+
+## Accounts
+
+2.0.0 depends on `supra-l1-sdk-core` `^2.0.2`, which changes the `SupraAccount` that this package re-exports.
+
+### `SupraAccount` output leaves out the private key
+
+`JSON.stringify(account)` returns `{ address, publicKeyHex }`, and Node.js `util.inspect` and `console.log` show the
+address and the public key only. `signingKey` is a non-enumerable property: `account.signingKey` reads it as before,
+but object spread, `Object.assign`, structured clone and `Object.keys` do not copy or list it. Code that stored or sent
+an account by serializing it, or copied it with spread, uses `toPrivateKeyObject()` to export the key and
+`new SupraAccount(privateKeyBytes)` to restore it.
+
+### `SupraAccount.fromDerivePath` validates the mnemonic
+
+`fromDerivePath` throws `Invalid mnemonic` for a phrase that fails BIP-39 checksum or English wordlist validation,
+including a non-English BIP-39 phrase, which 1.2.0 derived an account from.
