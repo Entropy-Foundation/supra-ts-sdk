@@ -181,6 +181,24 @@ describe("SupraClient", () => {
         });
     });
 
+    describe("getNodeVersion", () => {
+        it("reads GET /version of the client's node", async () => {
+            const body = {
+                version: "0.5.0",
+                branch: "",
+                commit_hash: "f52cb25b7dcdd4ad8b7d7530dbc185ecbeefda02",
+                build_time: "2026-11-03 15:04:58 +10:00",
+                build_env: "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+            };
+            mockGet.mockResolvedValueOnce({ data: body });
+            const client = new SupraClient({ network: Network.TESTNET });
+            const info = await client.getNodeVersion();
+            expect(info).toEqual(body);
+            expect(info.release).toBeUndefined();
+            expect(mockGet).toHaveBeenCalledWith({ path: "/version" }, client.networkInformation);
+        });
+    });
+
     describe("getChainId", () => {
         beforeEach(() => {
             jest.clearAllMocks();
