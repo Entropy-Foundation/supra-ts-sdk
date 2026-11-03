@@ -58,7 +58,8 @@ A tag moves to a new version when the node release that version supports reaches
 
 ### Compatibility
 
-2.0.0 supports Supra node v11.7.0 (Mainnet and Testnet) and the v12.0.0 release candidates (Devnet).
+2.0.0 supports Supra node v11.7.2 (Mainnet and Testnet) and the v12.0.0 release candidates (Devnet). It calls
+`/rpc/v3`, and `/rpc/v4` for the methods that need a v12 node.
 [`compatibility.json`](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/compatibility.json) states, for each SDK release, the node releases it supports and the RPC
 API versions it calls. The package ships it, so an application can read it as `supra-ts-sdk/compatibility.json`:
 
@@ -68,8 +69,8 @@ API versions it calls. The package ships it, so an application can read it as `s
     "releases": [
         {
             "sdk": "2.0.0",
-            "node": { "min": "v11.7.0", "tested": ["v11.7.0", "v12.0.0-rc6"], "unsupported": [] },
-            "rpc": ["v3"]
+            "node": { "min": "v11.7.2", "tested": ["v11.7.2", "v12.0.0-rc7"], "unsupported": [] },
+            "rpc": ["v3", "v4"]
         }
     ]
 }
@@ -86,7 +87,7 @@ API versions it calls. The package ships it, so an application can read it as `s
 | `rpc` | RPC API versions the SDK calls (`/rpc/<version>/...`). |
 
 Node releases are written `v<major>.<minor>.<patch>`, with `-rc<N>` for a release candidate: the node tag
-`supra_node_v12.0.0.rc6` is `v12.0.0-rc6`.
+`supra_node_v12.0.0.rc7` is `v12.0.0-rc7`.
 
 ### Stability
 
@@ -191,8 +192,11 @@ console.log(info.version, info.branch, info.commit_hash, info.build_time, info.b
 
 ### Reading a Feed Page by Page
 
-Paginated methods return `{ response, cursor }`. Pass `cursor` back unchanged until it is `undefined`. A page
-can be empty and still carry a cursor.
+Paginated methods return `{ response, cursor }`. Pass `cursor` back unchanged, as `options.start`, until it is
+`undefined`. A page can be empty and still carry a cursor. `getAccountAutoTransactions` takes the cursor as
+`options.cursor`. `getAccountTransactions` pages by sequence number: `options.start` is a sequence number, included in
+the page in either order, and the cursor is `undefined` after an empty page or when a descending read reaches sequence
+number 0.
 
 This example reads the feed of the account's primary fungible store, which holds the account's SUPRA on a chain
 created from the `supra_node_v12.0.0` genesis (Devnet) and works on every network. SUPRA held in a `CoinStore`
