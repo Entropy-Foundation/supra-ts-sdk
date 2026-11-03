@@ -38,7 +38,9 @@ export interface RetryConfig {
  * faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A call with an explicit
  * `sequenceNumber` does not take part in this order. Calls request the account in the order they are made, except that
  * SUPRA fungible asset transfers (balance checks) and the multisig propose and execute helpers (the ABI of the
- * proposal's function, the next proposal) await reads before they request it.
+ * proposal's function, the next proposal) await reads before they request it. A helper call that takes its number from
+ * the counter does not deduplicate: a repeated call, including one from a restarted process that builds the same
+ * transaction again, submits a new transaction, with the next number when the node already holds the same transaction.
  *
  * The counter records every transaction of the account that the client submitted (accepted, or whose submission
  * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time and hash (for a

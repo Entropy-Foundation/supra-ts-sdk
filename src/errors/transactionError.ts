@@ -208,7 +208,9 @@ export class SupraTransactionTimeoutError extends SupraError {
  * SupraSubmissionOutcomeUnknownError is thrown by a submit helper when the request that submits the transaction fails
  * in a way that leaves it open whether the node accepted the transaction: the request times out, the connection fails
  * before the node answers, or the node answers with a 5xx status other than 503. The error of the request (a
- * `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`) is `cause`.
+ * `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`) is `cause`. It is also thrown when a v11.7 node refuses
+ * a copy of a transaction that its pool holds (`Already scheduled digest=<hash>, ...`) and a read of the hash returns
+ * `Pending` or fails; the 400 `SupraAPIError` of the refusal is then `cause` (see `Submit`).
  *
  * Look `hash` up with `getTransactionByHash`, or wait for it with `waitForTransaction`, before sending the transaction
  * again: a transaction the node accepted can commit until the chain's time reaches `expirationTimestampSecs`. The SDK

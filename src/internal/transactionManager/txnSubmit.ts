@@ -1,13 +1,15 @@
 import { HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
+import { get } from "../../client/get";
 import { post } from "../../client/post";
 import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
 import {
     TransactionStatus,
     type CommittedTransactionResponse,
+    type TransactionResponse,
     type WaitForTransactionOptions,
 } from "../../types/transaction";
-import { SupraAPIError } from "../../errors/apiError";
+import { SupraAPIError, SupraNotFoundError } from "../../errors/apiError";
 import { SupraSubmissionOutcomeUnknownError, SupraTransactionTimeoutError } from "../../errors/transactionError";
 import { ed25519TransactionAuthenticator, transactionHashOf, withTransactionHash } from "./txnHash";
 import {
@@ -31,7 +33,11 @@ import type {
     SubmitTransactionResponse,
 } from "../../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../../utils/constants";
+import {
+    DEFAULT_ENABLE_SIMULATION,
+    DEFAULT_REQUEST_TIMEOUT_MS,
+    DEFAULT_WAIT_FOR_TX_COMPLETION,
+} from "../../utils/constants";
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateUnmappedTxnInternal } from "./txnSimulate";
@@ -271,29 +277,59 @@ async function submitUnmappedTxnInternal(
         if (isUnreadableAcceptance(error)) {
             // The node accepted the transaction with a 2xx status, and its body is not JSON.
             answer = undefined;
-        } else if (reservation === undefined && (await holdsSubmittedTransaction(error, derivedHash, config))) {
-            // The node's pool holds this transaction, which the caller signed or numbered (its number did not come
-            // from the counter), from an earlier submission of it. It is pending, so the submission is handled as
-            // accepted, with the derived hash, and the record below keeps its number taken.
-            answer = derivedHash;
         } else {
-            if (reservation !== undefined && (await holdsSubmittedTransaction(error, derivedHash, config))) {
-                // The number came from the counter, so the pooled transaction was submitted by another call (of another
-                // client, or of this client before `resetSequenceNumber`) that built the same transaction. Its number is
-                // recorded as taken, and the refusal is settled below as a stale number, so the helper sends its own
-                // transaction once more with the next number.
-                tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, derivedHash);
+            // Whether the refusal is the node's for this transaction, which it already holds from an earlier
+            // submission of the same signed transaction.
+            const pooled = await pooledSubmissionOutcomeInternal(error, derivedHash, config);
+            if (pooled !== "refused" && reservation === undefined) {
+                // The caller signed or numbered the transaction (its number did not come from the counter), and this
+                // is a submission of it again. Its number is recorded as taken.
+                if (pooled === "unknown") {
+                    // A v11.7 node holds it in its pool, or the read failed. The node did not forward this submission,
+                    // and the earlier one may not have reached a validator, so the outcome is unknown.
+                    tracker.record(
+                        rawTxn.sender,
+                        rawTxn.sequence_number,
+                        rawTxn.expiration_timestamp_secs,
+                        derivedHash,
+                    );
+                    return await unknownSubmissionOutcomeInternal(
+                        { rawTxn, hash: derivedHash, cause: error, waitOptions: wait ? waitOptions : undefined },
+                        config,
+                    );
+                }
+                // A v12 node forwarded it again, or it has committed: the submission is handled as accepted, with the
+                // derived hash, and the record below keeps its number.
+                answer = derivedHash;
+            } else {
+                if (pooled !== "refused") {
+                    // The number came from the counter, so the transaction the node holds was submitted by another
+                    // call (of another client, or of this client before `resetSequenceNumber`) that built the same
+                    // transaction. Its number is recorded as taken, and the refusal is settled below as a stale
+                    // number, so the helper sends its own transaction once more with the next number.
+                    tracker.record(
+                        rawTxn.sender,
+                        rawTxn.sequence_number,
+                        rawTxn.expiration_timestamp_secs,
+                        derivedHash,
+                    );
+                }
+                const settled = settleFailedSubmissionInternal(
+                    { rawTxn, reservation, hash: derivedHash },
+                    error,
+                    config,
+                );
+                if (!settled.mayHaveAccepted) {
+                    // A refusal, including one for a price below the node's minimum: the number is handed out again,
+                    // unless it was recorded above.
+                    throw settled.error;
+                }
+                // The node may have accepted the transaction, which is recorded with the derived hash.
+                return await unknownSubmissionOutcomeInternal(
+                    { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
+                    config,
+                );
             }
-            const settled = settleFailedSubmissionInternal({ rawTxn, reservation, hash: derivedHash }, error, config);
-            if (!settled.mayHaveAccepted) {
-                // A refusal, including one for a price below the node's minimum: the number is handed out again.
-                throw settled.error;
-            }
-            // The node may have accepted the transaction, which is recorded with the derived hash.
-            return await unknownSubmissionOutcomeInternal(
-                { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
-                config,
-            );
         }
     }
     // The node accepted the transaction. Its answer is the transaction's hash; an answer that is not a hash (an empty
@@ -327,32 +363,68 @@ function isUnreadableAcceptance(error: unknown): boolean {
 }
 
 /**
- * Whether the error of a submission request is the node's refusal of a transaction that its pool already holds, the
- * submitted transaction whose hash is `hash` (`pooledSubmissionOf`):
- *
- * - The v12 refusal that names `hash` (`"transaction"`): yes.
- * - The v11.7 refusal that names `hash` (`"sequenceNumber"`), which the node also gives when its pool holds another
- *   transaction with the same sequence number: the transaction is read by hash from the node. Yes when the read
- *   returns a status other than `Invalid`; no when it returns `Invalid`, 404 or fails.
- * - Any other error: no.
+ * The longest wait, in milliseconds, for the read of the transaction that follows a v11.7 `Already scheduled` refusal
+ * naming the submitted transaction (`pooledSubmissionOutcomeInternal`), or the client's request timeout when that is
+ * shorter. The read is made once, without the client's retries, because a helper call holds the account's lock
+ * during it.
  */
-async function holdsSubmittedTransaction(error: unknown, hash: string, config: NetworkConfig): Promise<boolean> {
+export const POOLED_TRANSACTION_READ_TIMEOUT_MS = 5_000;
+
+/**
+ * What the error of a submission request shows about the submitted transaction, whose hash is `hash`, when it is the
+ * node's refusal of a transaction that its pool already holds (`pooledSubmissionOf`):
+ *
+ * - `"accepted"`: the v12 refusal that names `hash` (`transaction <hash> is already pending`). A v12 node gives it
+ *   after it has forwarded the transaction again, so the transaction is pending.
+ * - The v11.7 refusal that names `hash` (`Already scheduled digest=<hash>, ...`). The node gives it also when its pool
+ *   holds another transaction with the same sequence number at a gas unit price at least the submitted one's, and does
+ *   not forward the submission, so the transaction is read by hash from the node, once, within
+ *   `POOLED_TRANSACTION_READ_TIMEOUT_MS`:
+ *   - `"accepted"` when the read returns `Success` or `Fail`: the transaction has committed.
+ *   - `"unknown"` when the read returns another status than those and `Invalid` (`Pending` from the node's pool, whose
+ *     earlier forward of it may have failed), or the read fails other than with a 404 (a timeout, a connection
+ *     failure, a 429 or a 5xx): the transaction may commit.
+ *   - `"refused"` when the read returns `Invalid` or a 404: the node's pool holds another transaction. A 404 is taken
+ *     to come from the node that refused the submission; several RPC nodes behind one URL can answer 404 for a
+ *     transaction another of them holds.
+ * - `"refused"`: any other error.
+ */
+async function pooledSubmissionOutcomeInternal(
+    error: unknown,
+    hash: string,
+    config: NetworkConfig,
+): Promise<"accepted" | "unknown" | "refused"> {
     const pooled = pooledSubmissionOf(error, hash);
     if (pooled === "transaction") {
-        return true;
+        return "accepted";
     }
     if (pooled === undefined) {
-        return false;
+        return "refused";
     }
+    const transactionHash = standardizeAddress(hash);
+    let status: TransactionStatus;
     try {
-        const transaction = await getTransactionByHashInternal(
-            { transactionHash: hash, exclude_uncommitted: false },
-            config,
-        );
-        return transaction.status !== TransactionStatus.Invalid;
-    } catch {
-        return false;
+        status = (
+            await get<TransactionResponse>(
+                {
+                    path: `/transactions/${transactionHash}`,
+                    query: { exclude_uncommitted: false },
+                    retryable: false,
+                },
+                {
+                    ...config,
+                    timeout: Math.min(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS, POOLED_TRANSACTION_READ_TIMEOUT_MS),
+                },
+            )
+        ).data.status;
+    } catch (readError) {
+        return readError instanceof SupraNotFoundError ? "refused" : "unknown";
     }
+    sequenceNumberTrackerOf(config).observeTransaction(transactionHash, status);
+    if (status === TransactionStatus.Success || status === TransactionStatus.Fail) {
+        return "accepted";
+    }
+    return status === TransactionStatus.Invalid ? "refused" : "unknown";
 }
 
 /** Whether the node's answer to a submission is a transaction hash: `0x` followed by 64 hex digits. */

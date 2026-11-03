@@ -1,5 +1,5 @@
 import type { MoveFunctionId, SupraAccount, SubmitTransactionResponse } from "../src/index";
-import { BCS, SupraAPIError, SupraClient, TransactionStatus } from "../src/index";
+import { BCS, SupraAPIError, SupraClient, SupraSubmissionOutcomeUnknownError, TransactionStatus } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E, nodeGeneration } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
@@ -7,10 +7,14 @@ import { rawSupraBalance, rawWaitForCommit } from "./helpers/raw";
 
 /**
  * The same signed transaction submitted again while the first submission is pending: the node refuses the copy (v12
- * `transaction <hash> is already pending`, v11.7 `Already scheduled digest=<hash>, ...`), and the SDK returns the
- * transaction's hash for every submission. The transaction commits once. A helper call whose number came from the
- * client's counter and whose transaction is the same as another client's pending one keeps that number taken and sends
- * its transaction with the next number.
+ * `transaction <hash> is already pending`, v11.7 `Already scheduled digest=<hash>, ...`). On v12 the SDK returns the
+ * transaction's hash for every submission; on v11.7, whose node does not forward the copy, a copy that finds the
+ * transaction pending is an unknown outcome (`SupraSubmissionOutcomeUnknownError` with the hash, or a wait for it).
+ * The transaction commits once. A helper call whose number came from the client's counter and whose transaction is
+ * the same as another client's pending one keeps that number taken and sends its transaction with the next number.
+ *
+ * A copy can reach the node after the first submission has committed; the node then refuses it as a number below the
+ * account's. The tests accept that outcome and check that the transaction commits once either way.
  */
 
 const SUPRA_ACCOUNT_TRANSFER = "0x1::supra_account::transfer" as MoveFunctionId;
@@ -62,6 +66,15 @@ function duplicateMessage(hash: string): RegExp {
         : new RegExp(`^Transaction validation failed: transaction ${digits} is already pending$`);
 }
 
+/** The message the node gives for a number below the account's: the transaction with that number has committed. */
+const BELOW_ACCOUNT_MESSAGE =
+    /^Transaction validation failed: (?:sequence number \d+ is below the account's next sequence number \d+|.* has sequence number \d+ but the expected sequence number is \d+)/;
+
+/** The message of a refusal of the submission. */
+function messageOf(answer: SubmitAnswer): string {
+    return (answer.body as { message: string }).message;
+}
+
 describeE2E("the same signed transaction submitted again while it is pending", () => {
     let ctx: E2EContext;
     let gasUnitPrice: bigint;
@@ -75,7 +88,7 @@ describeE2E("the same signed transaction submitted again while it is pending", (
         return BigInt((await ctx.supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number);
     }
 
-    /** A transfer of `amount` from `sender` to `receiver`, signed once. */
+    /** A transfer of `amount` from `sender` to `receiver`, signed once, and its submission with `wait`. */
     async function signedTransfer(sender: SupraAccount, receiver: SupraAccount, amount = AMOUNT) {
         const rawTxn = ctx.supra.transaction.build.rawTxnObject({
             senderAddress: sender.address(),
@@ -87,48 +100,68 @@ describeE2E("the same signed transaction submitted again while it is pending", (
         });
         const signature = await ctx.supra.transaction.signTransaction({ senderAccount: sender, rawTxn });
         const serializedRawTransaction = BCS.bcsToBytes(rawTxn);
-        return () =>
+        return (wait = false) =>
             ctx.supra.transaction.submit.submitSerializedRawTransactionAndSignature({
                 senderPubkey: sender.pubKey(),
                 signature,
                 serializedRawTransaction,
+                enableTransactionWaitAndSimulationArgs: { enableWaitForTransaction: wait, waitTimeoutMs: 120_000 },
             });
     }
 
     /**
-     * Checks that every call returned the same hash, that the node refused at least one copy naming that hash, and
-     * that the transaction committed once: the sender's sequence number moved by one and the receiver holds `AMOUNT`.
+     * Checks the outcome of submissions of one signed transaction, and that it committed once: the sender's sequence
+     * number moved by one and the receiver holds `AMOUNT`.
+     *
+     * The node accepted one submission and refused every other one as a copy of a pending transaction naming its hash,
+     * or as a number below the account's (the copy arrived after the commit). Each call returned the hash, or threw:
+     * on v11.7, `SupraSubmissionOutcomeUnknownError` with the hash for a copy refused while the transaction was
+     * pending; and `SupraAPIError` for a copy refused after the commit.
      */
     async function expectOneCommit(
         outcome: Awaited<ReturnType<typeof recordingSubmissions>>,
         sender: SupraAccount,
         receiver: SupraAccount,
         sequenceNumberBefore: bigint,
-    ): Promise<void> {
-        const rejected = outcome.results.filter((result) => result.status === "rejected");
-        expect(rejected.map((result) => (result as PromiseRejectedResult).reason as unknown)).toEqual([]);
-        const hashes = outcome.results.map(
-            (result) => (result as PromiseFulfilledResult<SubmitTransactionResponse>).value.hash,
-        );
-        const hash = hashes[0] as string;
-        expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
-        expect(hashes).toEqual(Array(hashes.length).fill(hash));
-
-        expect(outcome.answers.filter((answer) => answer.status === 200)).toHaveLength(1);
-        const refusals = outcome.answers.filter((answer) => answer.status !== 200);
-        expect(refusals.length).toBeGreaterThan(0);
-        for (const refusal of refusals) {
+    ): Promise<string> {
+        const accepted = outcome.answers.filter((answer) => answer.status === 200);
+        expect(accepted).toHaveLength(1);
+        const hash = (accepted[0] as SubmitAnswer).body as string;
+        expect(hash).toMatch(/^0x[0-9a-fA-F]{64}$/);
+        const lowerHash = hash.toLowerCase();
+        for (const refusal of outcome.answers.filter((answer) => answer.status !== 200)) {
             expect(refusal.status).toBe(400);
-            expect((refusal.body as { message: string }).message).toMatch(duplicateMessage(hash));
+            const message = messageOf(refusal);
+            if (!BELOW_ACCOUNT_MESSAGE.test(message)) {
+                expect(message).toMatch(duplicateMessage(lowerHash));
+            }
         }
 
-        const committed = await rawWaitForCommit(ctx, hash);
+        for (const result of outcome.results) {
+            if (result.status === "fulfilled") {
+                expect(result.value.hash).toBe(lowerHash);
+                continue;
+            }
+            const error: unknown = result.reason;
+            if (error instanceof SupraSubmissionOutcomeUnknownError) {
+                expect(nodeGeneration()).toBe("v11");
+                expect(error.hash).toBe(lowerHash);
+                expect(error.cause).toBeInstanceOf(SupraAPIError);
+                expect((error.cause as SupraAPIError).message).toMatch(duplicateMessage(lowerHash));
+            } else {
+                expect(error).toBeInstanceOf(SupraAPIError);
+                expect((error as SupraAPIError).message).toMatch(BELOW_ACCOUNT_MESSAGE);
+            }
+        }
+
+        const committed = await rawWaitForCommit(ctx, lowerHash);
         expect(committed.status).toBe(TransactionStatus.Success);
         expect(await sequenceNumberOf(sender)).toBe(sequenceNumberBefore + 1n);
         expect(await rawSupraBalance(ctx, receiver.address().toString())).toBe(AMOUNT);
+        return lowerHash;
     }
 
-    test("two submissions one after the other return the same hash, and the transaction commits once", async () => {
+    test("a copy submitted right after the first submission is answered, and the transaction commits once", async () => {
         const sender = await createFundedAccount(ctx);
         const receiver = createUnfundedAccount();
         const before = await sequenceNumberOf(sender);
@@ -140,19 +173,32 @@ describeE2E("the same signed transaction submitted again while it is pending", (
         });
 
         expect(outcome.answers).toHaveLength(2);
+        expect(outcome.results[0]?.status).toBe("fulfilled");
         await expectOneCommit(outcome, sender, receiver, before);
     });
 
-    test("five concurrent submissions return the same hash, and the transaction commits once", async () => {
-        const sender = await createFundedAccount(ctx);
-        const receiver = createUnfundedAccount();
-        const before = await sequenceNumberOf(sender);
-        const submit = await signedTransfer(sender, receiver);
+    test("five concurrent submissions, without a wait and with one, and the transaction commits once", async () => {
+        for (const wait of [false, true]) {
+            const sender = await createFundedAccount(ctx);
+            const receiver = createUnfundedAccount();
+            const before = await sequenceNumberOf(sender);
+            const submit = await signedTransfer(sender, receiver);
 
-        const outcome = await recordingSubmissions(() => Array.from({ length: 5 }, () => submit()));
+            const outcome = await recordingSubmissions(() => Array.from({ length: 5 }, () => submit(wait)));
 
-        expect(outcome.answers).toHaveLength(5);
-        await expectOneCommit(outcome, sender, receiver, before);
+            expect(outcome.answers).toHaveLength(5);
+            const hash = await expectOneCommit(outcome, sender, receiver, before);
+            if (wait) {
+                // A wait for the hash returns the committed transaction, whatever the answer to the submission.
+                for (const result of outcome.results) {
+                    if (result.status === "fulfilled") {
+                        expect(result.value).toMatchObject({ hash, status: TransactionStatus.Success });
+                    } else {
+                        expect(result.reason).toBeInstanceOf(SupraAPIError);
+                    }
+                }
+            }
+        }
     });
 
     test("a helper call that builds the same transaction as another client's pending one sends its own with the next number", async () => {
@@ -179,8 +225,15 @@ describeE2E("the same signed transaction submitted again while it is pending", (
         expect(result.status).toBe("fulfilled");
         const own = (result as PromiseFulfilledResult<SubmitTransactionResponse>).value.hash;
         expect(own).not.toBe(pending.hash);
-        expect(outcome.answers.map((answer) => answer.status)).toEqual([400, 200]);
-        expect((outcome.answers[0]?.body as { message: string }).message).toMatch(duplicateMessage(pending.hash));
+        // The copy of the pending transaction was refused and the helper's transaction sent with the next number; or
+        // the pending transaction had committed and the helper read the next number from the chain.
+        const statuses = outcome.answers.map((answer) => answer.status);
+        if (statuses.length === 2) {
+            expect(statuses).toEqual([400, 200]);
+            expect(messageOf(outcome.answers[0] as SubmitAnswer)).toMatch(duplicateMessage(pending.hash));
+        } else {
+            expect(statuses).toEqual([200]);
+        }
         for (const hash of [pending.hash, own]) {
             expect((await rawWaitForCommit(ctx, hash)).status).toBe(TransactionStatus.Success);
         }
@@ -203,12 +256,15 @@ describeE2E("the same signed transaction submitted again while it is pending", (
         const error = (result as PromiseRejectedResult).reason as SupraAPIError;
         expect(error).toBeInstanceOf(SupraAPIError);
         expect(error.status).toBe(400);
-        // A v11.7 node names the refused transaction, not the pending one; a v12 node names the sequence number.
-        expect(error.message).toMatch(
-            nodeGeneration() === "v11"
-                ? /^Transaction validation failed: Already scheduled digest=[0-9a-f]{64}, sender=/
-                : /^Transaction validation failed: a transaction with sequence number \d+ is already pending for this account/,
-        );
+        // A v11.7 node names the refused transaction, not the pending one; a v12 node names the sequence number. After
+        // the first transaction has committed, both refuse the number as below the account's.
+        if (!BELOW_ACCOUNT_MESSAGE.test(error.message)) {
+            expect(error.message).toMatch(
+                nodeGeneration() === "v11"
+                    ? /^Transaction validation failed: Already scheduled digest=[0-9a-f]{64}, sender=/
+                    : /^Transaction validation failed: a transaction with sequence number \d+ is already pending for this account/,
+            );
+        }
         expect(error.message).not.toContain(first.hash.replace(/^0x/, ""));
         const committed = await rawWaitForCommit(ctx, first.hash);
         expect(committed.status).toBe(TransactionStatus.Success);

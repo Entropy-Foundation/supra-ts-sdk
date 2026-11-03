@@ -612,8 +612,9 @@ export function isAccountQueueFullRefusal(error: unknown): error is SupraAPIErro
  * status. A refusal because the account's queue on the node is full (`isAccountQueueFullRefusal`) is not a stale number.
  *
  * A submission checks `pooledSubmissionOf` first. A refusal that shows the node holds the submitted transaction itself
- * is an acceptance when the transaction's number did not come from the counter, and does not reach this
- * classification; with a number from the counter, the number is recorded and the refusal is a stale number.
+ * is an acceptance or an unknown outcome when the transaction's number did not come from the counter, and does not
+ * reach this classification; with a number from the counter, the number is recorded and the refusal is a stale
+ * number.
  */
 export function isStaleSequenceNumberError(error: unknown): boolean {
     if (isAccountQueueFullRefusal(error)) {

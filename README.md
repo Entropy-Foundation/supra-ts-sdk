@@ -355,13 +355,23 @@ transfers, `publishPackage`, the automation task helpers, the multisig helpers a
   `SupraGasUnitPriceBelowMinimumError` for a gas unit price below the node's minimum. A 2xx answer whose body is not a
   transaction hash is an accepted submission, and the derived hash is used in place of the body.
 - A 400 that says the node's pool already holds the submitted transaction, for example when the same signed
-  transaction is submitted twice, is handled as an accepted submission with the derived hash when the transaction's
-  sequence number is the caller's (the `transaction.submit` methods, the submit methods of a built transaction, and
-  helper calls with `sequenceNumber`): the call waits for it or reads it back as above, and the transaction commits
-  once. A v12 node names the transaction (`transaction <hash> is already pending`). A v11.7 node answers
-  `Already scheduled digest=<hash>, ...` also when its pool holds another transaction with the same sequence number,
-  so the SDK first reads the transaction by hash; when that read returns 404 or `Invalid`, or fails, the refusal is
-  thrown as `SupraAPIError`.
+  transaction is submitted twice, is handled as follows when the transaction's sequence number is the caller's (the
+  `transaction.submit` methods, the submit methods of a built transaction, and helper calls with `sequenceNumber`).
+  The transaction commits at most once.
+  - A v12 node names the transaction (`transaction <hash> is already pending`) after it has forwarded it again: the
+    submission is handled as accepted with the derived hash, and the call waits for it or reads it back as above.
+  - A v11.7 node answers `Already scheduled digest=<hash>, ...`, also when its pool holds another transaction with the
+    same sequence number at a gas unit price at least this one's, and does not forward the submission. The SDK reads
+    the transaction by hash once, within 5 seconds and without retries. `Success` or `Fail`: handled as accepted.
+    `Pending` (the node's pool holds it, and its earlier forward may have failed), another non-final status, or a
+    failed read other than a 404: handled as an unknown outcome, with the refusal as `cause` of
+    `SupraSubmissionOutcomeUnknownError` (or a wait for the hash with `enableWaitForTransaction: true`). A 404 or
+    `Invalid`: the refusal is thrown as `SupraAPIError`. The 404 is taken to come from the node that refused the
+    submission; several RPC nodes behind one URL can answer 404 for a transaction another of them holds.
+
+  A helper call whose number comes from the client's counter does not deduplicate: a repeated call, including one
+  from a restarted process that builds the same transaction again, submits a new transaction. When the node already
+  holds the same transaction, its number stays taken and the helper sends its transaction with the next number.
 
 ```ts
 import {

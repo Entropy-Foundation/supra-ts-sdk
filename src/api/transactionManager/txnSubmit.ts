@@ -33,15 +33,24 @@ import type { AccountAddressInput } from "../../types/account";
  *      `SupraGasUnitPriceBelowMinimumError`, which is not a `SupraAPIError` (its `cause` is the `SupraAPIError`). A v12
  *      node whose transaction pool is full answers 503; the transaction can be submitted again later.
  *    - The node refuses it with a 400 because its pool already holds this transaction, for example when the same
- *      signed transaction was submitted before. A v12 node names the transaction (`transaction <hash> is already
- *      pending`). A v11.7 node answers `Already scheduled digest=<hash>, ...` also when its pool holds another
- *      transaction with the same sequence number, so the transaction is first read by hash, and a read that returns
- *      404 or `Invalid`, or fails, leaves the refusal as it is. For a transaction whose sequence number is the
- *      caller's (the methods of this class, the submit methods of a built transaction, and helper calls with
- *      `sequenceNumber`), the submission is handled as accepted, with the derived hash, and steps 3 and 4 follow. For
- *      a helper call whose number came from the client's counter, the pending transaction is another call's: its
- *      number is kept as taken and the helper sends its own transaction once more with the next number, as after a
- *      stale number.
+ *      signed transaction was submitted before. For a transaction whose sequence number is the caller's (the methods
+ *      of this class, the submit methods of a built transaction, and helper calls with `sequenceNumber`):
+ *      - A v12 node names the transaction (`transaction <hash> is already pending`) after it has forwarded it again:
+ *        the submission is handled as accepted, with the derived hash, and steps 3 and 4 follow.
+ *      - A v11.7 node answers `Already scheduled digest=<hash>, ...`, also when its pool holds another transaction
+ *        with the same sequence number at a gas unit price at least this one's, and does not forward the submission.
+ *        The transaction is read by hash, once, within 5 seconds and without retries. `Success` or `Fail`: handled as
+ *        accepted, as above. `Pending` (the node's pool holds it, and its earlier forward may have failed), another
+ *        non-final status, or a failed read other than a 404: handled as an unknown outcome, as below
+ *        (`SupraSubmissionOutcomeUnknownError` with the refusal as `cause`, or a wait for the derived hash with
+ *        `enableWaitForTransaction`). A 404 or `Invalid`: the refusal is thrown as `SupraAPIError`. A 404 is taken to
+ *        come from the node that refused the submission; several RPC nodes behind one URL can answer 404 for a
+ *        transaction another of them holds.
+ *
+ *      For a helper call whose number came from the client's counter, the transaction the node holds is another
+ *      call's, since a helper does not deduplicate its calls: its number is kept as taken, and the helper sends its
+ *      own transaction once more with the next number, as after a stale number. A repeated helper call, including one
+ *      from a restarted process that builds the same transaction again, submits a new transaction.
  *    - The request times out, the connection fails before the node answers, or the node answers with a 5xx status
  *      other than 503: the node may have accepted the transaction, and `SupraSubmissionOutcomeUnknownError` is thrown
  *      with the derived `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs` and the error of the request
