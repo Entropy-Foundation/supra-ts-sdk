@@ -46,6 +46,18 @@ describe("client/cursor", () => {
             expect(nextPageCursor({ header: "0", sent: undefined, itemCount: 1 })).toBe("0");
         });
 
+        it('keeps "0" on an empty page when zeroContinues is set', () => {
+            expect(nextPageCursor({ header: "0", sent: undefined, itemCount: 0, zeroContinues: true })).toBe("0");
+        });
+
+        it("ignores zeroContinues for an absent or empty header and for a page with another cursor", () => {
+            expect(
+                nextPageCursor({ header: null, sent: undefined, itemCount: 0, zeroContinues: true }),
+            ).toBeUndefined();
+            expect(nextPageCursor({ header: "", sent: undefined, itemCount: 0, zeroContinues: true })).toBeUndefined();
+            expect(nextPageCursor({ header: "5", sent: undefined, itemCount: 0, zeroContinues: true })).toBe("5");
+        });
+
         it("is undefined when an empty page echoes the request's cursor (v11 resources and modules)", () => {
             expect(nextPageCursor({ header: "abcd", sent: "abcd", itemCount: 0 })).toBeUndefined();
         });

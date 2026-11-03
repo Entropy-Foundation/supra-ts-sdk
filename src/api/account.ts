@@ -301,7 +301,12 @@ export class Account {
      * @param args.options.ascending - Whether to return the transactions in ascending order.
      * @param args.options.type - Return only transactions of this type. `"settlement"` requires a node from v12
      * onwards; older nodes reject it with HTTP 400. A page filtered by type can be empty and still carry a cursor.
-     * @remarks `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
+     * @remarks
+     * - `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
+     * - An empty page with the cursor `"0"` ends the feed, as v11 nodes end it, except for the first request of an
+     *   ascending read with a `type` filter: block 0 has timestamp 0, so the cursor `"0"` can mean that the page
+     *   scanned only a genesis row that the filter excluded. The SDK then returns `"0"`, and the request with
+     *   `start` `"0"` continues the feed or ends it, so the rule costs at most one more request.
      * @returns A Promise that resolves to an array of TransactionResponse objects representing the coin transactions of the account with optional cursor.
      * Items can be of any `txn_type`, including `settlement` items, which have no `header`, `payload` or
      * `authenticator`; narrow on `txn_type` before reading them. `cursor` is `undefined` when there are no more
@@ -352,6 +357,11 @@ export class Account {
      * @remarks
      * - `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
      * - Mainnet, Testnet and Devnet nodes serve this feed.
+     * - An empty page with the cursor `"0"` ends the feed, as v11 nodes end it, except for the first request of an
+     *   ascending read with a `type` filter: block 0 has timestamp 0, so a store funded at genesis has a row with the
+     *   cursor 0, and the cursor `"0"` can mean that the page scanned only that row and the filter excluded it. The
+     *   SDK then returns `"0"`, and the request with `start` `"0"` continues the feed or ends it, so the rule costs
+     *   at most one more request.
      * @returns A Promise that resolves to the transactions of the store with an optional cursor. Items can be of
      * any `txn_type`; narrow on `txn_type` before reading `header`, `payload` or `authenticator`. `cursor` is
      * `undefined` when there are no more transactions; see {@link PaginatedResponse}.

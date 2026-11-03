@@ -4,6 +4,7 @@ import type { AccountHistoryEntry, AccountHistoryPage, PaginatedResponse } from 
 import { TransactionStatus, TransactionType, type UserTransactionResponse } from "../../types/transaction";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import {
+    getAccountCoinTransactionsInternal,
     getAccountFaTransactionsInternal,
     getAccountHistoryInternal,
     getPrimaryStoreAddressInternal,
@@ -191,6 +192,96 @@ describe("account feeds", () => {
             const page = await getAccountFaTransactionsInternal({ storeAddress: "0xa" }, testConfig);
 
             expect(page.cursor).toBeUndefined();
+        });
+    });
+
+    describe.each([
+        ["getAccountCoinTransactionsInternal", "coin_transactions"],
+        ["getAccountFaTransactionsInternal", "fa_transactions"],
+    ] as const)("%s, the cursor 0 of a genesis row", (name, route) => {
+        const readTyped = (options: { start?: string; ascending?: boolean; type?: "user"; count?: number }) =>
+            name === "getAccountCoinTransactionsInternal"
+                ? getAccountCoinTransactionsInternal({ accountAddress: "0xa", options }, testConfig)
+                : getAccountFaTransactionsInternal({ storeAddress: "0xa", options }, testConfig);
+
+        const readFeedTyped = (ascending: boolean | undefined, type: "user" | undefined) =>
+            readFeed((start) => readTyped({ start, ascending, type, count: 1 }));
+
+        const sentStarts = () => mockGet.mock.calls.map((call) => call[0].query?.["start"]);
+
+        it("requests the route", async () => {
+            mockGet.mockResolvedValue({ data: [], cursor: undefined });
+            await readTyped({});
+            expect(mockGet.mock.calls[0]?.[0].path).toContain(`/${route}`);
+        });
+
+        it("v12: continues with start=0 after the empty first page of an ascending typed read (reproduction)", async () => {
+            // Block 0 has timestamp 0: the page scanned only the genesis row, which the type filter excluded.
+            mockGet
+                .mockResolvedValueOnce({ data: [], cursor: "0" })
+                .mockResolvedValueOnce({ data: [userTxn(1)], cursor: "1793692451844347" })
+                .mockResolvedValueOnce({ data: [userTxn(2)], cursor: "1793692451844400" })
+                .mockResolvedValueOnce({ data: [], cursor: undefined });
+
+            const { items, requests } = await readFeedTyped(true, "user");
+
+            expect(items.map((txn) => txn.hash)).toEqual([userTxn(1).hash, userTxn(2).hash]);
+            expect(requests).toBe(4);
+            expect(sentStarts()).toEqual([undefined, "0", "1793692451844347", "1793692451844400"]);
+        });
+
+        it("v12: a feed without rows ends on the first page without a cursor", async () => {
+            mockGet.mockResolvedValue({ data: [], cursor: undefined });
+
+            const { items, requests } = await readFeedTyped(true, "user");
+
+            expect(items).toEqual([]);
+            expect(requests).toBe(1);
+        });
+
+        it("v11: the request with start=0 ends the feed through the echo, after one extra request", async () => {
+            mockGet.mockResolvedValue({ data: [], cursor: "0" });
+
+            const { items, requests } = await readFeedTyped(true, "user");
+
+            expect(items).toEqual([]);
+            expect(requests).toBe(2);
+            expect(sentStarts()).toEqual([undefined, "0"]);
+        });
+
+        it("v11: continues past the genesis row the typed read excluded, which the request with start=0 skips", async () => {
+            mockGet
+                .mockResolvedValueOnce({ data: [], cursor: "0" })
+                .mockResolvedValueOnce({ data: [userTxn(1)], cursor: "1793683183245980" })
+                .mockResolvedValueOnce({ data: [], cursor: "1793683183245980" });
+
+            const { items, requests } = await readFeedTyped(true, "user");
+
+            expect(items).toHaveLength(1);
+            expect(requests).toBe(3);
+        });
+
+        it.each([
+            ["descending with a type", false, "user"],
+            ["ascending without a type", true, undefined],
+            ["unordered with a type", undefined, "user"],
+        ] as const)('ends the feed on the empty first page with "0" (%s)', async (_label, ascending, type) => {
+            mockGet.mockResolvedValue({ data: [], cursor: "0" });
+
+            const { requests } = await readFeedTyped(ascending, type);
+
+            expect(requests).toBe(1);
+        });
+
+        it('ends the feed on an empty page with "0" for a request that has a start', async () => {
+            mockGet
+                .mockResolvedValueOnce({ data: [userTxn(1)], cursor: "17" })
+                .mockResolvedValueOnce({ data: [], cursor: "0" });
+
+            const { items, requests } = await readFeedTyped(true, "user");
+
+            expect(items).toHaveLength(1);
+            expect(requests).toBe(2);
         });
     });
 

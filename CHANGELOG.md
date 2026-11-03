@@ -23,7 +23,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   faucet account is free. **`SupraFaucetResponseError`** is thrown when the node answers with any other body that
   carries no transaction hash; the body is available as `data`.
 - **`supra.getNodeVersion()`** — reads `GET /rpc/v3/version` and returns `{ version, release?, branch, commit_hash,
-  build_time, build_env }` (type `NodeVersionInfo`). `release` is the node release tag, for example
+build_time, build_env }` (type `NodeVersionInfo`). `release` is the node release tag, for example
   `supra_node_v12.0.0.rc7`; it is absent from the response of a node older than `supra_node_v12.0.0`, so it is
   `undefined` for a v11 node.
 - **`faucet.getFaucetTransaction({ transactionHash })`** — reads a faucet transaction
@@ -194,7 +194,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   address returns an empty page. `getAccountHistory` lists everything that concerns an account. `options`
   are `count`, `start`, `ascending` and `type`. Mainnet, Testnet and Devnet nodes serve the route. The feed ends like
   `getAccountCoinTransactions`: `cursor` is `undefined` when the header is absent or empty, or on an empty page with
-  the cursor `"0"`.
+  the cursor `"0"`, except for the first request of an ascending read with a `type` filter (see the change to
+  `PaginatedResponse.cursor` below).
 - **`account.getAccountHistory({ accountAddress, options? })`** reads `GET /rpc/v3/accounts/{address}/history`, which
   nodes from `supra_node_v12.0.0` serve (Devnet): every finalized transaction that concerns the account, once each,
   as `{ categories, transaction }` entries (`AccountHistoryEntry`). `options` are `categories` (a non-empty subset of
@@ -225,7 +226,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   type-checks the examples, and a scheduled workflow runs them on Devnet.
 - README sections on reading a feed page by page and on the HTTP status codes that differ between v11 and v12
   nodes.
-- `pnpm check:jsdoc` type-checks the ```` ```typescript ```` blocks of the JSDoc under `src/`, of `SKILL.md` and of
+- `pnpm check:jsdoc` type-checks the ` ```typescript ` blocks of the JSDoc under `src/`, of `SKILL.md` and of
   `MIGRATION.md` against `src/index.ts`; CI runs it with the lint and type-check steps.
 - [`MIGRATION.md`](./MIGRATION.md) lists the breaking changes from 1.2.0 to 2.0.0 and the code to change for each.
 - [`compatibility.json`](./compatibility.json) lists, for each SDK release, the node releases it supports and the RPC
@@ -265,7 +266,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `AutomationRegistrationParamV2JSON` is the JSON form of the submitted payload.
 - **`automation.cancelAutomationTask({ senderAccount, taskIndex, optionalTransactionArgs? })`** submits
   `0x1::automation_registry::cancel_task`, and **`automation.stopAutomationTasks({ senderAccount, taskIndexes,
-  optionalTransactionArgs? })`** submits `0x1::automation_registry::stop_tasks`, for the user automation tasks of the
+optionalTransactionArgs? })`** submits `0x1::automation_registry::stop_tasks`, for the user automation tasks of the
   sender. Like the transfers, they take the sequence number from the client's counter and estimate the max gas. The
   `Automation` class is also mixed into the client (`supra.cancelAutomationTask`, `supra.stopAutomationTasks`).
 - **Sponsored transaction from a sender without an account (documentation).** A sender for which `isAccountExists` is
@@ -470,7 +471,11 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   result are no longer needed. `ExtendedRawTransaction.signTransaction` resolves to `HexString`.
 - **Breaking:** `PaginatedResponse.cursor` is `undefined` exactly at the end of a feed, on v11 and v12 nodes alike.
   The empty header, the `"0"` of `coin_transactions` and the echoed `start` of `resources` and `modules` that v11
-  nodes send at the end of a feed are returned as `undefined`. A page can be empty and still carry a cursor.
+  nodes send at the end of a feed are returned as `undefined`. A page can be empty and still carry a cursor. The
+  cursor `"0"` is the position of a row of block 0 (timestamp 0), so for `getAccountCoinTransactions` and
+  `getAccountFaTransactions` an empty page with `"0"` for a request with no `start`, ascending order and a `type`
+  filter returns `cursor` `"0"` instead of `undefined`: the page scanned only a genesis row that the filter excluded.
+  The request with `start` `"0"` continues the feed, or on a feed without rows returns `"0"` again, which ends it.
 - **Breaking:** `getEventsByType` types `options.start` as `string`, the type of the cursor it returns. It was
   `number`.
 - Every cursor option (`start` or `cursor`) accepts `undefined`, so a returned cursor is passed back without a
@@ -616,7 +621,7 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   type-check.
 - The `exports` map of `package.json` gives the `require` condition its own declarations (`dist/index.d.cts`), so a
   CommonJS TypeScript project with `moduleResolution` `node16` or `nodenext` type-checks `import ... from
-  "supra-ts-sdk"`; the types resolved as an ES module before.
+"supra-ts-sdk"`; the types resolved as an ES module before.
 
 ### Removed
 
@@ -652,10 +657,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   explicit, opt-in call — the constructor never calls it, so existing callers
   are unaffected.
 
-  An earlier version of this change (`SupraClient.init()`) auto-corrected a
-  mismatched `chainId` and logged a warning; that shipped only within this
-  release cycle and was replaced before reaching a tagged release, since
-  silently overriding a caller-supplied `chainId` is itself a spoofing risk.
+    An earlier version of this change (`SupraClient.init()`) auto-corrected a
+    mismatched `chainId` and logged a warning; that shipped only within this
+    release cycle and was replaced before reaching a tagged release, since
+    silently overriding a caller-supplied `chainId` is itself a spoofing risk.
 
 ### Fixed
 
@@ -687,10 +692,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   verification, and `simulate` — which zeroes the signatures before sending —
   silently reported results for a transaction the caller never authored.
 
-  Affected: script payload `U64`/`U128` arguments, the raw transaction header
-  fields, and the automation registration u64 fields. Entry function arguments
-  were never affected, since they travel as BCS bytes. The wire format is
-  unchanged and no server-side change is required.
+    Affected: script payload `U64`/`U128` arguments, the raw transaction header
+    fields, and the automation registration u64 fields. Entry function arguments
+    were never affected, since they travel as BCS bytes. The wire format is
+    unchanged and no server-side change is required.
 
 ### Changed
 
