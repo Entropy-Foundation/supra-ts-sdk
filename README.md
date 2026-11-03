@@ -709,7 +709,15 @@ automation cycle after its registration until the task expires. A task is regist
 registration transaction built by `transaction.build.automationRegistrationRawTxnObject`. With
 `automationTaskType` or `automationPriority` the registration carries version 2 parameters; without them, version 1.
 Nodes of the v11.7.0 and v12 lines accept both. A task registered without a priority gets its task index as its
-priority. Only accounts that the Supra framework has authorised can register `"System"` tasks.
+priority. `automationPriority` is for system tasks only: the registry aborts a user task that carries a priority
+(`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when `automationPriority` is given with
+`automationTaskType: 'User'` or with no task type. Only accounts that the Supra framework has authorised can register
+`"System"` tasks, with or without a priority.
+
+`automationGasPriceCap` must be at least the node's minimum gas unit price (`supra.getMinGasUnitPrice()`). The node
+refuses a registration with a lower cap at validation: submitting answers `400` with `MoveTransactionValidationFailed`
+and `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND` (a `SupraAPIError`), and a simulation reports `Invalid` with that
+status (a `SupraSimulationFailedError`). The builder does not check the cap.
 
 ```ts
 const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
@@ -725,7 +733,6 @@ const registration = supra.transaction.build.automationRegistrationRawTxnObject(
     automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
     automationAuxData: [],
     automationTaskType: 'User',
-    automationPriority: 10n,
     optionalTransactionPayloadArgs: { gasUnitPrice },
 });
 const registered = await registration.submitTransaction({

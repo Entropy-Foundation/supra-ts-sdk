@@ -308,7 +308,6 @@ describe("fixtures recorded from a Supra node", () => {
                 "module_publish",
                 "multisig_create_transaction",
                 "multisig_create_transaction_with_hash",
-                "automation_registration_v2_priority",
                 "automation_registration_v2_no_priority",
             ]),
         );

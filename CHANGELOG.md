@@ -217,10 +217,13 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Automation registrations with version 2 parameters.** `transaction.build.automationRegistrationRawTxnObject` takes
   `automationTaskType` (`AutomationTaskType`: `"User"` or `"System"`) and `automationPriority` (a `u64` `bigint`).
   With either one the registration carries version 2 parameters (`RegistrationParamsV2` of the node: the version 1
-  fields followed by the task type and the optional priority), with task type `"User"` when only the priority is
-  given; without them it carries version 1 parameters as before. Nodes of the v11.7.0 and v12 lines accept both.
-  Without a priority the registry uses the task's index as its priority. Only an account that the Supra framework has
-  authorised can register a `"System"` task. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
+  fields followed by the task type and the optional priority); without them it carries version 1 parameters as before.
+  Nodes of the v11.7.0 and v12 lines accept both. A priority belongs to system tasks: the registry aborts a user task
+  that carries one (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when
+  `automationPriority` is given with `automationTaskType: "User"` or with no task type. Without a priority the
+  registry uses the task's index as its priority. Only an account that the Supra framework has authorised can
+  register a `"System"` task. `automationGasPriceCap` must be at least the node's minimum gas unit price; the node
+  refuses a lower cap at validation. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
   `AutomationRegistrationParamV2JSON` is the JSON form of the submitted payload.
 - **`automation.cancelAutomationTask({ senderAccount, taskIndex, optionalTransactionArgs? })`** submits
   `0x1::automation_registry::cancel_task`, and **`automation.stopAutomationTasks({ senderAccount, taskIndexes,

@@ -5,7 +5,6 @@ import {
     SupraSimulationFailedError,
     SupraTransactionFailedError,
     TransactionStatus,
-    TransactionType,
     standardizeAddress,
 } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
@@ -133,41 +132,20 @@ describeE2E("automation tasks", () => {
         );
     }
 
-    test("a version 2 registration of a user task with task_type and priority_value commits under the derived hash", async () => {
+    test("a registration of a user task with a priority, or with a priority and no task type, is refused before building", async () => {
         const owner = await createFundedAccount(ctx);
         const priority = freshPriority();
-        const { response, derived, committed } = await register(owner, {
-            automationTaskType: "User",
-            automationPriority: priority,
-        });
 
-        expect(response.status).toBe(TransactionStatus.Success);
-        expect(response.hash.toLowerCase()).toBe(derived);
-        expect(committed.hash.toLowerCase()).toBe(derived);
-        const task = taskOf(committed);
-        await removeTasks(owner, [task]);
-
-        const payload = committed.payload as RegistrationPayloadJson;
-        expect(payload.Move.type).toBe("automation_registration_payload");
-        expect(payload.Move.V2?.task_type).toBe("user");
-        expect(payload.Move.V2?.task_priority).toBe(Number(priority));
-
-        // The registry stores the task type (1, a user task) and the priority in the task's auxiliary data.
-        // The node renders an address without its leading zeros.
-        expect(standardizeAddress(task.owner)).toBe(owner.address().toString());
-        expect(task.aux_data).toEqual(["0x01", u64Hex(priority)]);
-
-        // The SDK's response types describe the node's answer.
-        const read = await ctx.supra.getTransactionByHash({ transactionHash: derived });
-        if (read === null || read.txn_type !== TransactionType.User || !("Move" in read.payload)) {
-            throw new Error("The registration is not a user transaction with a Move payload");
+        // The registry aborts a user task that carries a priority; the builder throws before anything is submitted.
+        for (const version2 of [
+            { automationTaskType: "User" as const, automationPriority: priority },
+            { automationPriority: priority },
+        ]) {
+            const refused = await register(owner, version2).catch((error: unknown) => error);
+            expect(refused).toBeInstanceOf(RangeError);
         }
-        const move = read.payload.Move;
-        if (move.type !== "automation_registration_payload" || move.V2 === undefined) {
-            throw new Error("The registration payload is not version 2");
-        }
-        expect(move.V2.task_type).toBe("user");
-        expect(move.V2.task_priority).toBe(Number(priority));
+        const info = await ctx.supra.getAccountInfo({ accountAddress: owner.address() });
+        expect(info.sequence_number).toBe(0n);
     });
 
     test("a version 2 registration without a priority gets the task's index as its priority", async () => {
@@ -226,9 +204,7 @@ describeE2E("automation tasks", () => {
 
     test("cancelAutomationTask cancels a task of the sender", async () => {
         const owner = await createFundedAccount(ctx);
-        const task = taskOf(
-            (await register(owner, { automationTaskType: "User", automationPriority: freshPriority() })).committed,
-        );
+        const task = taskOf((await register(owner, { automationTaskType: "User" })).committed);
 
         const response = await outsideCycleTransition(() =>
             ctx.supra.automation.cancelAutomationTask({
