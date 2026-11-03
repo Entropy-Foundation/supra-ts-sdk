@@ -6,7 +6,7 @@ const MICROSECONDS_PER_MILLISECOND = 1_000;
 
 /**
  * The monotonic clock that chain clocks read by default. It is a property of an object the SDK owns so that tests can
- * replace it; `performance.now` itself is read-only on some runtimes (Node.js 18).
+ * replace it; `performance.now` itself is read-only on some runtimes.
  */
 export const monotonicClock = {
     /** Milliseconds from a fixed origin; never decreases. */

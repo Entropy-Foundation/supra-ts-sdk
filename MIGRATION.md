@@ -14,6 +14,7 @@ The code blocks labelled 2.0.0 type-check against 2.0.0 (`pnpm check:jsdoc` chec
 
 The changes that most programs meet first:
 
+- 2.0.0 requires Node.js 20 or later ([Node.js version](#nodejs-version)).
 - Signing returns a promise: `await` `signTransaction`, `signedTransaction` and `sendTxnPayload`
   ([Chain ID](#chain-id)).
 - A client checks its node's chain ID before it signs; a client configured for another chain throws
@@ -27,6 +28,12 @@ The changes that most programs meet first:
 - The helpers take sequence numbers from a counter in the client ([Sequence numbers](#sequence-numbers)).
 - A transaction built without `txExpiryTime` expires 60 seconds after the client's clock, not 300 seconds
   ([Transaction expiration time](#transaction-expiration-time)).
+
+## Node.js version
+
+2.0.0 requires Node.js 20 or later; 1.2.0 declared `"node": ">=18"`. Node.js 18 reached end of life in April 2025.
+Upgrade the runtime before you upgrade the package: a package manager that enforces `engines` (for example pnpm with
+`engine-strict=true`, or npm with `engine-strict=true`) refuses to install 2.0.0 on Node.js 18.
 
 ## Networks and faucet
 

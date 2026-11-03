@@ -22,7 +22,7 @@ npm install supra-ts-sdk
 pnpm add supra-ts-sdk
 ```
 
-The SDK requires Node.js >= 18 (uses native `fetch` and `AbortSignal.timeout()`). Calls that sign a transaction need the account's private key, so they belong in server-side code (see Important Caveats).
+The SDK requires Node.js >= 20 (uses native `fetch` and `AbortSignal.timeout()`). Calls that sign a transaction need the account's private key, so they belong in server-side code (see Important Caveats).
 
 ## Key Import
 
