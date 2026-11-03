@@ -226,6 +226,24 @@ const { response: txns } = await supra.account.getAccountTransactions({
     options: { count: 10, ascending: false },
 });
 
+// Get the account's history: every finalized transaction that concerns it, with the categories it matched
+// ("sent", "coin", "fa", "da"). Needs a node from supra_node_v12.0.0 (Devnet); a v11.7.x node answers 404, thrown as
+// SupraRouteUnsupportedError (a SupraNotFoundError). Automated transactions and automation records are not listed.
+// The feed ends only when `cursor` is undefined, even past an empty page or the cursor "0".
+const history = await supra.account.getAccountHistory({
+    accountAddress: account.address(),
+    options: { categories: ["sent", "fa"], count: 20, ascending: false },
+});
+for (const { categories, transaction } of history.response) {
+    console.log(transaction.hash, categories);
+}
+
+// Get the fungible asset transactions of a fungible store (all networks); accountAddress is the store's address
+const { response: faTxns } = await supra.account.getAccountFaTransactions({
+    accountAddress: "0xa",
+    options: { count: 10 },
+});
+
 // Count the coin types the account holds (SUPRA counts once, in either form)
 const count: number = await supra.account.getAccountCoinsCount({
     accountAddress: account.address(),
@@ -892,7 +910,7 @@ try {
 
 ## Pagination Pattern
 
-All paginated methods return `PaginatedResponse<T>`: `{ response, cursor }`. Pass `cursor` back unchanged (as `start`, or `cursor` for `getAccountAutoTransactions`) until it is `undefined`. A page can be empty and still carry a cursor, so stop only on `undefined`.
+All paginated methods return `PaginatedResponse<T>`: `{ response, cursor }`. Pass `cursor` back unchanged (as `start`, or `cursor` for `getAccountAutoTransactions`) until it is `undefined`. A page can be empty and still carry a cursor, so stop only on `undefined`. `getAccountHistory` and `getAccountFaTransactions` treat the cursor `"0"` as a real cursor.
 
 ```typescript
 // Fetch all pages

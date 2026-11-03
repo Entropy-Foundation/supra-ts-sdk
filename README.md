@@ -183,6 +183,36 @@ do {
 } while (cursor !== undefined);
 ```
 
+### Account History and Fungible Store Transactions
+
+`getAccountHistory` lists every finalized transaction that concerns an account, once each, with the categories it
+matched (`sent`, `coin`, `fa`, `da`). It lists SUPRA transfers between primary fungible stores, which
+`getAccountCoinTransactions` does not. It needs a node from `supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at
+v11.7.x answer HTTP 404, which the SDK throws as `SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits
+automated transactions and automation records; read those with `getAccountAutoTransactions`.
+
+```ts
+let cursor: string | undefined;
+do {
+  const page = await supra.account.getAccountHistory({
+    accountAddress: sender.address(),
+    options: { categories: ['sent', 'fa'], count: 50, start: cursor },
+  });
+  for (const { categories, transaction } of page.response) {
+    console.log(transaction.hash, categories);
+  }
+  // page.indexedFrom: the lowest block height the history covers, when the node reports one.
+  cursor = page.cursor;
+} while (cursor !== undefined);
+```
+
+The node applies `categories` while it scans, so a page can have fewer entries than `count`, or none, and still carry a
+cursor. The feed ends only when `cursor` is `undefined`; the cursor `"0"` does not end it.
+
+`getAccountFaTransactions` lists the transactions that withdrew from or deposited to one fungible store, given the
+store's address (Mainnet, Testnet and Devnet nodes serve it). It takes `count`, `start`, `ascending` and `type`, and is
+read page by page like the feeds above.
+
 ## Chain ID
 
 Every transaction carries the chain ID of the client's configuration: 8 for `Network.MAINNET`, 6 for `Network.TESTNET`,

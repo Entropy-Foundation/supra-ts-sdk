@@ -162,6 +162,24 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
 - `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
+- **`account.getAccountFaTransactions({ accountAddress, options? })`** reads
+  `GET /rpc/v3/accounts/{address}/fa_transactions`: the finalized transactions that withdrew from or deposited to a
+  fungible store (`accountAddress` is the store's address, for example an account's primary SUPRA store). `options`
+  are `count`, `start`, `ascending` and `type`. Mainnet, Testnet and Devnet nodes serve the route. An empty page with
+  the cursor `"0"` does not end this feed, because `0` can be a real cursor on a v12 node. A v11 node answers a request
+  past the last transaction with an empty page and `"0"`, and the feed ends on the request after it, which echoes
+  `start=0`.
+- **`account.getAccountHistory({ accountAddress, options? })`** reads `GET /rpc/v3/accounts/{address}/history`, which
+  nodes from `supra_node_v12.0.0` serve (Devnet): every finalized transaction that concerns the account, once each,
+  as `{ categories, transaction }` entries (`AccountHistoryEntry`). `options` are `categories` (a non-empty subset of
+  `"sent"`, `"coin"`, `"fa"` and `"da"`, default all four), `count`, `ascending` and `start`. The feed ends only when a
+  response has no `x-supra-cursor` header: an empty page that carries a cursor, and the cursor `"0"`, do not end it.
+  The page (`AccountHistoryPage`) also carries `indexedFrom` (`x-supra-history-indexed-from`, the lowest block height
+  the history covers) and `oldestBlock` (`x-supra-oldest-block`). The history omits automated transactions and
+  automation records; read them with `getAccountAutoTransactions`. It lists SUPRA transfers between primary fungible
+  stores, which `getAccountCoinTransactions` does not. Mainnet and Testnet nodes at v11.7.x answer HTTP 404, which
+  the method throws as **`SupraRouteUnsupportedError`** (extends `SupraNotFoundError`; carries `method` and
+  `minimumNodeRelease`, `"supra_node_v12.0.0"`).
 - **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms; an integer up to 2147483647) for predefined
   networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`, `maxDelayMs` up to 2147483647) turns on retries of GET
