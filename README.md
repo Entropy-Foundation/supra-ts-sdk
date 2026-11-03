@@ -247,7 +247,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 |---|---|---|
 | `SupraAPIError` | the node answers with an error status | `status`, `statusText`, `url`, `data`, `major_status`, `sub_status` |
 | `SupraNotFoundError` (extends `SupraAPIError`) | HTTP 404 | |
-| `SupraGoneError` (extends `SupraAPIError`) | HTTP 410: the node has pruned the data | |
+| `SupraGoneError` (extends `SupraAPIError`) | HTTP 410: the node has pruned the data | `oldestBlock?: bigint`, the oldest block the node holds; restart reads from it |
 | `SupraRateLimitError` (extends `SupraAPIError`) | HTTP 429 | `retryAfterSeconds` |
 | `SupraServiceUnavailableError` (extends `SupraAPIError`) | HTTP 503 | |
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | HTTP 400 for a submission beyond the sequence numbers the node queues for the account | `sequenceNumber` |

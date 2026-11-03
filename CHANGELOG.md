@@ -24,7 +24,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   carries no transaction hash; the body is available as `data`.
 - **`faucet.getFaucetTransaction({ transactionHash })`** — reads a faucet transaction
   (`GET /rpc/v3/wallet/faucet/transactions/{hash}`).
-- **Typed errors.** `SupraNotFoundError` (HTTP 404), `SupraGoneError` (410), `SupraRateLimitError` (429, with
+- **Typed errors.** `SupraNotFoundError` (HTTP 404), `SupraGoneError` (410, with `oldestBlock`, the oldest block the node holds, from the `x-supra-oldest-block` header;
+  `undefined` when the header is absent or malformed), `SupraRateLimitError` (429, with
   `retryAfterSeconds` from the body's `retry_after_seconds` or the `Retry-After` header) and
   `SupraServiceUnavailableError` (503) extend `SupraAPIError`, so `instanceof SupraAPIError` still matches.
   `SupraTimeoutError` and `SupraNetworkError` are thrown for a request that times out or fails before the node answers;

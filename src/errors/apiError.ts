@@ -94,12 +94,22 @@ export class SupraNotFoundError extends SupraAPIError {
 
 /**
  * SupraGoneError is thrown when the node answers HTTP 410: the requested data existed but the node has pruned it.
+ * `oldestBlock` is the height of the oldest block the node holds, from the response's `x-supra-oldest-block` header;
+ * a request restarted from that height can be answered. It is `undefined` when the response has no such header or the
+ * header is not a decimal number.
  * @group SupraAPIError
  */
 export class SupraGoneError extends SupraAPIError {
-    constructor(args: SupraAPIErrorOptions) {
+    readonly oldestBlock: bigint | undefined;
+
+    constructor(args: SupraAPIErrorOptions & { oldestBlock?: bigint | undefined }) {
         super(args);
         this.name = "SupraGoneError";
+        this.oldestBlock = args.oldestBlock;
+    }
+
+    override toJSON() {
+        return { ...super.toJSON(), oldestBlock: this.oldestBlock?.toString() };
     }
 }
 
@@ -166,13 +176,20 @@ export class SupraAccountQueueFullError extends SupraAPIError {
  * `retryAfterSeconds` filled in for HTTP 429.
  * @param args - The status, status text, URL and parsed body of the response.
  * @param retryAfterHeader - The value of the response's `Retry-After` header, if any.
+ * @param oldestBlockHeader - The value of the response's `x-supra-oldest-block` header, if any.
  */
-export function createSupraAPIError(args: SupraAPIErrorOptions, retryAfterHeader?: string | null): SupraAPIError {
+export function createSupraAPIError(
+    args: SupraAPIErrorOptions,
+    retryAfterHeader?: string | null,
+    oldestBlockHeader?: string | null,
+): SupraAPIError {
     switch (args.status) {
         case 404:
             return new SupraNotFoundError(args);
-        case 410:
-            return new SupraGoneError(args);
+        case 410: {
+            const oldestBlock = oldestBlockOf(oldestBlockHeader);
+            return new SupraGoneError(oldestBlock === undefined ? args : { ...args, oldestBlock });
+        }
         case 429:
             return new SupraRateLimitError({
                 ...args,
@@ -209,6 +226,11 @@ export function retryAfterSecondsOf(
     }
     const date = Date.parse(header);
     return Number.isNaN(date) ? undefined : Math.max(0, Math.ceil((date - now) / 1000));
+}
+
+/** The block height of an `x-supra-oldest-block` header: decimal digits only, otherwise `undefined`. */
+function oldestBlockOf(header?: string | null): bigint | undefined {
+    return header !== undefined && header !== null && /^\d+$/.test(header) ? BigInt(header) : undefined;
 }
 
 function messageOf(args: SupraAPIErrorOptions): string {
