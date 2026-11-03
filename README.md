@@ -204,9 +204,10 @@ do {
 
 `getAccountHistory` lists every finalized transaction that concerns an account, once each, with the categories it
 matched (`sent`, `coin`, `fa`, `da`). It lists SUPRA transfers between primary fungible stores, which
-`getAccountCoinTransactions` does not, and lists SUPRA held in a `CoinStore` as well. It needs a node from `supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at
-v11.7.x answer HTTP 404, which the SDK throws as `SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits
-automated transactions and automation records; read those with `getAccountAutoTransactions`.
+`getAccountCoinTransactions` does not, and lists SUPRA held in a `CoinStore` as well. It needs a node from
+`supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at v11.7.x answer HTTP 404, which the SDK throws as
+`SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits automated transactions and automation records; read
+those with `getAccountAutoTransactions`.
 
 ```ts
 let cursor: string | undefined;
