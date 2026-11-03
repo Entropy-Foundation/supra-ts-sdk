@@ -180,10 +180,17 @@ async function fund(node: Node, address: string): Promise<void> {
         fail(`Faucet request on ${node.label} returned HTTP ${response.status}`);
     }
     for (let attempt = 0; attempt < 120; attempt++) {
-        const resource = await fetch(
-            `${node.rpc}/rpc/v3/accounts/${address}/resources/0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>`,
-        );
-        if (resource.ok) {
+        // The balance view reads the CoinStore or the primary fungible store, whichever holds the SUPRA.
+        const balance = await fetch(`${node.rpc}/rpc/v3/view`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                function: "0x1::coin::balance",
+                type_arguments: ["0x1::supra_coin::SupraCoin"],
+                arguments: [address],
+            }),
+        });
+        if (balance.ok && BigInt(((await balance.json()) as { result: string[] }).result[0] ?? "0") > 0n) {
             return;
         }
         await sleep(500);

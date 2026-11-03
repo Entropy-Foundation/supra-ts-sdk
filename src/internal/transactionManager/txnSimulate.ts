@@ -1,6 +1,7 @@
 import { post } from "../../client/post";
 import type { Ed25519Signature, MoveInnerAuthenticator, MultiAgentSignature } from "../../types/move";
-import { TransactionStatus, type TransactionResponse } from "../../types/transaction";
+import { TransactionStatus, type TransactionResponse, type TransactionSimulationV4 } from "../../types/transaction";
+import { V4_RPC_VERSION, withV4RouteSupport } from "../routeSupport";
 import type { SendTxnPayload } from "../../types/transactionManager/transactionBuild";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
 import { getRawTxnJSONInternal } from "./txnBuild";
@@ -33,17 +34,10 @@ export async function simulateUnmappedTxnInternal(
     args: { sendTxPayload: SendTxnPayload },
     config: NetworkConfig,
 ): Promise<TransactionResponse> {
-    const authenticator = JSON.parse(JSON.stringify(args.sendTxPayload.Move.authenticator)) as MoveInnerAuthenticator;
-    unsetAuthenticatorSignatures(authenticator);
-    const simulationPayload: SendTxnPayload = {
-        ...args.sendTxPayload,
-        Move: { ...args.sendTxPayload.Move, authenticator },
-    };
-
     const simulatedTxnResponse = await post<SendTxnPayload, TransactionResponse>(
         {
             path: "/transactions/simulate",
-            data: simulationPayload,
+            data: zeroedSignaturePayload(args.sendTxPayload),
         },
         config,
     );
@@ -54,6 +48,41 @@ export async function simulateUnmappedTxnInternal(
     }
 
     return simulatedTxnResponse;
+}
+
+/** A copy of the payload whose signatures are zero; the caller's payload is not modified. */
+function zeroedSignaturePayload(sendTxPayload: SendTxnPayload): SendTxnPayload {
+    const authenticator = JSON.parse(JSON.stringify(sendTxPayload.Move.authenticator)) as MoveInnerAuthenticator;
+    unsetAuthenticatorSignatures(authenticator);
+    return { ...sendTxPayload, Move: { ...sendTxPayload.Move, authenticator } };
+}
+
+/**
+ * Simulates a transaction with `POST /rpc/v4/transactions/simulate`, which reports the changes the transaction would
+ * make to Move state, and returns the simulated transaction when its status is `Success`. Errors are those of
+ * {@link simulateTxnInternal}; a 404 is thrown as `SupraRouteUnsupportedError`.
+ *
+ * A node whose v4 route answers as v3 does returns the transaction without the state-change fields.
+ */
+export async function simulateWithStateChangesInternal(
+    args: { sendTxPayload: SendTxnPayload },
+    config: NetworkConfig,
+): Promise<TransactionSimulationV4> {
+    try {
+        const simulated = await withV4RouteSupport({ method: "simulate.withStateChanges" }, () =>
+            post<SendTxnPayload, TransactionSimulationV4>(
+                { path: "/transactions/simulate", data: zeroedSignaturePayload(args.sendTxPayload) },
+                config,
+                V4_RPC_VERSION,
+            ),
+        );
+        if (simulated.status !== TransactionStatus.Success) {
+            throw new SupraSimulationFailedError(simulated);
+        }
+        return simulated;
+    } catch (error) {
+        throw await mapGasUnitPriceRefusalInternal(error, args.sendTxPayload.Move.raw_txn.gas_unit_price, config);
+    }
 }
 
 /** Replaces every signature of the authenticator with zeros, in place. */

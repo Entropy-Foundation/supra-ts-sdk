@@ -5,8 +5,11 @@ import type {
     AutomationAuthenticator,
     MoveEvent,
     MoveFunctionId,
+    MoveModule,
+    MoveResource,
     MoveScriptBytecode,
     MoveTransactionAuthenticator,
+    MoveValue,
 } from "./move";
 
 /**
@@ -497,6 +500,240 @@ export interface SettlementCreditSummary {
  * `getTransactionsByBlockHash` and `getAccountCoinTransactions`. Nodes before v12 reject it with HTTP 400.
  */
 export type TransactionQueryType = "user" | "auto" | "meta" | "record" | "settlement";
+
+/**
+ * A proof that a transaction is included in the node's transaction accumulator, computed against the latest
+ * transactions inclusion certificate the node holds. Sent by the `/rpc/v4` transaction routes when the request asks
+ * for it.
+ */
+export interface TransactionInclusionProof {
+    /** The accumulator proof. `siblings` are ordered from the bottom level to the root. */
+    proof: { siblings: string[] };
+    /** The hash of the leaf node, hex encoded. */
+    leaf_hash_value: string;
+    /** The Merkle root the proof verifies against, hex encoded. */
+    merkle_root_hash_value: string;
+    /** The leaf index in the accumulator tree. */
+    leaf_index: number;
+    /** The root of the events tree, when available. */
+    events_tree_merkle_root_hash_value?: string | null;
+    /** The hashes of the events tree leaves, when available. */
+    events_leaves_hash_values?: string[] | null;
+    /** The height of the certificate that holds `merkle_root_hash_value`. */
+    certified_at_height: number;
+}
+
+/**
+ * A transaction as `/rpc/v4` returns it: the shape of {@link TransactionResponse} with the events' `hash` and, when
+ * the request asked for a proof, `inclusion_proof`.
+ */
+export type TransactionResponseV4 = TransactionResponse & {
+    /** Present on committed transactions of requests with `include_proof`; `null` when no certificate covers it yet. */
+    inclusion_proof?: TransactionInclusionProof | null;
+};
+
+/**
+ * The result of looking up one hash with `getTransactionsByHashes`.
+ */
+export interface TransactionByHashesEntry {
+    /** The requested hash in lower case, as the SDK sends it. */
+    hash: string;
+    /**
+     * The transaction, or `null` when no transaction of the requested `type` has the hash. A hash the node does not
+     * know does not fail the request.
+     */
+    transaction: TransactionResponseV4 | null;
+}
+
+/**
+ * The response of `getTransactionsByHashes`: `transactions` answers a prefix of the requested hashes, in request
+ * order, and `omitted` lists the rest, so the two together hold one element per requested hash.
+ */
+export interface TransactionsByHashesResponse {
+    /** One entry per answered position, in request order. The first requested hash is always answered. */
+    transactions: TransactionByHashesEntry[];
+    /**
+     * The requested hashes that were not answered, in request order, repeats included: the first position whose entry
+     * did not fit the node's response size bound or whose lookup failed, and every position after it. Empty when
+     * every hash was answered. Request them again.
+     */
+    omitted: string[];
+}
+
+/**
+ * A change that a simulated transaction would make to one Move state key, in the Aptos API's `WriteSetChange`
+ * representation. A written resource group is one `write_resource` per member, each with the group's
+ * `state_key_hash`; a deleted resource group is one `delete_resource` whose `resource` is the group's own tag.
+ */
+export type WriteSetChange =
+    | { type: "write_resource"; address: string; state_key_hash: string; data: MoveResource }
+    | { type: "delete_resource"; address: string; state_key_hash: string; resource: string }
+    | {
+          type: "write_module";
+          address: string;
+          state_key_hash: string;
+          data: { bytecode: string; abi?: MoveModule | null };
+      }
+    | { type: "delete_module"; address: string; state_key_hash: string; module: string }
+    | {
+          type: "write_table_item";
+          state_key_hash: string;
+          /** The table handle, hex encoded. */
+          handle: string;
+          /** The BCS bytes of the item's key, hex encoded. */
+          key: string;
+          /** The BCS bytes of the item's value, hex encoded. */
+          value: string;
+          /** The decoded key and value; absent for a table the node's table-info index has no entry for. */
+          data?: { key: MoveValue; key_type: string; value: MoveValue; value_type: string } | null;
+      }
+    | {
+          type: "delete_table_item";
+          state_key_hash: string;
+          handle: string;
+          key: string;
+          /** The decoded key; absent for a table the node's table-info index has no entry for. */
+          data?: { key: MoveValue; key_type: string } | null;
+      };
+
+/** What a state key holds: the `kind` of an {@link OmittedStateKey}. */
+export type StateKeyKind = "resource" | "resource_group" | "module" | "table_item";
+
+/**
+ * A state key that a simulated transaction writes and whose changes the response leaves out to stay within the
+ * node's size bound.
+ */
+export interface OmittedStateKey {
+    /** The hash of the state key, hex encoded. */
+    state_key_hash: string;
+    /** The account the resource, resource group or module is stored under; `null` for a table item. */
+    address: string | null;
+    kind: StateKeyKind;
+    /**
+     * The struct tag of a resource or resource group, the ID of a module, or the hex-encoded handle of a table
+     * item's table.
+     */
+    tag: string;
+}
+
+/** The number of state keys of each kind left out of a simulation's reported changes. */
+export interface OmittedStateKeyCounts {
+    resource: number;
+    resource_group: number;
+    module: number;
+    table_item: number;
+}
+
+/**
+ * The state-change fields that `POST /rpc/v4/transactions/simulate` adds to a simulated transaction. A node whose
+ * `/rpc/v4` route answers as `/rpc/v3` does (Mainnet and Testnet nodes of `supra_node_v11.7.x`) sends none of them,
+ * so each is optional here.
+ */
+export interface SimulationStateChanges {
+    /**
+     * The height of the last block the node had executed when it took the snapshot the simulation ran against, or
+     * `null` when it had executed none.
+     */
+    state_height?: number | null;
+    /** The changes the transaction would make to Move state, in priority order (the signers' resources first). */
+    changes?: WriteSetChange[];
+    /**
+     * The value each state key in `changes` held before the transaction, keyed by `state_key_hash`: the `write_*`
+     * changes that would write it, or `null` when the key held no value.
+     */
+    prior_values?: Record<string, WriteSetChange[] | null>;
+    /** The state keys left out of `changes` and `prior_values`, in priority order, at most the node's listing bound. */
+    omitted?: OmittedStateKey[];
+    /** The number of state keys of each kind left out, including any beyond those `omitted` lists. */
+    omitted_counts?: OmittedStateKeyCounts;
+    /** `true` exactly when a state key was left out. */
+    changes_truncated?: boolean;
+}
+
+/**
+ * A simulated transaction with the changes it would make to Move state. The state-change fields are absent when the
+ * node does not report them; see {@link SimulationStateChanges}.
+ */
+export type TransactionSimulationV4 = TransactionResponse & SimulationStateChanges;
+
+/** The side of the chain an address belongs to: `"move"` for SupraMVM, `"evm"` for SupraEVM. */
+export type SettlementDomain = "move" | "evm";
+
+/** Which end of a cross-VM crossing an address is. */
+export type SettlementRole = "sender" | "recipient";
+
+/** Where in its lifecycle a crossing was when a stage was recorded. */
+export type SettlementStage =
+    | "recorded"
+    | "initiated_on_evm"
+    | "credited_on_evm"
+    | "applied_on_move"
+    | "skipped"
+    | "cleared";
+
+/** One end of a cross-VM crossing. */
+export interface SettlementParty {
+    domain: SettlementDomain;
+    /** The address, `0x`-prefixed. */
+    address: string;
+}
+
+/** One stage of one crossing, as the block that produced it stated it. */
+export interface SettlementStageEntry {
+    stage: SettlementStage;
+    /** The block this stage happened in. */
+    block_height: number;
+    /** The transaction that produced it, as unprefixed hexadecimal. */
+    transaction_hash: string;
+    /**
+     * SupraMVM's outcome code where the stage has one; `null` or absent means the stage carries no outcome. `0`
+     * moved the value; `1` the escrow holds less than asked; `2` the recipient's primary SUPRA store is frozen; `4`
+     * the escrow is not initialized; `6` the recipient may not be paid out to; `7` the sender is not a usable
+     * SupraEVM address. `1`, `2`, `4` and `6` on an `applied_on_move` stage come with a `refund`.
+     */
+    status?: number | null;
+    /** The value this stage concerns, in quants. */
+    amount: number;
+    sender?: SettlementParty | null;
+    recipient?: SettlementParty | null;
+    /** The record a returned credit's value was returned in, for a credit that was refunded. */
+    refund?: string | null;
+}
+
+/** A crossing that is recorded and waiting to be applied. */
+export interface PendingSettlement {
+    sender: SettlementParty;
+    recipient: SettlementParty;
+    /** The value the crossing moves, in quants. */
+    amount: number;
+    /** The block whose execution recorded it. */
+    recorded_at_height: number;
+}
+
+/** The lifecycle of one cross-VM crossing, as of the height the node had executed to. */
+export interface Settlement {
+    /** The crossing's identity, `0x`-prefixed. */
+    settlement_id: string;
+    /** The height the node had executed to when it answered. */
+    as_of_height: number;
+    /** Present while the crossing is waiting to be applied. */
+    pending?: PendingSettlement | null;
+    /** Every stage the node holds, oldest first. */
+    stages: SettlementStageEntry[];
+}
+
+/**
+ * A page of the crossings one address is party to, oldest first. `cursor` is `undefined` when there are no more
+ * crossings; a page can be empty and still carry a cursor.
+ */
+export interface SettlementsPage {
+    /** The crossings of this page. */
+    response: Settlement[];
+    /** The cursor of the next page, or `undefined` when there are no more results. */
+    cursor?: string | undefined;
+    /** The height of the oldest block the node holds (`x-supra-oldest-block`), or `undefined` when it sends none. */
+    oldestBlock?: number | undefined;
+}
 
 /**
  * Options for configuring the behavior of the waitForTransaction() function.

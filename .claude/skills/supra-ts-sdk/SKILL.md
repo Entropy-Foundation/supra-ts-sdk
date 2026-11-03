@@ -205,10 +205,12 @@ const { response: resources, cursor } = await supra.account.getAccountResources(
     options: { count: 10 },
 });
 
-// Get specific resource
-const resource = await supra.account.getAccountResource<{ coin: { value: string } }>({
+// Get specific resource. 0x1::account::Account exists for every account. A CoinStore<SupraCoin> resource exists only
+// for SUPRA held as a coin (Mainnet, Testnet); it is a 404 for an account whose SUPRA is in a primary fungible
+// store (Devnet). Read SUPRA balances with getAccountSupraCoinBalance.
+const resource = await supra.account.getAccountResource<{ sequence_number: string; authentication_key: string }>({
     accountAddress: account.address(),
-    resourceType: "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
+    resourceType: "0x1::account::Account",
 });
 
 // Get account modules (paginated)
@@ -243,7 +245,8 @@ for (const { categories, transaction } of history.response) {
 // Get the fungible asset transactions of ONE fungible store (all networks). It takes a store address, not an
 // account address (an account address returns an empty page). Derive the primary store of an account first
 // (SUPRA by default; pass metadataAddress for another asset). For everything that concerns an account use
-// getAccountHistory (nodes from supra_node_v12.0.0).
+// getAccountHistory (nodes from supra_node_v12.0.0). SUPRA held in a CoinStore (Mainnet, Testnet) is listed by
+// getAccountCoinTransactions({ accountAddress }), which returns an empty page for SUPRA held in a primary store.
 const storeAddress: string = await supra.account.getPrimaryStoreAddress({ accountAddress: account.address() });
 const { response: faTxns } = await supra.account.getAccountFaTransactions({
     storeAddress,
@@ -254,6 +257,59 @@ const { response: faTxns } = await supra.account.getAccountFaTransactions({
 const count: number = await supra.account.getAccountCoinsCount({
     accountAddress: account.address(),
 });
+```
+
+---
+
+## Operations of the `/rpc/v4` API
+
+The client's base path is `/rpc/v3`; these methods call `/rpc/v4` routes, which nodes from `supra_node_v12.0.0` (Devnet) serve. A v11.7.x node (Mainnet, Testnet) answers 404 for each route except simulate, thrown as `SupraRouteUnsupportedError` (a `SupraNotFoundError` with `method` and `minimumNodeRelease`).
+
+```typescript
+// Several view functions against one snapshot. Elements take the arguments of `view`; results are converted by the
+// ABI (`u64` is `bigint`). A function the node fails has `error: { status, message }` in its entry; nothing is thrown.
+const { state_height, results } = await supra.methods.viewBatch({
+    requests: [
+        { function: "0x1::timestamp::now_microseconds" },
+        { function: "0x1::coin::balance", typeArguments: ["0x1::supra_coin::SupraCoin"], functionArguments: ["0x1"] },
+    ],
+});
+for (const entry of results) {
+    if (entry.error) console.log(entry.error.status, entry.error.message);
+    else console.log(entry.result[0]);
+}
+
+// Several transactions by hash. One entry per answered hash in request order; `transaction` is null for an unknown
+// hash. `omitted` holds the hashes left out to keep the response in the node's size bound (100 hashes per request
+// by default): request them again.
+const { transactions, omitted } = await supra.transaction.getTransactionsByHashes({
+    transactionHashes: ["0x" + "11".repeat(32), "0x" + "22".repeat(32)],
+    // type?, exclude_uncommitted?, include_proof?
+});
+
+// A simulation with the Move state changes it would make. `simulate.simple` is unchanged (v3). A v11.7.x node
+// answers the route as v3 does: the call succeeds and `changes`, `prior_values`, `state_height`, `omitted`,
+// `omitted_counts` and `changes_truncated` are undefined.
+const sendTxPayload = await supra.transaction.build.sendTxnPayload({ senderAccount: account, rawTxn });
+const simulated = await supra.transaction.simulate.withStateChanges({ sendTxPayload });
+for (const change of simulated.changes ?? []) {
+    console.log(change.type, change.state_key_hash, simulated.prior_values?.[change.state_key_hash]);
+}
+
+// Cross-VM crossings of native SUPRA. `domain` ("move" | "evm") is required; the address is left-padded with
+// zeros to 32 bytes for "move" or 20 for "evm" (longer is rejected). Read page by page until `cursor` is undefined (an empty page can carry one).
+const page = await supra.transaction.getSettlements({
+    address: "0x" + "11".repeat(20),
+    domain: "evm",
+    options: { role: "recipient", count: 20 },
+});
+// One crossing: its stages (recorded, credited_on_evm, applied_on_move, skipped, cleared), `pending` while it waits to
+// be applied. Unknown id: SupraNotFoundError; recorded below the node's oldest block: SupraGoneError.
+const settlement = await supra.transaction.getSettlement({ settlementId: page.response[0]!.settlement_id });
+
+// Native SUPRA accounting across the two VMs, as of one height. Wei figures are decimal strings;
+// `escrow_shortfall_wei` is "0" while the mirror is fully backed. `*_quants` are JSON numbers, rounded above 2^53.
+const supply = await supra.fungibleAsset.getNativeSupply();
 ```
 
 ---
@@ -785,9 +841,13 @@ const sponsored = await supra.transaction.submit.submitSponsorTransaction({
 
 ## Events
 
+SUPRA deposits are `0x1::coin::CoinDeposit` events (field `account`) where SUPRA is held in a `CoinStore` (Mainnet,
+Testnet) and `0x1::fungible_asset::Deposit` events (field `store`: the fungible store, not the account) where it is held
+in a primary fungible store (Devnet). Read both on a network that may hold SUPRA in both forms.
+
 ```typescript
 const { response: events, cursor } = await supra.events.getEventsByType({
-    eventType: "0x1::fungible_asset::Deposit",
+    eventType: "0x1::coin::CoinDeposit", // or "0x1::fungible_asset::Deposit"
     options: { limit: 100, startHeight: 1000, endHeight: 2000 }, // endHeight is exclusive
 });
 ```

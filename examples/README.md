@@ -61,7 +61,7 @@ SUPRA_RPC_URL=http://localhost:27001 SUPRA_CHAIN_ID=255 SUPRA_EXAMPLES_FUND=1 pn
 |---|---|---|
 | [`account.ts`](./account.ts) | Account existence, info, modules, resources, transactions, balances, paginated feeds | Nothing for the queries about `0x1`; a funded account for the queries about an account's history (skipped otherwise) |
 | [`block.ts`](./block.ts) | The latest block, a block by height and by hash, the transactions of a block | Nothing |
-| [`events.ts`](./events.ts) | Events by type | Nothing |
+| [`events.ts`](./events.ts) | Events by type: `0x1::coin::CoinDeposit` (SUPRA in a `CoinStore`) and `0x1::fungible_asset::Deposit` (SUPRA in a primary fungible store) | Nothing |
 | [`methods.ts`](./methods.ts) | Typed and raw view function calls, with the argument encodings | Nothing |
 | [`table.ts`](./table.ts) | Reading a table item (the framework's coin to fungible asset map) | Nothing |
 | [`faucet.ts`](./faucet.ts) | Funding a new account and reading the faucet transaction | `SUPRA_EXAMPLES_FUND=1` (skipped otherwise) |

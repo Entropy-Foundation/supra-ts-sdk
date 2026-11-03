@@ -207,6 +207,38 @@ build_time, build_env }` (type `NodeVersionInfo`). `release` is the node release
   stores, which `getAccountCoinTransactions` does not. Mainnet and Testnet nodes at v11.7.x answer HTTP 404, which
   the method throws as **`SupraRouteUnsupportedError`** (extends `SupraNotFoundError`; carries `method` and
   `minimumNodeRelease`, `"supra_node_v12.0.0"`).
+- **Operations of the `/rpc/v4` API.** The client's base path stays `/rpc/v3`; each of these methods selects `/rpc/v4`
+  for its own request. All need a node from `supra_node_v12.0.0` (Devnet). On a Mainnet or Testnet node at v11.7.x
+  each route except simulate answers HTTP 404, which the method throws as `SupraRouteUnsupportedError` (see
+  `getAccountHistory`); a 404 of `getSettlement` that carries the node's JSON error body is the node's answer for an
+  unknown crossing and stays a `SupraNotFoundError`.
+  - **`methods.viewBatch({ requests })`** reads `POST /rpc/v4/view/batch`: several view functions in one request,
+    executed against one snapshot of Move state. Each element takes the arguments of `view`; the SDK reads each
+    module's ABI once for the batch, encodes the arguments and converts each result (`u64`, `u128` and `u256` are
+    `bigint`). The result is `{ state_height, results }`, with one `{ result }` or `{ error: { status, message } }`
+    entry per element in request order; a failing element does not fail the call, and no exception is thrown for it.
+    Types: `ViewBatchResponse`, `ViewBatchEntry`, `ViewBatchError`.
+  - **`transaction.getTransactionsByHashes({ transactionHashes, type?, exclude_uncommitted?, include_proof? })`** reads
+    `POST /rpc/v4/transactions/by_hashes`. It returns `{ transactions, omitted }`: one `{ hash, transaction }` per
+    answered hash in request order, `transaction` being `null` for a hash the node does not know, and `omitted` the
+    hashes left out to keep the response within the node's size bound (request them again). The node accepts 1 to 100
+    hashes by default. Types: `TransactionsByHashesResponse`, `TransactionByHashesEntry`, `TransactionResponseV4`,
+    `TransactionInclusionProof`. `MoveEvent` gains the optional `hash` that the `/rpc/v4` routes send.
+  - **`transaction.simulate.withStateChanges({ sendTxPayload })`** reads `POST /rpc/v4/transactions/simulate` and
+    returns the simulated transaction with the changes it would make to Move state: `changes` (`WriteSetChange[]`),
+    `prior_values` (keyed by `state_key_hash`), `state_height`, `omitted`, `omitted_counts` and `changes_truncated`
+    (`TransactionSimulationV4`). `simulate.simple` and `simulate.serialized` are unchanged and keep calling
+    `/rpc/v3`. A v11.7.x node answers this route as `/rpc/v3` does: the call succeeds and the six state-change fields
+    are absent from the result, so each is optional in the type.
+  - **`transaction.getSettlements({ address, domain, options? })`** reads `GET /rpc/v4/transactions/settlements`: the
+    cross-VM crossings of native SUPRA that an address (`domain` `"move"` or `"evm"`) is party to, oldest first, with
+    `options` `role`, `count` and `start`. The page (`SettlementsPage`) carries `cursor`, which is `undefined` only on
+    the last page, and `oldestBlock`. **`transaction.getSettlement({ settlementId })`** reads
+    `GET /rpc/v4/transactions/settlements/{settlement_id}`: every stage of one crossing, its queue entry while it is
+    pending, and the height the node had executed to (`Settlement`). A crossing recorded below the node's oldest
+    retained block throws `SupraGoneError`.
+  - **`fungibleAsset.getNativeSupply()`** reads `GET /rpc/v4/supply/native`: native SUPRA on SupraEVM, the value in
+    flight between the two VMs, and the SupraMVM escrow backing it, as of one height (`NativeSupply`).
 - **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms; an integer up to 2147483647) for predefined
   networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`, `maxDelayMs` up to 2147483647) turns on retries of GET

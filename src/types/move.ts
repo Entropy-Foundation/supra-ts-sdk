@@ -161,6 +161,11 @@ export interface MoveEvent {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: Record<string, any> | any;
     // keep flexible — different events have different schemas
+    /**
+     * The hash of the event, derived from `RLP(event)` and `keccak256`. Only the `/rpc/v4` routes send it, for
+     * example `getTransactionsByHashes`; the `/rpc/v3` routes leave it out.
+     */
+    hash?: string;
 }
 
 /**

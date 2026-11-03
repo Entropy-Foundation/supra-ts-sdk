@@ -19,6 +19,7 @@ import { createFundedAccount, createMigratedAccount, createUnfundedAccount, wait
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import { fixtureModuleFor, fixturePackageMetadata } from "./helpers/fixturePackage";
+import { insufficientBalanceAbort, supraLayoutOf } from "./helpers/layout";
 import { SUPRA_COIN_TYPE, rawGet, rawPost, rawSupraBalance, type RawTransaction } from "./helpers/raw";
 
 /**
@@ -201,7 +202,9 @@ describeE2E("gas settings", () => {
         expect(error).toBeInstanceOf(SupraSimulationFailedError);
         const failed = error as SupraSimulationFailedError;
         expect(failed.major_status).toBe(MoveVmError.ABORTED);
-        expect(failed.sub_status).toBe(0x10006);
+        expect(failed.sub_status).toBe(
+            insufficientBalanceAbort(await supraLayoutOf(ctx, account.address().toString())).code,
+        );
         expect(submits).toBe(0);
         expect((await ctx.supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number).toBe(
             sequenceBefore,

@@ -3,6 +3,7 @@ import { SupraInsufficientFungibleAssetBalanceError, TransactionStatus } from ".
 import { createFundedAccount, createMigratedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
+import { supraLayoutOf, testForLayout } from "./helpers/layout";
 import { rawSupraBalance } from "./helpers/raw";
 import { explicitGas } from "./helpers/transfers";
 
@@ -34,45 +35,61 @@ describeE2E("fungible asset", () => {
         expect(metadata.decimals).toBe(8);
     });
 
-    test("a faucet-funded account holds SUPRA as a coin and its fungible asset balance is 0", async () => {
+    test("a faucet-funded account holds SUPRA in one form only, as a coin or as a fungible asset", async () => {
         const sender = await createFundedAccount(ctx);
         const address = sender.address().toString();
+        const layout = await supraLayoutOf(ctx, address);
 
         const balance = await ctx.supra.account.getAccountSupraBalance({ accountAddress: address });
         expect(balance.total).toBe(await rawSupraBalance(ctx, address));
-        expect(balance.coin).toBe(balance.total);
-        expect(balance.fungibleAsset).toBe(0n);
+        expect(balance.coin).toBe(layout === "coin" ? balance.total : 0n);
+        expect(balance.fungibleAsset).toBe(layout === "coin" ? 0n : balance.total);
         await expect(
             ctx.supra.account.getAccountCoinBalance({ accountAddress: address, asset: SUPRA_FA }),
-        ).resolves.toBe(0n);
+        ).resolves.toBe(balance.fungibleAsset);
     });
 
-    test("transferSupraFungibleAsset is refused before submission when the SUPRA is held as a coin", async () => {
+    testForLayout("fa")("transferSupraFungibleAsset moves the SUPRA of a faucet-funded account", async () => {
         const sender = await createFundedAccount(ctx);
-        const address = sender.address().toString();
         const receiver = createUnfundedAccount().address().toString();
-        const total = await rawSupraBalance(ctx, address);
-        const sequenceBefore = BigInt(
-            (await ctx.supra.account.getAccountInfo({ accountAddress: address })).sequence_number,
-        );
 
-        const failure = await ctx.supra.fungibleAsset
-            .transferSupraFungibleAsset(await transferArgs(sender, receiver))
-            .catch((error: unknown) => error);
+        const txn = await ctx.supra.fungibleAsset.transferSupraFungibleAsset(await transferArgs(sender, receiver));
 
-        expect(failure).toBeInstanceOf(SupraInsufficientFungibleAssetBalanceError);
-        const error = failure as SupraInsufficientFungibleAssetBalanceError;
-        expect(error.fungibleAssetBalance).toBe(0n);
-        expect(error.coinBalance).toBe(total);
-        expect(error.amount).toBe(AMOUNT);
-        expect(error.message).toContain("migrateCoinToFungibleStore");
-        // Nothing was submitted: the sequence number is unchanged and the balance is not charged for gas.
-        const info = await ctx.supra.account.getAccountInfo({ accountAddress: address });
-        expect(BigInt(info.sequence_number)).toBe(sequenceBefore);
-        expect(await rawSupraBalance(ctx, address)).toBe(total);
+        expect(txn.status).toBe(TransactionStatus.Success);
+        expect(await rawSupraBalance(ctx, receiver)).toBe(AMOUNT);
     });
 
-    test("transferFungibleAsset of the SUPRA fungible asset is refused the same way", async () => {
+    // The refusal applies to an account whose SUPRA is in a CoinStore; where the faucet funds fungible stores there is
+    // nothing to refuse, and the test above covers a funded account's transfer.
+    testForLayout("coin")(
+        "transferSupraFungibleAsset is refused before submission when the SUPRA is held as a coin",
+        async () => {
+            const sender = await createFundedAccount(ctx);
+            const address = sender.address().toString();
+            const receiver = createUnfundedAccount().address().toString();
+            const total = await rawSupraBalance(ctx, address);
+            const sequenceBefore = BigInt(
+                (await ctx.supra.account.getAccountInfo({ accountAddress: address })).sequence_number,
+            );
+
+            const failure = await ctx.supra.fungibleAsset
+                .transferSupraFungibleAsset(await transferArgs(sender, receiver))
+                .catch((error: unknown) => error);
+
+            expect(failure).toBeInstanceOf(SupraInsufficientFungibleAssetBalanceError);
+            const error = failure as SupraInsufficientFungibleAssetBalanceError;
+            expect(error.fungibleAssetBalance).toBe(0n);
+            expect(error.coinBalance).toBe(total);
+            expect(error.amount).toBe(AMOUNT);
+            expect(error.message).toContain("migrateCoinToFungibleStore");
+            // Nothing was submitted: the sequence number is unchanged and the balance is not charged for gas.
+            const info = await ctx.supra.account.getAccountInfo({ accountAddress: address });
+            expect(BigInt(info.sequence_number)).toBe(sequenceBefore);
+            expect(await rawSupraBalance(ctx, address)).toBe(total);
+        },
+    );
+
+    testForLayout("coin")("transferFungibleAsset of the SUPRA fungible asset is refused the same way", async () => {
         const sender = await createFundedAccount(ctx);
         const receiver = createUnfundedAccount().address().toString();
 

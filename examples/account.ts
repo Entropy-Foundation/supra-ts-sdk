@@ -1,4 +1,5 @@
-import { HexString, SupraAccount, TransactionType } from "supra-ts-sdk";
+import type { TransactionResponse } from "supra-ts-sdk";
+import { HexString, SupraAccount, SupraRouteUnsupportedError, TransactionType } from "supra-ts-sdk";
 import { canSendTransactions, createClient, getFundedAccounts, runExample } from "./setup";
 
 runExample(async () => {
@@ -89,6 +90,9 @@ runExample(async () => {
 
     console.log("Account coins count:", await supra.account.getAccountCoinsCount({ accountAddress: address }));
 
+    // Lists the transactions that touched a `CoinStore` of the account. SUPRA held in a primary fungible store (a
+    // chain created from the `supra_node_v12.0.0` genesis, such as Devnet) is not listed: 0 there, and 1 or more on a
+    // node at v11.7.x, where the transfer above moved SUPRA in a `CoinStore`.
     const { response: accountCoinTransactions } = await supra.account.getAccountCoinTransactions({
         accountAddress: address,
     });
@@ -102,20 +106,51 @@ runExample(async () => {
 
     // -------------------------------------------------------------------------
     // Read a feed page by page: pass the cursor back until it is undefined
+    //
+    // `getAccountHistory` lists every transaction that concerns the account, whichever form holds its SUPRA. It needs a
+    // node from `supra_node_v12.0.0`; a node at v11.7.x throws SupraRouteUnsupportedError.
+    //
+    // `getAccountFaTransactions` on the account's primary store works on every network and lists the movements of the
+    // SUPRA held in that store. SUPRA held in a `CoinStore` is listed by `getAccountCoinTransactions`.
     // -------------------------------------------------------------------------
+    const printTransaction = (txn: TransactionResponse): void => {
+        // Only user and automated transactions have a header, payload and authenticator.
+        if (txn.txn_type === TransactionType.User || txn.txn_type === TransactionType.Auto) {
+            console.log(txn.hash, txn.header.sender.Move);
+        } else {
+            console.log(txn.hash, txn.txn_type);
+        }
+    };
+
+    let historyCursor: string | undefined;
+    try {
+        do {
+            const page = await supra.account.getAccountHistory({
+                accountAddress: address,
+                options: { count: 50, start: historyCursor },
+            });
+            for (const { categories, transaction } of page.response) {
+                console.log("history:", categories);
+                printTransaction(transaction);
+            }
+            historyCursor = page.cursor;
+        } while (historyCursor !== undefined);
+    } catch (error) {
+        if (!(error instanceof SupraRouteUnsupportedError)) {
+            throw error;
+        }
+        console.log("The node does not serve getAccountHistory.");
+    }
+
+    const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: address });
     let cursor: string | undefined;
     do {
-        const page = await supra.account.getAccountCoinTransactions({
-            accountAddress: address,
+        const page = await supra.account.getAccountFaTransactions({
+            storeAddress,
             options: { count: 50, start: cursor },
         });
         for (const txn of page.response) {
-            // Only user and automated transactions have a header, payload and authenticator.
-            if (txn.txn_type === TransactionType.User || txn.txn_type === TransactionType.Auto) {
-                console.log(txn.hash, txn.header.sender.Move);
-            } else {
-                console.log(txn.hash, txn.txn_type);
-            }
+            printTransaction(txn);
         }
         cursor = page.cursor;
     } while (cursor !== undefined);

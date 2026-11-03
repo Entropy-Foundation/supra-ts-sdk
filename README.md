@@ -173,13 +173,19 @@ console.log(info.version, info.branch, info.commit_hash, info.build_time, info.b
 Paginated methods return `{ response, cursor }`. Pass `cursor` back unchanged until it is `undefined`. A page
 can be empty and still carry a cursor.
 
+This example reads the feed of the account's primary fungible store, which holds the account's SUPRA on a chain
+created from the `supra_node_v12.0.0` genesis (Devnet) and works on every network. SUPRA held in a `CoinStore`
+(Mainnet and Testnet nodes at v11.7.x) is listed by `getAccountCoinTransactions`, which takes the account address and
+returns an empty page for SUPRA held in a primary store. `getAccountHistory`, below, covers both.
+
 ```ts
 import { TransactionType } from 'supra-ts-sdk';
 
+const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: sender.address() });
 let cursor: string | undefined;
 do {
-  const page = await supra.account.getAccountCoinTransactions({
-    accountAddress: sender.address(),
+  const page = await supra.account.getAccountFaTransactions({
+    storeAddress,
     options: { count: 50, start: cursor },
   });
   for (const txn of page.response) {
@@ -198,9 +204,10 @@ do {
 
 `getAccountHistory` lists every finalized transaction that concerns an account, once each, with the categories it
 matched (`sent`, `coin`, `fa`, `da`). It lists SUPRA transfers between primary fungible stores, which
-`getAccountCoinTransactions` does not. It needs a node from `supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at
-v11.7.x answer HTTP 404, which the SDK throws as `SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits
-automated transactions and automation records; read those with `getAccountAutoTransactions`.
+`getAccountCoinTransactions` does not, and lists SUPRA held in a `CoinStore` as well. It needs a node from
+`supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at v11.7.x answer HTTP 404, which the SDK throws as
+`SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits automated transactions and automation records; read
+those with `getAccountAutoTransactions`.
 
 ```ts
 let cursor: string | undefined;
@@ -230,6 +237,73 @@ To list everything that concerns an account, use `getAccountHistory` (nodes from
 const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: sender.address() });
 const page = await supra.account.getAccountFaTransactions({ storeAddress, options: { count: 50 } });
 ```
+
+### Operations of the `/rpc/v4` API
+
+The client's base path is `/rpc/v3`. These methods call `/rpc/v4` routes, which nodes from `supra_node_v12.0.0`
+(Devnet) serve. A Mainnet or Testnet node at v11.7.x answers HTTP 404 for each route except simulate, and the SDK throws
+`SupraRouteUnsupportedError` (a `SupraNotFoundError` with `method` and `minimumNodeRelease`).
+
+| Method | Route |
+|---|---|
+| `supra.methods.viewBatch` | `POST /rpc/v4/view/batch` |
+| `supra.transaction.getTransactionsByHashes` | `POST /rpc/v4/transactions/by_hashes` |
+| `supra.transaction.simulate.withStateChanges` | `POST /rpc/v4/transactions/simulate` |
+| `supra.transaction.getSettlements`, `getSettlement` | `GET /rpc/v4/transactions/settlements`, `.../{settlement_id}` |
+| `supra.fungibleAsset.getNativeSupply` | `GET /rpc/v4/supply/native` |
+
+`viewBatch` executes several view functions against one snapshot of Move state. Each element takes the arguments of
+`view`. A function the node fails has an `error` in its entry and does not fail the call:
+
+```ts
+const { state_height, results } = await supra.methods.viewBatch({
+  requests: [
+    { function: '0x1::timestamp::now_microseconds' },
+    { function: '0x1::coin::balance', typeArguments: ['0x1::supra_coin::SupraCoin'], functionArguments: ['0x1'] },
+  ],
+});
+for (const entry of results) {
+  console.log(entry.error ? `${entry.error.status} ${entry.error.message}` : entry.result);
+}
+```
+
+`getTransactionsByHashes` answers each requested hash in order, with `transaction: null` for a hash the node does not
+know. The node bounds the request (100 hashes by default) and the response; the hashes it left out of the response are in
+`omitted`, to be requested again.
+
+`simulate.withStateChanges` returns the simulated transaction with `changes`, `prior_values` (the value each changed
+state key held before, keyed by `state_key_hash`), `state_height`, `omitted`, `omitted_counts` and `changes_truncated`.
+A v11.7.x node answers the route as `/rpc/v3` does, so the call succeeds there and those fields are `undefined`.
+`simulate.simple` keeps calling `/rpc/v3`.
+
+```ts
+const simulated = await supra.transaction.simulate.withStateChanges({ sendTxPayload });
+if (simulated.changes === undefined) {
+  // The node does not report state changes.
+} else {
+  for (const change of simulated.changes) {
+    console.log(change.type, change.state_key_hash, simulated.prior_values?.[change.state_key_hash]);
+  }
+}
+```
+
+`getSettlements` lists the cross-VM crossings of native SUPRA that an address is party to, oldest first. `domain` (`"move"`
+or `"evm"`) is required, and the address is left-padded with zeros to 32 bytes for `"move"` or 20 bytes for `"evm"` (a longer one is rejected). Read it page by page
+as in [Reading a Feed Page by Page](#reading-a-feed-page-by-page); a page can be empty and still carry a cursor.
+`getSettlement` returns every stage of one crossing by its settlement id; a crossing the node has no record of is a
+`SupraNotFoundError`, and one recorded below its oldest retained block is a `SupraGoneError`.
+
+```ts
+const page = await supra.transaction.getSettlements({ address: evmRecipient, domain: 'evm', options: { count: 20 } });
+for (const settlement of page.response) {
+  const settled = await supra.transaction.getSettlement({ settlementId: settlement.settlement_id });
+  console.log(settled.pending ? 'pending' : 'applied', settled.stages.map((stage) => stage.stage));
+}
+```
+
+`getNativeSupply` returns the accounting of native SUPRA across the two VMs as of one height: wei figures are decimal
+strings, and `escrow_shortfall_wei` is `"0"` while the mirror is fully backed. The `*_quants` figures are JSON numbers and
+are rounded above `Number.MAX_SAFE_INTEGER`.
 
 ## Chain ID
 
