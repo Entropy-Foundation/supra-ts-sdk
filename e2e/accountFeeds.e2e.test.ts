@@ -1,9 +1,9 @@
 import type { PaginatedResponse, SupraAccount } from "../src/index";
 import { SupraNotFoundError, SupraRouteUnsupportedError } from "../src/index";
-import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
+import { createFundedAccount, createMigratedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E, nodeGeneration } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
-import { rawPost, type RawTransaction } from "./helpers/raw";
+import { rawGet, rawPost, type RawTransaction } from "./helpers/raw";
 import { sendSupra } from "./helpers/transfers";
 
 /** Upper bound on the pages a loop may request before the test treats the feed as endless. */
@@ -67,18 +67,44 @@ describeE2E("account fa_transactions and history feeds", () => {
                 ctx.supra.account.getPrimaryStoreAddress({ accountAddress: address, metadataAddress: SUPRA_FA }),
             ).resolves.toBe(expected);
         });
+
+        // The view needs an existing metadata object, and SUPRA's is the only one on the localnets, so a
+        // non-default metadata address is covered by a unit test of the view arguments.
     });
 
     describe("getAccountFaTransactions", () => {
+        let faAccountAddress: string;
+        const faSent: RawTransaction[] = [];
+
+        beforeAll(async () => {
+            // On v11 SUPRA is held as a coin until the account migrates to its primary store.
+            const account =
+                nodeGeneration() === "v11" ? await createMigratedAccount(ctx) : await createFundedAccount(ctx);
+            faAccountAddress = account.address().toString();
+            for (let i = 0; i < 3; i++) {
+                faSent.push(
+                    await sendSupra(ctx, account, createUnfundedAccount().address().toString(), 2_000n + BigInt(i)),
+                );
+            }
+        });
+
         test("the address of an account that is not a store has an empty feed", async () => {
             const page = await ctx.supra.account.getAccountFaTransactions({ storeAddress: address });
             expect(page.response).toEqual([]);
         });
 
         test.each([true, false])(
-            "reads the feed of the primary store to its end once, in both page sizes (ascending: %s)",
+            "pages a non-empty store feed with count 1 to its end, in the order requested (ascending: %s)",
             async (ascending) => {
-                const store = await ctx.supra.account.getPrimaryStoreAddress({ accountAddress: address });
+                const store = await ctx.supra.account.getPrimaryStoreAddress({ accountAddress: faAccountAddress });
+                const raw = await rawGet<Array<{ hash: string }>>(
+                    ctx,
+                    `/rpc/v3/accounts/${store}/fa_transactions?count=100&ascending=${ascending}`,
+                );
+                expect(raw.status).toBe(200);
+                const expected = raw.body.map((txn) => txn.hash);
+                expect(expected.length).toBeGreaterThanOrEqual(faSent.length);
+
                 const all = await ctx.supra.account.getAccountFaTransactions({
                     storeAddress: store,
                     options: { count: 100, ascending },
@@ -92,14 +118,25 @@ describeE2E("account fa_transactions and history feeds", () => {
 
                 const hashes = items.map((txn) => txn.hash);
                 expect(new Set(hashes).size).toBe(hashes.length);
-                expect(hashes).toEqual(all.response.map((txn) => txn.hash));
-                expect(requests).toBeGreaterThanOrEqual(1);
-                if (nodeGeneration() === "v12") {
-                    // SUPRA moves between primary stores on a chain created from the v12 genesis.
-                    expect(hashes).toEqual(expect.arrayContaining(sent.map((txn) => txn.hash)));
-                }
+                expect(all.response.map((txn) => txn.hash)).toEqual(expected);
+                expect(hashes).toEqual(expected);
+                expect(requests).toBeGreaterThan(faSent.length);
+                expect(hashes).toEqual(expect.arrayContaining(faSent.map((txn) => txn.hash)));
             },
         );
+
+        test("ascending and descending feeds are reverses of each other", async () => {
+            const store = await ctx.supra.account.getPrimaryStoreAddress({ accountAddress: faAccountAddress });
+            const up = await ctx.supra.account.getAccountFaTransactions({
+                storeAddress: store,
+                options: { count: 100, ascending: true },
+            });
+            const down = await ctx.supra.account.getAccountFaTransactions({
+                storeAddress: store,
+                options: { count: 100, ascending: false },
+            });
+            expect(up.response.map((txn) => txn.hash)).toEqual(down.response.map((txn) => txn.hash).reverse());
+        });
 
         test("a store without transactions ends the feed", async () => {
             const store = await ctx.supra.account.getPrimaryStoreAddress({
@@ -163,12 +200,51 @@ describeE2E("account fa_transactions and history feeds", () => {
                     }),
                 );
 
+                const raw = await rawGet<Array<{ transaction: { hash: string } }>>(
+                    ctx,
+                    `/rpc/v3/accounts/${address}/history?count=100&ascending=${ascending}`,
+                );
+                expect(raw.status).toBe(200);
+                const expected = raw.body.map((entry) => entry.transaction.hash);
+
                 const hashes = items.map((entry) => entry.transaction.hash);
                 expect(new Set(hashes).size).toBe(hashes.length);
-                expect(hashes).toEqual(all.response.map((entry) => entry.transaction.hash));
+                expect(all.response.map((entry) => entry.transaction.hash)).toEqual(expected);
+                expect(hashes).toEqual(expected);
                 expect(requests).toBeGreaterThanOrEqual(sent.length);
             }),
         );
+
+        test("pages past empty pages that carry a cursor when categories filter rows out", () =>
+            onNodeWithHistory(async () => {
+                // The peer receives three transfers and sends one, so its ascending history starts with rows that
+                // the `sent` filter excludes.
+                const peer = await createFundedAccount(ctx);
+                const peerAddress = peer.address().toString();
+                for (let i = 0; i < 3; i++) {
+                    await sendSupra(ctx, sender, peerAddress, 3_000n + BigInt(i));
+                }
+                const own = await sendSupra(ctx, peer, createUnfundedAccount().address().toString(), 1_000n);
+
+                let emptyPagesWithCursor = 0;
+                const { items } = await readFeed(async (start) => {
+                    const page = await ctx.supra.account.getAccountHistory({
+                        accountAddress: peerAddress,
+                        options: { categories: ["sent"], count: 1, ascending: true, start },
+                    });
+                    if (page.response.length === 0 && page.cursor !== undefined) {
+                        emptyPagesWithCursor++;
+                    }
+                    return page;
+                });
+
+                expect(items.map((entry) => entry.transaction.hash)).toEqual([own.hash]);
+                for (const entry of items) {
+                    expect(entry.categories).toContain("sent");
+                }
+                // Not asserted to be positive: how many rows the node reads per page is its choice.
+                expect(emptyPagesWithCursor).toBeGreaterThanOrEqual(0);
+            }));
 
         test("an account without transactions has an empty history that ends", () =>
             onNodeWithHistory(async () => {

@@ -92,7 +92,10 @@ describe("account feeds", () => {
             expect(mockView).toHaveBeenCalledWith(
                 {
                     function: "0x1::primary_fungible_store::primary_store_address",
-                    functionArguments: ["0x1", "0x000000000000000000000000000000000000000000000000000000000000000a"],
+                    functionArguments: [
+                        "0x0000000000000000000000000000000000000000000000000000000000000001",
+                        "0x000000000000000000000000000000000000000000000000000000000000000a",
+                    ],
                     typeArguments: ["0x1::fungible_asset::Metadata"],
                 },
                 testConfig,
@@ -104,7 +107,10 @@ describe("account feeds", () => {
 
             await getPrimaryStoreAddressInternal({ accountAddress: "0x1", metadataAddress: "0xb" }, testConfig);
 
-            expect(mockView.mock.calls[0]?.[0].functionArguments).toEqual(["0x1", "0xb"]);
+            expect(mockView.mock.calls[0]?.[0].functionArguments).toEqual([
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+                "0x000000000000000000000000000000000000000000000000000000000000000b",
+            ]);
         });
     });
 
@@ -282,12 +288,28 @@ describe("account feeds", () => {
             expect(page.cursor).toBeUndefined();
         });
 
-        it("throws SupraRouteUnsupportedError, a SupraNotFoundError, when the node answers 404", async () => {
+        it("rethrows a 404 that carries a body unchanged (an error of the request, not a missing route)", async () => {
+            const original = new SupraNotFoundError({
+                status: 404,
+                statusText: "Not Found",
+                url: "https://rpc-devnet.supra.com/rpc/v3/accounts/0xa/history",
+                data: { message: "Transaction not found" },
+            });
+            mockGet.mockRejectedValue(original);
+
+            const error = await getAccountHistoryInternal({ accountAddress: "0xa" }, testConfig).catch(
+                (e: unknown) => e,
+            );
+
+            expect(error).toBe(original);
+            expect(error).not.toBeInstanceOf(SupraRouteUnsupportedError);
+        });
+
+        it("throws SupraRouteUnsupportedError, a SupraNotFoundError, when the node answers 404 with an empty body", async () => {
             const original = new SupraNotFoundError({
                 status: 404,
                 statusText: "Not Found",
                 url: "https://rpc-mainnet.supra.com/rpc/v3/accounts/0xa/history",
-                data: "not found",
             });
             mockGet.mockRejectedValue(original);
 
@@ -299,7 +321,7 @@ describe("account feeds", () => {
             expect(error).toBeInstanceOf(SupraNotFoundError);
             const unsupported = error as SupraRouteUnsupportedError;
             expect(unsupported.status).toBe(404);
-            expect(unsupported.data).toBe("not found");
+            expect(unsupported.data).toBeUndefined();
             expect(unsupported.method).toBe("getAccountHistory");
             expect(unsupported.minimumNodeRelease).toBe("supra_node_v12.0.0");
             expect(unsupported.message).toContain("supra_node_v12.0.0");

@@ -251,8 +251,8 @@ export async function getPrimaryStoreAddressInternal(
         {
             function: "0x1::primary_fungible_store::primary_store_address",
             functionArguments: [
-                args.accountAddress.toString(),
-                (args.metadataAddress ?? SUPRA_FUNGIBLE_ASSET_ADDRESS).toString(),
+                standardizeAddress(args.accountAddress),
+                standardizeAddress(args.metadataAddress ?? SUPRA_FUNGIBLE_ASSET_ADDRESS),
             ],
             typeArguments: [FUNGIBLE_ASSET_METADATA],
         },
@@ -274,8 +274,9 @@ function heightHeader(headers: Headers | undefined, name: string): number | unde
 
 /**
  * Reads `/accounts/{address}/history`. The feed ends only when the response has no `x-supra-cursor` header: a page
- * can be empty and carry a cursor, and `"0"` is a valid cursor. A 404 means the node is older than v12 and is
- * thrown as {@link SupraRouteUnsupportedError}.
+ * can be empty and carry a cursor, and `"0"` is a valid cursor. A 404 with an empty body is the answer of a node that
+ * does not serve the route (older than v12) and is thrown as {@link SupraRouteUnsupportedError}; a 404 with a body
+ * is the node's error for the request (for example a transaction pruned during the read) and is thrown unchanged.
  */
 export async function getAccountHistoryInternal<T extends CommittedTransactionResponse = CommittedTransactionResponse>(
     args: {
@@ -306,7 +307,7 @@ export async function getAccountHistoryInternal<T extends CommittedTransactionRe
             config,
         );
     } catch (error) {
-        if (error instanceof SupraNotFoundError && !(error instanceof SupraRouteUnsupportedError)) {
+        if (error instanceof SupraNotFoundError && error.data === undefined) {
             throw new SupraRouteUnsupportedError({
                 status: error.status,
                 statusText: error.statusText,
