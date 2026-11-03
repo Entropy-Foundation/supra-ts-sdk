@@ -3,12 +3,20 @@
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type {
     CommittedTransactionResponse,
+    Settlement,
+    SettlementDomain,
+    SettlementRole,
+    SettlementsPage,
     TransactionQueryType,
     TransactionResponse,
+    TransactionsByHashesResponse,
     WaitForTransactionOptions,
 } from "../types/transaction";
 import {
+    getSettlementInternal,
+    getSettlementsInternal,
     getTransactionByHashInternal,
+    getTransactionsByHashesInternal,
     getTransactionSignatureMessageInternal,
     isPendingTransactionInternal,
     publishPackageInternal,
@@ -22,7 +30,13 @@ import { TxnBuilderTypes, type AnyRawTransaction, type HexString, type SupraAcco
 import { Simulate } from "./transactionManager/txnSimulate";
 import { Submit } from "./transactionManager/txnSubmit";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
-import { validateTransactionHash } from "../helper/validation";
+import {
+    validatePaginationCount,
+    validateSettlementAddress,
+    validateSettlementDomain,
+    validateSettlementRole,
+    validateTransactionHash,
+} from "../helper/validation";
 import { transactionHashInternal } from "../internal/transactionManager/txnHash";
 
 /**
@@ -102,6 +116,153 @@ export class Transaction {
     }): Promise<TransactionResponse> {
         validateTransactionHash(args.transactionHash);
         return getTransactionByHashInternal(args, this.networkInformation);
+    }
+
+    /**
+     * Looks up several transactions by hash in one request (`POST /rpc/v4/transactions/by_hashes`). Needs a node from
+     * `supra_node_v12.0.0`; Mainnet and Testnet nodes of `supra_node_v11.7.x` answer HTTP 404, which is thrown as
+     * `SupraRouteUnsupportedError`.
+     *
+     * Each hash is resolved as {@link Transaction.getTransactionByHash} resolves it, with the same `type` and
+     * `exclude_uncommitted`, and the transactions are the `/rpc/v4` form of the single-hash route's body (events carry
+     * `hash`; `inclusion_proof` is present with `include_proof`). A hash the node does not know does not fail the
+     * request: its entry has `transaction: null`. A hash that is repeated is answered at each position.
+     *
+     * The node bounds the request and the response (set by the operator; defaults below):
+     * - 1 to 100 hashes (`rest_limits.transactions_by_hashes.max_hashes`), repeats included; anything else is HTTP 400.
+     * - A body above `128 * max_hashes + 1024` bytes is HTTP 413.
+     * - The answered entries add up to at most 16 MiB of JSON. Entries are answered in request order up to the first
+     *   one that would exceed the bound, or whose lookup failed, and that position and every later one are listed in
+     *   `omitted`. The first hash is always answered; request the `omitted` hashes again for the rest.
+     * @param args.transactionHashes - The transaction hashes, each a hex-encoded string with a 0x prefix.
+     * @param args.type - Look only for transactions of this type. `"settlement"` is accepted by this route.
+     * @param args.exclude_uncommitted - Whether to exclude uncommitted transactions. Without it, a user transaction
+     * that is submitted and not final has the status `Pending` or `PendingAfterExecution` and `null` `block_header`
+     * and `output`.
+     * @param args.include_proof - Whether to include the inclusion proof, computed against the latest transactions
+     * inclusion certificate the node holds. `inclusion_proof` is `null` for a transaction of a block above it.
+     * @returns A Promise that resolves to `{ transactions, omitted }`: `transactions` holds one `{ hash, transaction }`
+     * per answered hash in request order, and `omitted` the requested hashes that were not answered.
+     * @throws {SupraRouteUnsupportedError} When the node does not serve the route.
+     * @throws {SupraAPIError} HTTP 400 for no hashes or more than the node's limit, HTTP 413 for a body above its
+     * limit, and the status `getTransactionByHash` would report when the lookup of the first hash fails.
+     * @example
+     * ```typescript
+     * import { Network, SupraClient } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.DEVNET });
+     *
+     * async function runExample() {
+     *   const { transactions, omitted } = await supra.transaction.getTransactionsByHashes({
+     *     transactionHashes: ["0x" + "11".repeat(32), "0x" + "22".repeat(32)], // replace with real transaction hashes
+     *   });
+     *   for (const { hash, transaction } of transactions) {
+     *     console.log(hash, transaction === null ? "unknown" : transaction.status);
+     *   }
+     *   console.log("not answered:", omitted);
+     * }
+     * runExample().catch(console.error);
+     * ```
+     * @group Transaction
+     */
+    async getTransactionsByHashes(args: {
+        transactionHashes: string[];
+        type?: TransactionQueryType;
+        exclude_uncommitted?: boolean;
+        include_proof?: boolean;
+    }): Promise<TransactionsByHashesResponse> {
+        if (!Array.isArray(args.transactionHashes) || args.transactionHashes.length === 0) {
+            throw new Error("Invalid transactionHashes: expected a non-empty array of transaction hashes");
+        }
+        args.transactionHashes.forEach((hash, index) => validateTransactionHash(hash, `transactionHashes[${index}]`));
+        return getTransactionsByHashesInternal(args, this.networkInformation);
+    }
+
+    /**
+     * Reads the lifecycle of one cross-VM crossing of native SUPRA between SupraMVM and SupraEVM
+     * (`GET /rpc/v4/transactions/settlements/{settlement_id}`): every stage the node still holds (recorded, credited,
+     * applied, refunded or cleared), its queue entry while it waits to be applied, and the height the node had
+     * executed to. A crossing is recorded by one block and settled by a later one, so it is not a single transaction.
+     * Needs a node from `supra_node_v12.0.0`; Mainnet and Testnet nodes of `supra_node_v11.7.x` answer HTTP 404 for
+     * the route, which is thrown as `SupraRouteUnsupportedError`.
+     * @param args.settlementId - The crossing's identity: `0x` followed by 64 hex digits.
+     * @returns A Promise that resolves to the {@link Settlement}.
+     * @throws {SupraNotFoundError} When the node has no record of the crossing, which includes one it has not
+     * executed yet and an outbound crossing that predates its history.
+     * @throws {SupraGoneError} When the crossing was recorded below the node's oldest retained block: whether it
+     * existed cannot be told.
+     * @throws {SupraRouteUnsupportedError} When the node does not serve the route.
+     * @example
+     * ```typescript
+     * import { Network, SupraClient } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.DEVNET });
+     *
+     * async function runExample() {
+     *   const settlement = await supra.transaction.getSettlement({ settlementId: "0x" + "00".repeat(32) }); // replace with a real settlement id
+     *   console.log(settlement.stages.map((stage) => stage.stage), settlement.pending);
+     * }
+     * runExample().catch(console.error);
+     * ```
+     * @group Transaction
+     */
+    async getSettlement(args: { settlementId: string }): Promise<Settlement> {
+        validateTransactionHash(args.settlementId, "settlementId");
+        return getSettlementInternal(args, this.networkInformation);
+    }
+
+    /**
+     * Lists the cross-VM crossings one address is party to, oldest first
+     * (`GET /rpc/v4/transactions/settlements`). Needs a node from `supra_node_v12.0.0`; Mainnet and Testnet nodes of
+     * `supra_node_v11.7.x` answer HTTP 404, which is thrown as `SupraRouteUnsupportedError`.
+     * @param args.address - The address, `0x`-prefixed and sent as written: 32 bytes for `domain` `"move"`, 20 bytes
+     * for `"evm"`. The node answers HTTP 400 for an address that is not one of the domain.
+     * @param args.domain - Which side of the chain the address belongs to. The two domains' addresses can share their
+     * bytes, so the domain is required.
+     * @param args.options.role - Only the crossings the address sent (`"sender"`) or received (`"recipient"`). Both by default.
+     * @param args.options.count - The number of crossings to return, 1 to 100; the node's default is 20.
+     * @param args.options.start - The `cursor` of the previous page, verbatim. Omit it, or pass `undefined`, for the
+     * first page. An empty string is not sent.
+     * @returns A Promise that resolves to the crossings of the page, the cursor of the next page and the height of the
+     * node's oldest block. `cursor` is `undefined` on the last page; a page can hold fewer than `count` crossings, or
+     * none, and still carry a cursor, so follow the cursor until it is `undefined`.
+     * @throws {SupraRouteUnsupportedError} When the node does not serve the route.
+     * @throws {SupraAPIError} HTTP 400 for an address that is not one of the domain, or a `start` that was not issued
+     * for this address.
+     * @example
+     * ```typescript
+     * import { Network, SupraClient } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.DEVNET });
+     *
+     * async function runExample() {
+     *   let start: string | undefined;
+     *   do {
+     *     const page = await supra.transaction.getSettlements({
+     *       address: "0x" + "11".repeat(20), // replace with a real address
+     *       domain: "evm",
+     *       options: { start },
+     *     });
+     *     for (const settlement of page.response) {
+     *       console.log(settlement.settlement_id, settlement.stages.length);
+     *     }
+     *     start = page.cursor;
+     *   } while (start !== undefined);
+     * }
+     * runExample().catch(console.error);
+     * ```
+     * @group Transaction
+     */
+    async getSettlements(args: {
+        address: string;
+        domain: SettlementDomain;
+        options?: { role?: SettlementRole; count?: number; start?: string | undefined };
+    }): Promise<SettlementsPage> {
+        validateSettlementAddress(args.address, "address");
+        validateSettlementDomain(args.domain, "domain");
+        validateSettlementRole(args.options?.role, "role");
+        validatePaginationCount(args.options?.count);
+        return getSettlementsInternal(args, this.networkInformation);
     }
 
     /**

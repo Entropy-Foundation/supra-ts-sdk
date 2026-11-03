@@ -2,14 +2,20 @@
 // Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import { BCS, HexString, SupraAccount, TxnBuilderTypes, type AnyRawTransaction } from "supra-l1-sdk-core";
 import { get } from "../client/get";
+import { post } from "../client/post";
 import { SupraError } from "../errors/supraError";
 import { SupraTransactionFailedError, SupraTransactionTimeoutError } from "../errors/transactionError";
 import { standardizeAddress } from "../helper/account";
 import {
     TransactionStatus,
     type CommittedTransactionResponse,
+    type Settlement,
+    type SettlementDomain,
+    type SettlementRole,
+    type SettlementsPage,
     type TransactionQueryType,
     type TransactionResponse,
+    type TransactionsByHashesResponse,
     type WaitForTransactionOptions,
 } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
@@ -25,6 +31,7 @@ import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSub
 import { checkChainIdBeforeSigningInternal } from "./chainId";
 import { checkExpiryBeforeSigningInternal } from "./txExpiry";
 import { sequenceNumberTrackerOf } from "./sequenceNumber";
+import { V4_RPC_VERSION, withV4RouteSupport } from "./routeSupport";
 import sha3 from "js-sha3";
 
 /**
@@ -51,6 +58,102 @@ export async function getTransactionByHashInternal(
     ).then((res) => res.data);
     sequenceNumberTrackerOf(config).observeTransaction(transactionHash, transaction.status);
     return transaction;
+}
+
+/**
+ * Looks up several transactions with `POST /rpc/v4/transactions/by_hashes`. A 404 is thrown as
+ * `SupraRouteUnsupportedError`.
+ *
+ * Each transaction found is reported to the client's sequence-number counter as `getTransactionByHashInternal`
+ * reports one.
+ */
+export async function getTransactionsByHashesInternal(
+    args: {
+        transactionHashes: string[];
+        type?: TransactionQueryType;
+        exclude_uncommitted?: boolean;
+        include_proof?: boolean;
+    },
+    config: NetworkConfig,
+): Promise<TransactionsByHashesResponse> {
+    const query = new URLSearchParams();
+    if (args.type !== undefined) {
+        query.set("type", args.type);
+    }
+    if (args.exclude_uncommitted !== undefined) {
+        query.set("exclude_uncommitted", String(args.exclude_uncommitted));
+    }
+    if (args.include_proof !== undefined) {
+        query.set("include_proof", String(args.include_proof));
+    }
+    const queryString = query.toString();
+
+    const response = await withV4RouteSupport({ method: "getTransactionsByHashes" }, () =>
+        post<{ hashes: string[] }, TransactionsByHashesResponse>(
+            {
+                path: `/transactions/by_hashes${queryString === "" ? "" : `?${queryString}`}`,
+                data: { hashes: args.transactionHashes.map((hash) => standardizeAddress(hash)) },
+            },
+            config,
+            V4_RPC_VERSION,
+        ),
+    );
+    const tracker = sequenceNumberTrackerOf(config);
+    for (const entry of response.transactions) {
+        if (entry.transaction !== null) {
+            tracker.observeTransaction(entry.hash, entry.transaction.status);
+        }
+    }
+    return response;
+}
+
+/** Reads `GET /rpc/v4/transactions/settlements/{settlement_id}`. */
+export async function getSettlementInternal(
+    args: { settlementId: string },
+    config: NetworkConfig,
+): Promise<Settlement> {
+    return withV4RouteSupport({ method: "getSettlement", handlerNotFound: true }, () =>
+        get<Settlement>({ path: `/transactions/settlements/${args.settlementId}` }, config, V4_RPC_VERSION).then(
+            (res) => res.data,
+        ),
+    );
+}
+
+/**
+ * Reads `GET /rpc/v4/transactions/settlements`. The feed ends only when the response has no `x-supra-cursor`
+ * header: a page can be empty and carry a cursor.
+ */
+export async function getSettlementsInternal(
+    args: {
+        address: string;
+        domain: SettlementDomain;
+        options?: { role?: SettlementRole; count?: number; start?: string | undefined };
+    },
+    config: NetworkConfig,
+): Promise<SettlementsPage> {
+    const start = args.options?.start;
+    const { data, cursor, headers } = await withV4RouteSupport({ method: "getSettlements" }, () =>
+        get<{ data: Settlement[] }>(
+            {
+                path: "/transactions/settlements",
+                query: {
+                    address: args.address,
+                    domain: args.domain,
+                    role: args.options?.role,
+                    count: args.options?.count,
+                    start: start === undefined || start === "" ? undefined : start,
+                },
+            },
+            config,
+            V4_RPC_VERSION,
+        ),
+    );
+    const oldest = headers?.get("x-supra-oldest-block");
+    return {
+        response: data.data,
+        cursor: cursor === undefined || cursor === "" ? undefined : cursor,
+        oldestBlock: oldest !== undefined && oldest !== null && /^\d+$/.test(oldest) ? Number(oldest) : undefined,
+    };
 }
 
 /**

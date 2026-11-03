@@ -1,0 +1,565 @@
+{
+    "_source": "Responses of the supra_node_v12.0.0.rc7 localnet (chain ID 255) captured on 2026-11-03, except where a key says otherwise. The simulation lists fewer changes than the node returned; every entry kept is as the node sent it.",
+    "viewBatch": {
+        "state_height": 9639,
+        "results": [
+            { "result": ["1793687630199250"] },
+            { "result": [255] },
+            { "result": ["0"] },
+            {
+                "error": {
+                    "status": 400,
+                    "message": "Bad Request: Invalid view request: Module ModuleId { address: 0000000000000000000000000000000000000000000000000000000000000001, name: Identifier(\"nope\") } can't be found"
+                }
+            },
+            {
+                "error": {
+                    "status": 400,
+                    "message": "Bad Request: Invalid view request: expected 1 arguments [string<address>], but got 0 ([])"
+                }
+            }
+        ]
+    },
+    "viewBatchAbis": {
+        "timestamp": {
+            "address": "0x1",
+            "name": "timestamp",
+            "friends": ["0x1::genesis"],
+            "exposed_functions": [
+                {
+                    "name": "now_microseconds",
+                    "visibility": "public",
+                    "is_entry": false,
+                    "is_view": true,
+                    "generic_type_params": [],
+                    "params": [],
+                    "return": ["u64"]
+                }
+            ],
+            "structs": []
+        },
+        "chain_id": {
+            "address": "0x1",
+            "name": "chain_id",
+            "friends": ["0x1::genesis"],
+            "exposed_functions": [
+                {
+                    "name": "get",
+                    "visibility": "public",
+                    "is_entry": false,
+                    "is_view": true,
+                    "generic_type_params": [],
+                    "params": [],
+                    "return": ["u8"]
+                }
+            ],
+            "structs": []
+        },
+        "coin": {
+            "address": "0x1",
+            "name": "coin",
+            "friends": ["0x1::evm_settlement", "0x1::genesis", "0x1::supra_coin", "0x1::transaction_fee"],
+            "exposed_functions": [
+                {
+                    "name": "balance",
+                    "visibility": "public",
+                    "is_entry": false,
+                    "is_view": true,
+                    "generic_type_params": [{ "constraints": [] }],
+                    "params": ["address"],
+                    "return": ["u64"]
+                }
+            ],
+            "structs": []
+        }
+    },
+    "viewBatchEmptyRequest": { "message": "Bad Request: Batch is empty. At least one item is required." },
+    "byHashes": {
+        "transactions": [
+            {
+                "hash": "0x484333879ce548b5b56a7616c011ecfc71273543884a27fc846a3a053522e701",
+                "transaction": {
+                    "txn_type": "user",
+                    "authenticator": {
+                        "Move": {
+                            "Ed25519": {
+                                "public_key": "0x6219a251ae2dca87b7302f59542a8a670de63e82cfb645cf2a53408e28a77783",
+                                "signature": "0xf433667e0adbf8284e6760412aac986dbee25a05eef740e4a4dc7221a52fd25fb6b3ea45d1fa0399b143d230b8932c21b22d747f99fbc2164790f489c0a31504"
+                            }
+                        }
+                    },
+                    "block_header": {
+                        "author": "0xe19873f39a183d8ad15dd20b1bc4a0922cbd35f9fa8a962965608ab7ecf44780",
+                        "hash": "0xcdc120aa31754c8dea6d543915033e677819c38b7c01a10f47aa71ff97f6b39c",
+                        "height": 9861,
+                        "parent": "0x5efeb04dc476cbc361f2de026374390bd5b52fe60d554ec585ad946234a3bf70",
+                        "timestamp": {
+                            "microseconds_since_unix_epoch": 1793687761393179,
+                            "utc_date_time": "2026-11-03T06:36:01.393179+00:00"
+                        },
+                        "view": { "epoch_id": { "chain_id": 255, "epoch": 76 }, "round": 37 }
+                    },
+                    "hash": "0x484333879ce548b5b56a7616c011ecfc71273543884a27fc846a3a053522e701",
+                    "header": {
+                        "chain_id": 255,
+                        "expiration_timestamp": {
+                            "microseconds_since_unix_epoch": 1793687820000000,
+                            "utc_date_time": "2026-11-03T06:37:00+00:00"
+                        },
+                        "sender": { "Move": "0x52784c469ff20bf15b49b86d04a27b46ed0f21ca03b56f83a4d66d4e9583362b" },
+                        "sequence_number": 0,
+                        "gas_unit_price": 100000,
+                        "max_gas_amount": 5000
+                    },
+                    "payload": {
+                        "Move": {
+                            "type": "entry_function_payload",
+                            "function": "0x1::supra_account::transfer",
+                            "type_arguments": [],
+                            "arguments": ["0xcba07bcb61a7003e65b5c336e54ba9088b32bd31dfb963f6d48da214f0fe88bf", "5000"]
+                        }
+                    },
+                    "output": {
+                        "Move": {
+                            "gas_used": 1034,
+                            "events": [
+                                {
+                                    "guid": { "creation_number": "0", "account_address": "0x0" },
+                                    "sequence_number": "0",
+                                    "type": "0x1::fungible_asset::Withdraw",
+                                    "data": {
+                                        "amount": "5000",
+                                        "store": "0xd282e23ebe67e9b52fb51bb01639b95f5ddba66619d7eb2e53e1ba1c38d35f72"
+                                    },
+                                    "hash": "0x686932e7cc98b54e52c8e99665478b3bf8025320a372373a96866eef892cd0dd"
+                                },
+                                {
+                                    "guid": { "creation_number": "0", "account_address": "0x0" },
+                                    "sequence_number": "0",
+                                    "type": "0x1::fungible_asset::Deposit",
+                                    "data": {
+                                        "amount": "5000",
+                                        "store": "0x360d2e4c581ee894686a546ccc7db673212c33cee32db5dc221de40a1d241558"
+                                    },
+                                    "hash": "0x08750c18dfcf2539c3c23c2bcd9ebac111561dd9c22fbd9ba4d9703d360ba92a"
+                                }
+                            ],
+                            "vm_status": "Executed successfully"
+                        }
+                    },
+                    "status": "Success",
+                    "inclusion_proof": null
+                }
+            },
+            {
+                "hash": "0xabababababababababababababababababababababababababababababababab",
+                "transaction": null
+            }
+        ],
+        "omitted": []
+    },
+    "simulate": {
+        "authenticator": {
+            "Move": {
+                "Ed25519": {
+                    "public_key": "0x1ea9fc5217e5b1604de44efe1abbeb7f16bd3c8974e79fb73030bb6b327a2715",
+                    "signature": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                }
+            }
+        },
+        "block_header": null,
+        "hash": "0x1d2edd68879e8987bd9f9fe89aa98f9409749c4179e15d21ce08729b869cb210",
+        "header": {
+            "chain_id": 255,
+            "expiration_timestamp": {
+                "microseconds_since_unix_epoch": 1793687783000000,
+                "utc_date_time": "2026-11-03T06:36:23+00:00"
+            },
+            "sender": { "Move": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8" },
+            "sequence_number": 0,
+            "gas_unit_price": 100000,
+            "max_gas_amount": 5000
+        },
+        "payload": {
+            "Move": {
+                "type": "entry_function_payload",
+                "function": "0x1::supra_account::transfer",
+                "type_arguments": [],
+                "arguments": ["0xc372bac15b24d86a41b1fcba22d59151523b6f85559959702852e7ecf0ef17ae", "5000"]
+            }
+        },
+        "output": {
+            "Move": {
+                "gas_used": 1034,
+                "events": [
+                    {
+                        "guid": { "creation_number": "0", "account_address": "0x0" },
+                        "sequence_number": "0",
+                        "type": "0x1::fungible_asset::Withdraw",
+                        "data": {
+                            "amount": "5000",
+                            "store": "0xce1d64ff478148c4cc3785da9feeff50a739b5df8084958c882e3e6ba94445c7"
+                        }
+                    },
+                    {
+                        "guid": { "creation_number": "0", "account_address": "0x0" },
+                        "sequence_number": "0",
+                        "type": "0x1::transaction_fee::FeeStatement",
+                        "data": {
+                            "execution_gas_units": "5",
+                            "io_gas_units": "6",
+                            "storage_fee_quants": "102400000",
+                            "storage_fee_refund_quants": "0",
+                            "total_charge_gas_units": "1034"
+                        }
+                    }
+                ],
+                "vm_status": "Executed successfully"
+            }
+        },
+        "status": "Success",
+        "state_height": 9830,
+        "changes": [
+            {
+                "type": "write_resource",
+                "address": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                "state_key_hash": "0xd63632b1db14bfff9c8ef3469560112fe3603b0c93b23debc4e1799ea052d5a0",
+                "data": {
+                    "type": "0x1::account::Account",
+                    "data": {
+                        "authentication_key": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                        "coin_register_events": {
+                            "counter": "0",
+                            "guid": {
+                                "id": {
+                                    "addr": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                                    "creation_num": "0"
+                                }
+                            }
+                        },
+                        "guid_creation_num": "2",
+                        "key_rotation_events": {
+                            "counter": "0",
+                            "guid": {
+                                "id": {
+                                    "addr": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                                    "creation_num": "1"
+                                }
+                            }
+                        },
+                        "rotation_capability_offer": { "for": { "vec": [] } },
+                        "sequence_number": "1",
+                        "signer_capability_offer": { "for": { "vec": [] } }
+                    }
+                }
+            },
+            {
+                "type": "write_resource",
+                "address": "0xc372bac15b24d86a41b1fcba22d59151523b6f85559959702852e7ecf0ef17ae",
+                "state_key_hash": "0x9b79e854f7db63c8046c1b59d4ddb948ec51c4f1ef94e171eb6b3d30b774069e",
+                "data": {
+                    "type": "0x1::account::Account",
+                    "data": {
+                        "authentication_key": "0xc372bac15b24d86a41b1fcba22d59151523b6f85559959702852e7ecf0ef17ae",
+                        "coin_register_events": {
+                            "counter": "0",
+                            "guid": {
+                                "id": {
+                                    "addr": "0xc372bac15b24d86a41b1fcba22d59151523b6f85559959702852e7ecf0ef17ae",
+                                    "creation_num": "0"
+                                }
+                            }
+                        },
+                        "guid_creation_num": "2",
+                        "key_rotation_events": {
+                            "counter": "0",
+                            "guid": {
+                                "id": {
+                                    "addr": "0xc372bac15b24d86a41b1fcba22d59151523b6f85559959702852e7ecf0ef17ae",
+                                    "creation_num": "1"
+                                }
+                            }
+                        },
+                        "rotation_capability_offer": { "for": { "vec": [] } },
+                        "sequence_number": "0",
+                        "signer_capability_offer": { "for": { "vec": [] } }
+                    }
+                }
+            },
+            {
+                "type": "write_resource",
+                "address": "0xce1d64ff478148c4cc3785da9feeff50a739b5df8084958c882e3e6ba94445c7",
+                "state_key_hash": "0x8570f4bf6cc374b2369c2647fdb7c0c05cfbdc88fc9ce0013fbb3c515111e99b",
+                "data": {
+                    "type": "0x1::fungible_asset::FungibleStore",
+                    "data": { "balance": "49896595000", "frozen": false, "metadata": { "inner": "0xa" } }
+                }
+            },
+            {
+                "type": "write_resource",
+                "address": "0xce1d64ff478148c4cc3785da9feeff50a739b5df8084958c882e3e6ba94445c7",
+                "state_key_hash": "0x8570f4bf6cc374b2369c2647fdb7c0c05cfbdc88fc9ce0013fbb3c515111e99b",
+                "data": {
+                    "type": "0x1::object::ObjectCore",
+                    "data": {
+                        "allow_ungated_transfer": false,
+                        "guid_creation_num": "1125899906842625",
+                        "owner": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                        "transfer_events": {
+                            "counter": "0",
+                            "guid": {
+                                "id": {
+                                    "addr": "0xce1d64ff478148c4cc3785da9feeff50a739b5df8084958c882e3e6ba94445c7",
+                                    "creation_num": "1125899906842624"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ],
+        "prior_values": {
+            "0x8570f4bf6cc374b2369c2647fdb7c0c05cfbdc88fc9ce0013fbb3c515111e99b": [
+                {
+                    "type": "write_resource",
+                    "address": "0xce1d64ff478148c4cc3785da9feeff50a739b5df8084958c882e3e6ba94445c7",
+                    "state_key_hash": "0x8570f4bf6cc374b2369c2647fdb7c0c05cfbdc88fc9ce0013fbb3c515111e99b",
+                    "data": {
+                        "type": "0x1::fungible_asset::FungibleStore",
+                        "data": { "balance": "50000000000", "frozen": false, "metadata": { "inner": "0xa" } }
+                    }
+                }
+            ],
+            "0x9b79e854f7db63c8046c1b59d4ddb948ec51c4f1ef94e171eb6b3d30b774069e": null,
+            "0xd63632b1db14bfff9c8ef3469560112fe3603b0c93b23debc4e1799ea052d5a0": [
+                {
+                    "type": "write_resource",
+                    "address": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                    "state_key_hash": "0xd63632b1db14bfff9c8ef3469560112fe3603b0c93b23debc4e1799ea052d5a0",
+                    "data": {
+                        "type": "0x1::account::Account",
+                        "data": {
+                            "authentication_key": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                            "coin_register_events": {
+                                "counter": "0",
+                                "guid": {
+                                    "id": {
+                                        "addr": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                                        "creation_num": "0"
+                                    }
+                                }
+                            },
+                            "guid_creation_num": "2",
+                            "key_rotation_events": {
+                                "counter": "0",
+                                "guid": {
+                                    "id": {
+                                        "addr": "0x69e72ff2adabf1edca36714631e09012bc34ca36bbb2456f5bc84934211428c8",
+                                        "creation_num": "1"
+                                    }
+                                }
+                            },
+                            "rotation_capability_offer": { "for": { "vec": [] } },
+                            "sequence_number": "0",
+                            "signer_capability_offer": { "for": { "vec": [] } }
+                        }
+                    }
+                }
+            ]
+        },
+        "omitted": [],
+        "omitted_counts": { "resource": 0, "resource_group": 0, "module": 0, "table_item": 0 },
+        "changes_truncated": false
+    },
+    "simulateOmittedFields": {
+        "_source": "The omitted fields as the node's own simulation tests build them (a module left out of a truncated response); the localnet's default size bound did not truncate any simulation.",
+        "omitted": [
+            {
+                "state_key_hash": "0x6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b",
+                "address": "0x1",
+                "kind": "module",
+                "tag": "0x1::code"
+            }
+        ],
+        "omitted_counts": { "resource": 0, "resource_group": 0, "module": 1, "table_item": 0 },
+        "changes_truncated": true
+    },
+    "v11SimulateAsV3": {
+        "_source": "POST /rpc/v4/transactions/simulate on a supra_node_v11.7.2 localnet (chain ID 255), captured on 2026-11-03: the v3 shape, with none of the state-change fields.",
+        "authenticator": {
+            "Move": {
+                "Ed25519": {
+                    "public_key": "0x846dfac0ffb667f01d9d8c58da0b589121e6f7e71b12ce9ef7212010a3323820",
+                    "signature": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                }
+            }
+        },
+        "block_header": null,
+        "hash": "0x4e927d41008a1cb3503ed457d6fabe2619f6fa1b8e0819af7b99fc26cb965409",
+        "header": {
+            "chain_id": 255,
+            "expiration_timestamp": {
+                "microseconds_since_unix_epoch": 1793687813000000,
+                "utc_date_time": "2026-11-03T06:36:53+00:00"
+            },
+            "sender": { "Move": "0x6029746463b3dbd0d53312f1538e436562b18daf7c35ff3f3ea5214390a2af19" },
+            "sequence_number": 0,
+            "gas_unit_price": 100000,
+            "max_gas_amount": 5000
+        },
+        "payload": {
+            "Move": {
+                "type": "entry_function_payload",
+                "function": "0x1::supra_account::transfer",
+                "type_arguments": [],
+                "arguments": ["0x8d18fc00e17251c1a1918b2fccc6251ed17d6f24a9aaa5ed8d78b132ec6bab9e", "5000"]
+            }
+        },
+        "output": {
+            "Move": {
+                "gas_used": 999,
+                "events": [
+                    {
+                        "guid": {
+                            "creation_number": "0",
+                            "account_address": "0x8d18fc00e17251c1a1918b2fccc6251ed17d6f24a9aaa5ed8d78b132ec6bab9e"
+                        },
+                        "sequence_number": "0",
+                        "type": "0x1::account::CoinRegisterEvent",
+                        "data": {
+                            "type_info": {
+                                "account_address": "0x1",
+                                "module_name": "0x73757072615f636f696e",
+                                "struct_name": "0x5375707261436f696e"
+                            }
+                        }
+                    },
+                    {
+                        "guid": { "creation_number": "0", "account_address": "0x0" },
+                        "sequence_number": "0",
+                        "type": "0x1::transaction_fee::FeeStatement",
+                        "data": {
+                            "execution_gas_units": "6",
+                            "io_gas_units": "5",
+                            "storage_fee_quants": "98800000",
+                            "storage_fee_refund_quants": "0",
+                            "total_charge_gas_units": "999"
+                        }
+                    }
+                ],
+                "vm_status": "Executed successfully"
+            }
+        },
+        "status": "Success"
+    },
+    "nativeSupply": {
+        "as_of_height": 9635,
+        "evm_supply_wei": "25000000000000000000000000",
+        "in_flight_wei": "0",
+        "dust_wei": "0",
+        "burn_owed_quants": 0,
+        "claimed_wei": "25000000000000000000000000",
+        "escrow_settled_quants": 2500000000000000,
+        "escrow_balance_quants": 2500000000000000,
+        "escrow_shortfall_wei": "0",
+        "in_flight": { "count": 0, "value_wei": "0", "oldest_recorded_at_height": null, "oldest_age_blocks": null }
+    },
+    "nativeSupplyInFlight": {
+        "as_of_height": 10720,
+        "evm_supply_wei": "25000000000000000000000000",
+        "in_flight_wei": "123450000000000",
+        "dust_wei": "0",
+        "burn_owed_quants": 0,
+        "claimed_wei": "25000000000123450000000000",
+        "escrow_settled_quants": 2500000000012345,
+        "escrow_balance_quants": 2500000000012345,
+        "escrow_shortfall_wei": "0",
+        "in_flight": {
+            "count": 1,
+            "value_wei": "123450000000000",
+            "oldest_recorded_at_height": 10720,
+            "oldest_age_blocks": 0
+        }
+    },
+    "settlementsPending": {
+        "data": [
+            {
+                "settlement_id": "0x40c58348f023f3857f506c3f06873369cd9179004fda3062e663eabf16d06dc3",
+                "as_of_height": 10720,
+                "pending": {
+                    "sender": {
+                        "domain": "move",
+                        "address": "0x096fa454aa77435e6fa78f2c5cd8020b8630c50c71fa2268ae2b4284bf7c5bae"
+                    },
+                    "recipient": { "domain": "evm", "address": "0x1111111111111111111111111111111111111111" },
+                    "amount": 12345,
+                    "recorded_at_height": 10720
+                },
+                "stages": [
+                    {
+                        "stage": "recorded",
+                        "block_height": 10720,
+                        "transaction_hash": "d83a85b1d8b8ba54a6c109834d5568e3f5620ae3d3aa830372f97df9d7dcd331",
+                        "status": null,
+                        "amount": 12345,
+                        "sender": {
+                            "domain": "move",
+                            "address": "0x096fa454aa77435e6fa78f2c5cd8020b8630c50c71fa2268ae2b4284bf7c5bae"
+                        },
+                        "recipient": { "domain": "evm", "address": "0x1111111111111111111111111111111111111111" },
+                        "refund": null
+                    }
+                ]
+            }
+        ]
+    },
+    "settlementsSettled": {
+        "data": [
+            {
+                "settlement_id": "0x40c58348f023f3857f506c3f06873369cd9179004fda3062e663eabf16d06dc3",
+                "as_of_height": 10726,
+                "pending": null,
+                "stages": [
+                    {
+                        "stage": "recorded",
+                        "block_height": 10720,
+                        "transaction_hash": "d83a85b1d8b8ba54a6c109834d5568e3f5620ae3d3aa830372f97df9d7dcd331",
+                        "status": null,
+                        "amount": 12345,
+                        "sender": {
+                            "domain": "move",
+                            "address": "0x096fa454aa77435e6fa78f2c5cd8020b8630c50c71fa2268ae2b4284bf7c5bae"
+                        },
+                        "recipient": { "domain": "evm", "address": "0x1111111111111111111111111111111111111111" },
+                        "refund": null
+                    },
+                    {
+                        "stage": "credited_on_evm",
+                        "block_height": 10721,
+                        "transaction_hash": "d29f4654034557dbdf9c88faf6ca379721e82a7ae96e5c9e57b6ffc3bbe3a914",
+                        "status": null,
+                        "amount": 12345,
+                        "sender": null,
+                        "recipient": { "domain": "evm", "address": "0x1111111111111111111111111111111111111111" },
+                        "refund": null
+                    },
+                    {
+                        "stage": "cleared",
+                        "block_height": 10722,
+                        "transaction_hash": "5d951863cd39835686001127cfef05602d6130d4e97a9fae86c82a11c481a78a",
+                        "status": null,
+                        "amount": 0,
+                        "sender": null,
+                        "recipient": null,
+                        "refund": null
+                    }
+                ]
+            }
+        ]
+    },
+    "settlementsSettledCursor": "01000000000000000000000000111111111111111111111111111111111111111100000000000029e040c58348f023f3857f506c3f06873369cd9179004fda3062e663eabf16d06dc3",
+    "settlementsEmpty": { "data": [] },
+    "settlementUnknown": {
+        "message": "Information not available for 0x0000000000000000000000000000000000000000000000000000000000000001"
+    }
+}

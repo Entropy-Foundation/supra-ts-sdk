@@ -138,6 +138,39 @@ export function validatePaginationCount(count: unknown, paramName = "count"): vo
     }
 }
 
+/**
+ * Validates the `address` of a settlements query: `0x` followed by whole bytes of hexadecimal digits. The address is
+ * sent as written, not padded: the node checks its length against the domain (32 bytes for `"move"`, 20 for `"evm"`).
+ * @throws Error if the address is invalid
+ */
+export function validateSettlementAddress(address: unknown, paramName = "address"): void {
+    if (typeof address !== "string" || !/^0x([0-9a-fA-F]{2})+$/.test(address)) {
+        throw new Error(
+            `Invalid ${paramName}: expected 0x followed by whole bytes of hex digits, got ${JSON.stringify(address)}`,
+        );
+    }
+}
+
+/**
+ * Validates a settlement domain: `"move"` or `"evm"`.
+ * @throws Error if the domain is invalid
+ */
+export function validateSettlementDomain(domain: unknown, paramName = "domain"): void {
+    if (domain !== "move" && domain !== "evm") {
+        throw new Error(`Invalid ${paramName}: expected "move" or "evm", got ${JSON.stringify(domain)}`);
+    }
+}
+
+/**
+ * Validates a settlement role: `"sender"` or `"recipient"`.
+ * @throws Error if the role is invalid
+ */
+export function validateSettlementRole(role: unknown, paramName = "role"): void {
+    if (role !== undefined && role !== "sender" && role !== "recipient") {
+        throw new Error(`Invalid ${paramName}: expected "sender" or "recipient", got ${JSON.stringify(role)}`);
+    }
+}
+
 const ACCOUNT_HISTORY_CATEGORIES: readonly string[] = ["sent", "coin", "fa", "da"];
 
 /**
