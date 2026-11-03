@@ -81,7 +81,7 @@ function. [`runAll.ts`](./runAll.ts) is the script behind `pnpm examples`.
 ## Sequence numbers
 
 The helpers (`transferSupraCoin`, `transferCoin`, the fungible asset transfers, `migrateCoinToFungibleStore`,
-`publishPackage` and the entry functions of `Contract.fromABI`) take the sequence number from the client's counter.
+`publishPackage`, the automation task helpers, the multisig helpers and the entry functions of `Contract.fromABI`) take the sequence number from the client's counter.
 The builders of `supra.transaction.build` take the number as `senderSequenceNumber`; `buildTransaction.ts` and
 `submitTransaction.ts` read the account's number once, after its funding has committed, and use consecutive numbers
 for the transactions they build.

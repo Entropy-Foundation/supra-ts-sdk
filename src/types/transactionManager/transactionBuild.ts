@@ -23,9 +23,11 @@ export type MultisigExecutionPayloadArgs =
  * - `gasUnitPrice`: gas unit price, in quants, used as given. Default the client's `gasUnitPrice`, else the node's
  *   estimate, `max(median gas price, minimum gas price)` of `GET /rpc/v3/transactions/estimate_gas_price`, read for each
  *   transaction. In the helpers that submit, the read starts when the call is made and is awaited in the call's turn
- *   for the sender's account (SUPRA fungible asset transfers check the sender's balances first, before the account is
- *   requested); `transaction.build.simple` awaits it before it builds. The max gas estimate uses the same price. A price below the node's minimum is refused by the node with
- *   `SupraGasUnitPriceBelowMinimumError` (its `cause` is the original error); the SDK does not change it. A failed read
+ *   for the sender's account (SUPRA fungible asset transfers check the sender's balances first, and the multisig
+ *   propose and execute helpers read the ABI of the proposal's function or the next proposal first, before the account
+ *   is requested, and for these the price read starts after those reads, not when the call is made);
+ *   `transaction.build.simple` awaits it before it builds. The max gas estimate uses the same price. A price below the
+ *   node's minimum is refused by the node with `SupraGasUnitPriceBelowMinimumError` (its `cause` is the original error); the SDK does not change it. A failed read
  *   of the estimate throws its error and nothing is submitted.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
  *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole
@@ -36,8 +38,8 @@ export type MultisigExecutionPayloadArgs =
  *
  * The node accepts a transaction only when the sender's balance pays for `max gas × gas unit price`; the sender is
  * charged for the gas used. An estimate is made by the methods that build and submit a transaction with a signing
- * account: the coin and fungible asset transfers, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks`
- * and contract entry calls. They read the sender's
+ * account: the coin and fungible asset transfers, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks`,
+ * the multisig helpers and contract entry calls. They read the sender's
  * SUPRA balance and simulate the transaction with a max gas of the largest number of gas units that balance pays for at
  * the gas unit price, at most `MAX_GAS_UNITS_PER_TRANSACTION`. The max gas is then
  * `ceil(gas used × DEFAULT_MAX_GAS_ESTIMATE_MULTIPLIER)` (or the client's `maxGasEstimateMultiplier`), at least
@@ -82,8 +84,8 @@ export interface OptionalTransactionPayloadArgs {
     /**
      * The sequence number of the transaction. Used by the helpers that build and submit the transaction
      * (`transferSupraCoin`, `transferCoin`, `transferSupraFungibleAsset`, `transferFungibleAsset`,
-     * `migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks` and the entry
-     * functions of `Contract.fromABI`). When it is set,
+     * `migrateCoinToFungibleStore`, `publishPackage`, `cancelAutomationTask`, `stopAutomationTasks`, the multisig
+     * helpers and the entry functions of `Contract.fromABI`). When it is set,
      * the helper uses it as given and does not wait for the other calls of the account; the client's counter records
      * the submitted transaction like its own and does not hand out its number while the transaction can commit. When
      * it is absent, the helper takes the next number of the client's counter. The builders of `transaction.build`

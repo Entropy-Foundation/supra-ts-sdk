@@ -237,7 +237,7 @@ export class Build {
      * `automationPriority` is given) or `"System"`. Only an account that the Supra framework has authorised to
      * register system tasks can register a `"System"` task; the registration of any other account aborts.
      * @param args.automationPriority - Priority of a version 2 registration, a `u64`. Without a priority the registry
-     * assigns the task's index.
+     * uses the task's index as its priority.
      * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
      * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
