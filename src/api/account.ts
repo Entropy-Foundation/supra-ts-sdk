@@ -230,7 +230,7 @@ export class Account {
      *
      * async function runExample() {
      *    const accountAddress = "0x1";
-     *    const accountResource = await supra.account.getAccountResource({ accountAddress: accountAddress, resourceType: "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>" });
+     *    const accountResource = await supra.account.getAccountResource({ accountAddress: accountAddress, resourceType: "0x1::account::Account" });
      *    console.log(accountResource);
      * }
      *
@@ -293,7 +293,11 @@ export class Account {
     }
 
     /**
-     * Queries the coin transactions of an account.
+     * Queries the coin transactions of an account: the transactions that touched a `CoinStore` of the account. It does
+     * not list SUPRA held in a primary fungible store (a chain created from the `supra_node_v12.0.0` genesis, such as
+     * Devnet, holds all SUPRA there), so the page is empty for an account whose only movements are of that SUPRA. For
+     * those, use {@link Account.getAccountFaTransactions} on the account's primary store (all networks) or
+     * {@link Account.getAccountHistory} (nodes from `supra_node_v12.0.0`).
      * @template {TransactionResponse} T - The type of the transaction to be returned.
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.count - The number of transactions to return.
