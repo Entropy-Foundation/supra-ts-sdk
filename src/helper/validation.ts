@@ -138,6 +138,46 @@ export function validatePaginationCount(count: unknown, paramName = "count"): vo
     }
 }
 
+/**
+ * Validates the `address` of a settlements query: `0x` followed by at most as many hexadecimal digits as the domain's
+ * addresses have (64 for `"move"`, 40 for `"evm"`). A shorter address is padded with leading zeros when it is sent.
+ * @throws Error if the address is invalid
+ */
+export function validateSettlementAddress(address: unknown, domain: "move" | "evm", paramName = "address"): void {
+    const str =
+        typeof address === "string"
+            ? address
+            : address != null && typeof (address as { toString(): string }).toString === "function"
+              ? String(address)
+              : undefined;
+    const width = domain === "move" ? 64 : 40;
+    if (str === undefined || !new RegExp(`^0x[0-9a-fA-F]{1,${width}}$`).test(str)) {
+        throw new Error(
+            `Invalid ${paramName}: expected 0x followed by 1 to ${width} hex digits for domain "${domain}", got ${JSON.stringify(String(address))}`,
+        );
+    }
+}
+
+/**
+ * Validates a settlement domain: `"move"` or `"evm"`.
+ * @throws Error if the domain is invalid
+ */
+export function validateSettlementDomain(domain: unknown, paramName = "domain"): void {
+    if (domain !== "move" && domain !== "evm") {
+        throw new Error(`Invalid ${paramName}: expected "move" or "evm", got ${JSON.stringify(domain)}`);
+    }
+}
+
+/**
+ * Validates a settlement role: `"sender"` or `"recipient"`.
+ * @throws Error if the role is invalid
+ */
+export function validateSettlementRole(role: unknown, paramName = "role"): void {
+    if (role !== undefined && role !== "sender" && role !== "recipient") {
+        throw new Error(`Invalid ${paramName}: expected "sender" or "recipient", got ${JSON.stringify(role)}`);
+    }
+}
+
 const ACCOUNT_HISTORY_CATEGORIES: readonly string[] = ["sent", "coin", "fa", "da"];
 
 /**

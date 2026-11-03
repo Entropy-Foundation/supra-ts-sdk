@@ -3,13 +3,22 @@ import { SupraInsufficientFungibleAssetBalanceError } from "../errors/fungibleAs
 import { addressToBytes, standardizeAddress } from "../helper/account";
 import { parseTypeArgument } from "../helper/typeTag";
 import type { AccountAddressInput } from "../types/account";
-import type { FungibleAssetMetadata } from "../types/fungibleAsset";
+import type { FungibleAssetMetadata, NativeSupply } from "../types/fungibleAsset";
 import type { NetworkConfig } from "../utils/apiEndpoints";
+import { get } from "../client/get";
+import { V4_RPC_VERSION, withV4RouteSupport } from "./routeSupport";
 import { SUPRA_COIN_TYPE, SUPRA_FRAMEWORK_ADDRESS, SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
 import { getAccountResourceInternal, getAccountSupraBalanceInternal } from "./account";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
 import type { MoveFunctionId } from "../types/move";
 import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSubmit";
+
+/** Reads `GET /rpc/v4/supply/native`. A 404 is thrown as `SupraRouteUnsupportedError`. */
+export async function getNativeSupplyInternal(config: NetworkConfig): Promise<NativeSupply> {
+    return withV4RouteSupport({ method: "getNativeSupply" }, () =>
+        get<NativeSupply>({ path: "/supply/native" }, config, V4_RPC_VERSION).then((res) => res.data),
+    );
+}
 
 export async function getFungibleAssetMetadataInternal(
     args: { assetAddress: AccountAddressInput },

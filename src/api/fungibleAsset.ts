@@ -2,10 +2,11 @@ import type { SupraAccount } from "supra-l1-sdk-core";
 import type { AccountAddressInput } from "../types/account";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import type { OptionalTransactionArgs, SubmitTransactionResponse } from "../types/transactionManager/transactionSubmit";
-import type { FungibleAssetMetadata } from "../types/fungibleAsset";
+import type { FungibleAssetMetadata, NativeSupply } from "../types/fungibleAsset";
 import type { MoveFunctionId } from "../types/move";
 import {
     getFungibleAssetMetadataInternal,
+    getNativeSupplyInternal,
     migrateCoinToFungibleStoreInternal,
     transferFungibleAssetInternal,
 } from "../internal/fungibleAsset";
@@ -63,6 +64,36 @@ export class FungibleAsset {
     async getFungibleAssetMetadata(args: { assetAddress: AccountAddressInput }): Promise<FungibleAssetMetadata> {
         validateAddress(args.assetAddress, "assetAddress");
         return getFungibleAssetMetadataInternal(args, this.networkInformation);
+    }
+
+    /**
+     * Reads the accounting of native SUPRA across the chain's two VMs (`GET /rpc/v4/supply/native`): native SUPRA on
+     * SupraEVM, the value in flight between the two sides, the sub-quant remainder, the quants awaiting a burn, the
+     * total those claim against the SupraMVM escrow, and the escrow's own balance, all as of the height the node had
+     * executed to. Needs a node from `supra_node_v12.0.0`; Mainnet and Testnet nodes of `supra_node_v11.7.x` answer
+     * HTTP 404, which is thrown as `SupraRouteUnsupportedError`.
+     * @returns A Promise that resolves to the {@link NativeSupply}. `escrow_shortfall_wei` is the amount claimed
+     * beyond what the escrow holds and is `"0"` whenever the mirror is fully backed; `escrow_balance_quants` and
+     * `escrow_shortfall_wei` are `null` only when the node could not read the escrow. Wei figures are decimal strings.
+     * The `*_quants` figures are JSON numbers and are rounded above `Number.MAX_SAFE_INTEGER`.
+     * @throws {SupraRouteUnsupportedError} When the node does not serve the route.
+     * @example
+     * ```typescript
+     * import { Network, SupraClient } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.DEVNET });
+     *
+     * async function runExample() {
+     *    const supply = await supra.fungibleAsset.getNativeSupply();
+     *    console.log(supply.evm_supply_wei, supply.escrow_shortfall_wei, supply.in_flight.count);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group FungibleAsset
+     */
+    async getNativeSupply(): Promise<NativeSupply> {
+        return getNativeSupplyInternal(this.networkInformation);
     }
 
     /**
