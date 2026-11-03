@@ -10,7 +10,12 @@ import type {
     SupraBalance,
 } from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
-import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
+import type {
+    AutoTransactionResponse,
+    CommittedTransactionResponse,
+    TransactionQueryType,
+    TransactionResponse,
+} from "../types/transaction";
 import {
     getAccountAutoTransactionsInternal,
     getAccountCoinBalanceInternal,
@@ -344,10 +349,6 @@ export class Account {
      * @remarks
      * - `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
      * - Mainnet, Testnet and Devnet nodes serve this feed.
-     * - An empty page with the cursor `"0"` does not end the feed, because `0` can be a real cursor on a v12 node.
-     *   A v11 node answers a request past the last transaction with an empty page and `"0"`, and the SDK ends the
-     *   feed on the request after it, so a feed read to its end on a v11 node costs one more request than
-     *   {@link Account.getAccountCoinTransactions}.
      * @returns A Promise that resolves to the transactions of the store with an optional cursor. Items can be of
      * any `txn_type`; narrow on `txn_type` before reading `header`, `payload` or `authenticator`. `cursor` is
      * `undefined` when there are no more transactions; see {@link PaginatedResponse}.
@@ -385,7 +386,7 @@ export class Account {
      * Queries the transaction history of an account: every finalized transaction that concerns the account, once
      * each, with the categories it matched for the account. It lists the transfers of SUPRA held in primary
      * fungible stores (the `fa` category), which `getAccountCoinTransactions` does not.
-     * @template {TransactionResponse} T - The type of the transaction to be returned.
+     * @template {CommittedTransactionResponse} T - The type of the transaction to be returned.
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.categories - Return only transactions that matched at least one of these categories:
      * `"sent"` (the account sent it), `"coin"` (coins moved in or out of the account), `"fa"` (a fungible asset
@@ -433,7 +434,7 @@ export class Account {
      * ```
      * @group Account
      */
-    async getAccountHistory<T extends TransactionResponse>(args: {
+    async getAccountHistory<T extends CommittedTransactionResponse>(args: {
         accountAddress: AccountAddressInput;
         options?: {
             categories?: readonly AccountHistoryCategory[];

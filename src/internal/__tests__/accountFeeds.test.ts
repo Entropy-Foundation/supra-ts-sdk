@@ -99,10 +99,35 @@ describe("account feeds", () => {
             expect(requests).toBe(2);
         });
 
-        it('continues past an empty page with the cursor "0" (a v12 type-filtered page of genesis rows)', async () => {
+        it.each([true, false])('ends a v11 feed on the empty page with "0" (ascending: %s)', async (ascending) => {
             mockGet
-                .mockResolvedValueOnce({ data: [], cursor: "0" })
-                .mockResolvedValueOnce({ data: [userTxn(1)], cursor: "30" })
+                .mockResolvedValueOnce({ data: [userTxn(1), userTxn(2)], cursor: "20" })
+                .mockResolvedValueOnce({ data: [], cursor: "0" });
+
+            const { items, requests } = await readFeed((start) =>
+                getAccountFaTransactionsInternal({ accountAddress: "0xa", options: { start, ascending } }, testConfig),
+            );
+
+            expect(items).toHaveLength(2);
+            expect(requests).toBe(2);
+            expect([0, 1].map((call) => sentQuery(call)?.["start"])).toEqual([undefined, "20"]);
+        });
+
+        it('ends the feed of a store without transactions on the first page ("0")', async () => {
+            mockGet.mockResolvedValue({ data: [], cursor: "0" });
+
+            const { items, requests } = await readFeed((start) =>
+                getAccountFaTransactionsInternal({ accountAddress: "0xa", options: { start } }, testConfig),
+            );
+
+            expect(items).toEqual([]);
+            expect(requests).toBe(1);
+        });
+
+        it("continues past an empty page that carries a cursor other than 0 (a type-filtered page)", async () => {
+            mockGet
+                .mockResolvedValueOnce({ data: [], cursor: "30" })
+                .mockResolvedValueOnce({ data: [userTxn(1)], cursor: "40" })
                 .mockResolvedValueOnce({ data: [], cursor: undefined });
 
             const { items, requests } = await readFeed((start) =>
@@ -114,33 +139,6 @@ describe("account feeds", () => {
 
             expect(items).toHaveLength(1);
             expect(requests).toBe(3);
-            expect(sentQuery(1)?.["start"]).toBe("0");
-        });
-
-        it('ends a v11 feed: the empty page with "0" is followed by one request that echoes start=0', async () => {
-            mockGet
-                .mockResolvedValueOnce({ data: [userTxn(1), userTxn(2)], cursor: "20" })
-                .mockResolvedValueOnce({ data: [], cursor: "0" })
-                .mockResolvedValueOnce({ data: [], cursor: "0" });
-
-            const { items, requests } = await readFeed((start) =>
-                getAccountFaTransactionsInternal({ accountAddress: "0xa", options: { start } }, testConfig),
-            );
-
-            expect(items).toHaveLength(2);
-            expect(requests).toBe(3);
-            expect([0, 1, 2].map((call) => sentQuery(call)?.["start"])).toEqual([undefined, "20", "0"]);
-        });
-
-        it('ends a v11 feed of a store without transactions after two requests ("0", then "0" echoed)', async () => {
-            mockGet.mockResolvedValue({ data: [], cursor: "0" });
-
-            const { items, requests } = await readFeed((start) =>
-                getAccountFaTransactionsInternal({ accountAddress: "0xa", options: { start } }, testConfig),
-            );
-
-            expect(items).toEqual([]);
-            expect(requests).toBe(2);
         });
 
         it("ends the feed on the empty cursor header", async () => {

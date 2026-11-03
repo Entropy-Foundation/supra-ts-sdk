@@ -165,10 +165,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **`account.getAccountFaTransactions({ accountAddress, options? })`** reads
   `GET /rpc/v3/accounts/{address}/fa_transactions`: the finalized transactions that withdrew from or deposited to a
   fungible store (`accountAddress` is the store's address, for example an account's primary SUPRA store). `options`
-  are `count`, `start`, `ascending` and `type`. Mainnet, Testnet and Devnet nodes serve the route. An empty page with
-  the cursor `"0"` does not end this feed, because `0` can be a real cursor on a v12 node. A v11 node answers a request
-  past the last transaction with an empty page and `"0"`, and the feed ends on the request after it, which echoes
-  `start=0`.
+  are `count`, `start`, `ascending` and `type`. Mainnet, Testnet and Devnet nodes serve the route. The feed ends like
+  `getAccountCoinTransactions`: `cursor` is `undefined` when the header is absent or empty, or on an empty page with
+  the cursor `"0"`.
 - **`account.getAccountHistory({ accountAddress, options? })`** reads `GET /rpc/v3/accounts/{address}/history`, which
   nodes from `supra_node_v12.0.0` serve (Devnet): every finalized transaction that concerns the account, once each,
   as `{ categories, transaction }` entries (`AccountHistoryEntry`). `options` are `categories` (a non-empty subset of

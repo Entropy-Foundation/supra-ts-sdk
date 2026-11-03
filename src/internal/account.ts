@@ -13,7 +13,12 @@ import type {
     SupraBalance,
 } from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
-import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
+import type {
+    AutoTransactionResponse,
+    CommittedTransactionResponse,
+    TransactionQueryType,
+    TransactionResponse,
+} from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { OBJECT_CORE, SUPRA_COIN_TYPE, SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
 import { viewInternal } from "./methods";
@@ -201,10 +206,8 @@ export async function getAccountCoinTransactionsInternal<T extends TransactionRe
 }
 
 /**
- * Reads `/accounts/{address}/fa_transactions`. A v12 node ends the feed by omitting the cursor header and can send
- * `"0"` as a real cursor, so an empty page with `"0"` does not end the feed here. A v11 node answers a request
- * past the last row with an empty page and `"0"`; the next request, made with `start=0`, gets the same answer and
- * ends the feed (the cursor equals the one sent).
+ * Reads `/accounts/{address}/fa_transactions`. The end of the feed is read as for `coin_transactions`, see
+ * {@link nextPageCursor}.
  */
 export async function getAccountFaTransactionsInternal<T extends TransactionResponse = TransactionResponse>(
     args: {
@@ -228,7 +231,6 @@ export async function getAccountFaTransactionsInternal<T extends TransactionResp
                 type: args.options?.type,
             },
             cursorParam: "start",
-            emptyZeroEndsFeed: false,
         },
         config,
         (data) => data,
@@ -251,7 +253,7 @@ function heightHeader(headers: Headers | undefined, name: string): number | unde
  * can be empty and carry a cursor, and `"0"` is a valid cursor. A 404 means the node is older than v12 and is
  * thrown as {@link SupraRouteUnsupportedError}.
  */
-export async function getAccountHistoryInternal<T extends TransactionResponse = TransactionResponse>(
+export async function getAccountHistoryInternal<T extends CommittedTransactionResponse = CommittedTransactionResponse>(
     args: {
         accountAddress: AccountAddressInput;
         options?: {

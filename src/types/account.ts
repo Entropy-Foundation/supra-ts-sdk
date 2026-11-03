@@ -1,7 +1,7 @@
 // Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
 // Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import type { HexString } from "supra-l1-sdk-core";
-import type { TransactionResponse } from "./transaction";
+import type { CommittedTransactionResponse } from "./transaction";
 
 /**
  * The data associated with an account, including its sequence number.
@@ -91,7 +91,7 @@ export type AccountHistoryCategory = "sent" | "coin" | "fa" | "da";
  * One transaction of an account's history.
  * @template T - The type of the transaction.
  */
-export interface AccountHistoryEntry<T extends TransactionResponse = TransactionResponse> {
+export interface AccountHistoryEntry<T extends CommittedTransactionResponse = CommittedTransactionResponse> {
     /** The categories the transaction matched for the account, in the order `sent`, `coin`, `fa`, `da`. */
     categories: AccountHistoryCategory[];
     /** The transaction, in the shape the block and transaction queries return. */
@@ -103,9 +103,9 @@ export interface AccountHistoryEntry<T extends TransactionResponse = Transaction
  * the headers of the response that describe the coverage of the history.
  * @template T - The type of the transactions.
  */
-export interface AccountHistoryPage<T extends TransactionResponse = TransactionResponse> extends PaginatedResponse<
-    AccountHistoryEntry<T>[]
-> {
+export interface AccountHistoryPage<
+    T extends CommittedTransactionResponse = CommittedTransactionResponse,
+> extends PaginatedResponse<AccountHistoryEntry<T>[]> {
     /**
      * The lowest block height the account history covers (`x-supra-history-indexed-from`), or `undefined` when the
      * history covers every block the node holds. The transactions of the blocks below it are not listed.
