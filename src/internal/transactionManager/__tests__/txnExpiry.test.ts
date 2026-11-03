@@ -1,7 +1,8 @@
 import { SupraAccount } from "supra-l1-sdk-core";
+import { SupraClient } from "../../../api/supraClient";
 import { SupraAPIError } from "../../../errors/apiError";
 import { MockNode, type MockNodeOptions } from "./helpers/mockNode";
-import { newClient, transfer } from "./helpers/transfers";
+import { newClient, RPC_URL, transfer } from "./helpers/transfers";
 
 /**
  * The node's maximum time to live in the submit helpers, against a node answered from memory (`MockNode`): the default
@@ -97,4 +98,48 @@ describe("a submit helper that stops before signing", () => {
         expect(sent.status).toBe("fulfilled");
         expect(accepted(mock)).toEqual([5]);
     });
+});
+
+describe("the read of the node's maximum in a submit helper", () => {
+    it("is not made with verifyChainId false when the call sets txExpiryTime", async () => {
+        const mock = start();
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false });
+
+        await transfer(supra, new SupraAccount(), { maxGas: 5_000n, txExpiryTime: BigInt(nowSeconds() + 20) });
+
+        expect(accepted(mock)).toEqual([5]);
+        expect(mock.counts["parameters"] ?? 0).toBe(0);
+    });
+
+    it("starts before the call takes the account's lock: a queued call asks while the call ahead is submitting", async () => {
+        const mock = start();
+        const inner = mock.fetch;
+        let release: () => void = () => undefined;
+        const asked = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let held = false;
+        // The first submission is held until a request for the node's maximum arrives. The first call needs no such
+        // read, so only a read that starts before the second call has the lock can arrive while the first is held.
+        global.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+            const path = new URL(String(input)).pathname;
+            if (path.endsWith("/transactions/parameters")) {
+                release();
+            }
+            if (path.endsWith("/transactions/submit") && !held) {
+                held = true;
+                await asked;
+            }
+            return inner(input, init);
+        }) as typeof fetch;
+        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, verifyChainId: false });
+        const sender = new SupraAccount();
+
+        const first = transfer(supra, sender, { maxGas: 5_000n, txExpiryTime: BigInt(nowSeconds() + 20) });
+        const second = transfer(supra, sender, { maxGas: 5_000n });
+        await Promise.all([first, second]);
+
+        expect(accepted(mock)).toEqual([5, 6]);
+        expect(mock.counts["parameters"]).toBe(1);
+    }, 10_000);
 });
