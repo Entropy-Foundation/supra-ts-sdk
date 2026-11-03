@@ -72,6 +72,9 @@ export class FungibleAsset {
      * total those claim against the SupraMVM escrow, and the escrow's own balance, all as of the height the node had
      * executed to. Needs a node from `supra_node_v12.0.0`; Mainnet and Testnet nodes of `supra_node_v11.7.x` answer
      * HTTP 404, which is thrown as `SupraRouteUnsupportedError`.
+     *
+     * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+     * @beta
      * @returns A Promise that resolves to the {@link NativeSupply}. `escrow_shortfall_wei` is the amount claimed
      * beyond what the escrow holds and is `"0"` whenever the mirror is fully backed; `escrow_balance_quants` and
      * `escrow_shortfall_wei` are `null` only when the node could not read the escrow. Wei figures are decimal strings.

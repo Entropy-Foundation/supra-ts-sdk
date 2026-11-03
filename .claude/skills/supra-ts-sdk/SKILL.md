@@ -12,6 +12,8 @@ You are helping a developer integrate the `supra-ts-sdk` package (version 2.0.0 
 
 SUPRA amounts are integers in **quants**, the smallest unit (1 SUPRA = 100,000,000 quants). Gas unit prices are in quants.
 
+Symbols that wrap the node API added in `supra_node_v12.0.0` carry the TSDoc tag `@beta`: `getAccountHistory`, `viewBatch`, `getTransactionsByHashes`, `simulate.withStateChanges`, `getSettlements`, `getSettlement`, `getNativeSupply`, the settlement transaction response types, the `Remove` variant of `AutomationRecordAction` and `NodeVersionInfo.release`, with the types only they use. Generic-view conversion with non-`address` type arguments and sponsoring a sender with no account follow the same rule. They are exempt from semantic versioning until `supra_node_v12.0.0` reaches Testnet, so a 2.x minor release can change them; a minor release removes the tags after that. Tell the developer when code uses one.
+
 ## Installation
 
 ```bash

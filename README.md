@@ -88,6 +88,26 @@ API versions it calls. The package ships it, so an application can read it as `s
 Node releases are written `v<major>.<minor>.<patch>`, with `-rc<N>` for a release candidate: the node tag
 `supra_node_v12.0.0.rc6` is `v12.0.0-rc6`.
 
+### Stability
+
+The node's API added in `supra_node_v12.0.0` runs on Devnet as release candidates, and it can change between them. It
+is frozen only when `supra_node_v12.0.0` is cut and promoted to Testnet. The SDK symbols that wrap it carry the TSDoc
+release tag `@beta`, which the generated API reference shows as a badge:
+
+- `account.getAccountHistory`, with `AccountHistoryEntry`, `AccountHistoryPage` and `AccountHistoryCategory`;
+- `methods.viewBatch`, `transaction.getTransactionsByHashes`, `transaction.simulate.withStateChanges`,
+  `transaction.getSettlements`, `transaction.getSettlement` and `fungibleAsset.getNativeSupply`, with the argument and
+  response types that only they use;
+- the `settlement` transaction response types (`SettlementTransactionResponse` and its data types), the `Remove`
+  variant of `AutomationRecordAction`, and the `release` field of `NodeVersionInfo`.
+
+A `@beta` symbol is exempt from the SDK's semantic versioning until `supra_node_v12.0.0` reaches Testnet: a 2.x minor
+release can change or remove it. A minor release removes the tags once `supra_node_v12.0.0` is on Testnet, and the
+symbols are then covered by semantic versioning.
+
+Two behaviours that are not symbols follow the same rule: [generic-view conversion with type arguments other than
+`address`](#generic-view-functions) and [sponsoring a sender with no account](#sponsored-transaction-from-a-sender-without-an-account).
+
 ### Upgrading from 1.x
 
 [MIGRATION.md](https://github.com/Entropy-Foundation/supra-ts-sdk/blob/master/MIGRATION.md) lists every breaking change from 1.2.0 to 2.0.0 and the code to change.
@@ -160,7 +180,8 @@ console.log("Framework (0x1) account info:", accountData);
 ### Reading the Node Version
 
 `getNodeVersion()` reads `GET /rpc/v3/version`. `release` is the node release tag; it is absent before
-`supra_node_v12.0.0`, so it is `undefined` for a v11 node.
+`supra_node_v12.0.0`, so it is `undefined` for a v11 node. The `release` field is `@beta`; see
+[Stability](#stability).
 
 ```ts
 const info = await supra.getNodeVersion();
@@ -207,7 +228,7 @@ matched (`sent`, `coin`, `fa`, `da`). It lists SUPRA transfers between primary f
 `getAccountCoinTransactions` does not, and lists SUPRA held in a `CoinStore` as well. It needs a node from
 `supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at v11.7.x answer HTTP 404, which the SDK throws as
 `SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits automated transactions and automation records; read
-those with `getAccountAutoTransactions`.
+those with `getAccountAutoTransactions`. `getAccountHistory` is `@beta`; see [Stability](#stability).
 
 ```ts
 let cursor: string | undefined;
@@ -242,7 +263,8 @@ const page = await supra.account.getAccountFaTransactions({ storeAddress, option
 
 The client's base path is `/rpc/v3`. These methods call `/rpc/v4` routes, which nodes from `supra_node_v12.0.0`
 (Devnet) serve. A Mainnet or Testnet node at v11.7.x answers HTTP 404 for each route except simulate, and the SDK throws
-`SupraRouteUnsupportedError` (a `SupraNotFoundError` with `method` and `minimumNodeRelease`).
+`SupraRouteUnsupportedError` (a `SupraNotFoundError` with `method` and `minimumNodeRelease`). The methods are `@beta`;
+see [Stability](#stability).
 
 | Method | Route |
 |---|---|
@@ -551,7 +573,8 @@ const senderSequenceNumber = (await supra.account.isAccountExists({ accountAddre
   : 0n;
 ```
 
-The simulation with that number succeeds on every node. A node from `supra_node_v12.0.0` (Devnet) admits the
+This behaviour is exempt from semantic versioning until `supra_node_v12.0.0` reaches Testnet; see
+[Stability](#stability). The simulation with that number succeeds on every node. A node from `supra_node_v12.0.0` (Devnet) admits the
 submission, the transaction creates the account, and the sender's sequence number is 1 afterwards. A v11.7.x node
 (Mainnet, Testnet) refuses the submission with HTTP 400, "Transaction validation failed: Failed to read the
 AccountResource".
@@ -888,7 +911,8 @@ A v11 node (Mainnet, Testnet) reads every type parameter as `address`, so for an
 request or reads the value's bytes as the wrong type. A type parameter that occurs in a parameter or return type outside
 `Object<…>` therefore needs a node from `supra_node_v12.0.0` (Devnet) unless its type argument is `address` or
 `signer`, or is `0x1::object::Object<…>` and the type parameter is the whole parameter or return type (inside a
-`vector` or `Option` a v12 node reads the `Object` as `{ inner }` and a v11 node as an address). For such a call the
+`vector` or `Option` a v12 node reads the `Object` as `{ inner }` and a v11 node as an address). This behaviour is
+exempt from semantic versioning until `supra_node_v12.0.0` reaches Testnet; see [Stability](#stability). For such a call the
 client reads `GET /rpc/v3/version` and keeps a `release` once the node reports one; on a node that reports none the call
 throws `SupraError` before the view request is sent, and the next such call reads the version again. Behind a load
 balancer whose nodes run different releases, as during an upgrade, the SDK cannot tell which node answers the view.

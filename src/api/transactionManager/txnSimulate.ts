@@ -129,6 +129,9 @@ export class Simulate {
      * bounds the size of `changes` and `prior_values` (`rest_limits.simulate.max_state_changes_bytes`, 1 MiB by
      * default) and spends it on the signers' own resources first, then other resources, table items and modules last.
      * A state key that does not fit is left out of both and listed in `omitted`; `changes_truncated` is then `true`.
+     *
+     * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+     * @beta
      * @param args.sendTxPayload -  Transaction payload
      * @returns The simulated transaction, whose status is `Success`, with `state_height` (the last block whose state
      * the simulation ran against), `changes`, `prior_values` (keyed by each change's `state_key_hash`, `null` for a

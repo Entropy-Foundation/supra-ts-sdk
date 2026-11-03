@@ -84,12 +84,18 @@ export interface PaginatedResponse<T> {
  * - `fa`: the transaction withdrew from or deposited to a fungible asset store that the account owned at that
  *   point in its block;
  * - `da`: a digital asset or object event of the transaction names the account.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export type AccountHistoryCategory = "sent" | "coin" | "fa" | "da";
 
 /**
  * One transaction of an account's history.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
  * @template T - The type of the transaction.
+ * @beta
  */
 export interface AccountHistoryEntry<T extends CommittedTransactionResponse = CommittedTransactionResponse> {
     /** The categories the transaction matched for the account, in the order `sent`, `coin`, `fa`, `da`. */
@@ -101,7 +107,10 @@ export interface AccountHistoryEntry<T extends CommittedTransactionResponse = Co
 /**
  * A page of an account's transaction history: {@link PaginatedResponse} of {@link AccountHistoryEntry} items, with
  * the headers of the response that describe the coverage of the history.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
  * @template T - The type of the transactions.
+ * @beta
  */
 export interface AccountHistoryPage<
     T extends CommittedTransactionResponse = CommittedTransactionResponse,

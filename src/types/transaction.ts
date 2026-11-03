@@ -405,10 +405,19 @@ export interface AutomationRecordData {
 /**
  * The action of an automation record: the task indexes processed in the cycle, or the removal of one task.
  * `Remove` is sent by nodes from v12 onwards.
+ *
+ * Preview: the `Remove` variant wraps an API added in `supra_node_v12.0.0`, which may change until that release
+ * reaches Testnet (`@beta` on `Remove` and on its `kind`).
  */
 export type AutomationRecordAction =
     | { Process: number[] }
     | {
+          /**
+           * The removal of one task. Sent by nodes from v12 onwards.
+           *
+           * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+           * @beta
+           */
           Remove: {
               task_index: number;
               /**
@@ -424,6 +433,9 @@ export type AutomationRecordAction =
                *   dependency count or size, type size, or the minimum gas of a `#[randomness]` entry function) stopped
                *   the task's transaction before its entry function ran. A user task's owner receives the same
                *   partial refund as for `"Error"`; a system task is refunded nothing. Recorded for Move tasks only.
+               *
+               * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+               * @beta
                */
               kind: "Error" | "ConfigUpdate" | "PreExecutionLimit";
               reason: string;
@@ -433,6 +445,9 @@ export type AutomationRecordAction =
 /**
  * The response for a settlement transaction, returned by nodes from v12 onwards. A settlement transaction
  * applies cross-VM settlements. It has no `header`, `payload` or `authenticator`.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface SettlementTransactionResponse extends SystemTransactionResponseFields {
     txn_type: TransactionType.Settlement;
@@ -441,11 +456,17 @@ export interface SettlementTransactionResponse extends SystemTransactionResponse
 
 /**
  * What a settlement transaction applied, discriminated by the VM that applied it.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export type SettlementData = SettlementApplierSummary | SettlementCreditSummary;
 
 /**
  * The settlements a Move settlement transaction applied.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface SettlementApplierSummary {
     vm: "move";
@@ -464,6 +485,9 @@ export interface SettlementApplierSummary {
 
 /**
  * One credit from the EVM to Move that a Move settlement transaction resolved.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface AppliedInboundSettlement {
     /** The settlement this credit settles, `0x`-prefixed. */
@@ -480,6 +504,9 @@ export interface AppliedInboundSettlement {
 
 /**
  * One credit an EVM settlement transaction paid.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface SettlementCreditSummary {
     vm: "evm";
@@ -505,6 +532,9 @@ export type TransactionQueryType = "user" | "auto" | "meta" | "record" | "settle
  * A proof that a transaction is included in the node's transaction accumulator, computed against the latest
  * transactions inclusion certificate the node holds. Sent by the `/rpc/v4` transaction routes when the request asks
  * for it.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface TransactionInclusionProof {
     /** The accumulator proof. `siblings` are ordered from the bottom level to the root. */
@@ -526,6 +556,9 @@ export interface TransactionInclusionProof {
 /**
  * A transaction as `/rpc/v4` returns it: the shape of {@link TransactionResponse} with the events' `hash` and, when
  * the request asked for a proof, `inclusion_proof`.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export type TransactionResponseV4 = TransactionResponse & {
     /** Present on committed transactions of requests with `include_proof`; `null` when no certificate covers it yet. */
@@ -534,6 +567,9 @@ export type TransactionResponseV4 = TransactionResponse & {
 
 /**
  * The result of looking up one hash with `getTransactionsByHashes`.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface TransactionByHashesEntry {
     /** The requested hash in lower case, as the SDK sends it. */
@@ -548,6 +584,9 @@ export interface TransactionByHashesEntry {
 /**
  * The response of `getTransactionsByHashes`: `transactions` answers a prefix of the requested hashes, in request
  * order, and `omitted` lists the rest, so the two together hold one element per requested hash.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface TransactionsByHashesResponse {
     /** One entry per answered position, in request order. The first requested hash is always answered. */
@@ -564,6 +603,9 @@ export interface TransactionsByHashesResponse {
  * A change that a simulated transaction would make to one Move state key, in the Aptos API's `WriteSetChange`
  * representation. A written resource group is one `write_resource` per member, each with the group's
  * `state_key_hash`; a deleted resource group is one `delete_resource` whose `resource` is the group's own tag.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export type WriteSetChange =
     | { type: "write_resource"; address: string; state_key_hash: string; data: MoveResource }
@@ -596,12 +638,18 @@ export type WriteSetChange =
           data?: { key: MoveValue; key_type: string } | null;
       };
 
-/** What a state key holds: the `kind` of an {@link OmittedStateKey}. */
+/**
+ * What a state key holds: the `kind` of an {@link OmittedStateKey}.
+ * @beta
+ */
 export type StateKeyKind = "resource" | "resource_group" | "module" | "table_item";
 
 /**
  * A state key that a simulated transaction writes and whose changes the response leaves out to stay within the
  * node's size bound.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface OmittedStateKey {
     /** The hash of the state key, hex encoded. */
@@ -616,7 +664,10 @@ export interface OmittedStateKey {
     tag: string;
 }
 
-/** The number of state keys of each kind left out of a simulation's reported changes. */
+/**
+ * The number of state keys of each kind left out of a simulation's reported changes.
+ * @beta
+ */
 export interface OmittedStateKeyCounts {
     resource: number;
     resource_group: number;
@@ -628,6 +679,9 @@ export interface OmittedStateKeyCounts {
  * The state-change fields that `POST /rpc/v4/transactions/simulate` adds to a simulated transaction. A node whose
  * `/rpc/v4` route answers as `/rpc/v3` does (Mainnet and Testnet nodes of `supra_node_v11.7.x`) sends none of them,
  * so each is optional here.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface SimulationStateChanges {
     /**
@@ -653,16 +707,28 @@ export interface SimulationStateChanges {
 /**
  * A simulated transaction with the changes it would make to Move state. The state-change fields are absent when the
  * node does not report them; see {@link SimulationStateChanges}.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export type TransactionSimulationV4 = TransactionResponse & SimulationStateChanges;
 
-/** The side of the chain an address belongs to: `"move"` for SupraMVM, `"evm"` for SupraEVM. */
+/**
+ * The side of the chain an address belongs to: `"move"` for SupraMVM, `"evm"` for SupraEVM.
+ * @beta
+ */
 export type SettlementDomain = "move" | "evm";
 
-/** Which end of a cross-VM crossing an address is. */
+/**
+ * Which end of a cross-VM crossing an address is.
+ * @beta
+ */
 export type SettlementRole = "sender" | "recipient";
 
-/** Where in its lifecycle a crossing was when a stage was recorded. */
+/**
+ * Where in its lifecycle a crossing was when a stage was recorded.
+ * @beta
+ */
 export type SettlementStage =
     | "recorded"
     | "initiated_on_evm"
@@ -671,14 +737,20 @@ export type SettlementStage =
     | "skipped"
     | "cleared";
 
-/** One end of a cross-VM crossing. */
+/**
+ * One end of a cross-VM crossing.
+ * @beta
+ */
 export interface SettlementParty {
     domain: SettlementDomain;
     /** The address, `0x`-prefixed. */
     address: string;
 }
 
-/** One stage of one crossing, as the block that produced it stated it. */
+/**
+ * One stage of one crossing, as the block that produced it stated it.
+ * @beta
+ */
 export interface SettlementStageEntry {
     stage: SettlementStage;
     /** The block this stage happened in. */
@@ -700,7 +772,10 @@ export interface SettlementStageEntry {
     refund?: string | null;
 }
 
-/** A crossing that is recorded and waiting to be applied. */
+/**
+ * A crossing that is recorded and waiting to be applied.
+ * @beta
+ */
 export interface PendingSettlement {
     sender: SettlementParty;
     recipient: SettlementParty;
@@ -710,7 +785,12 @@ export interface PendingSettlement {
     recorded_at_height: number;
 }
 
-/** The lifecycle of one cross-VM crossing, as of the height the node had executed to. */
+/**
+ * The lifecycle of one cross-VM crossing, as of the height the node had executed to.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
+ */
 export interface Settlement {
     /** The crossing's identity, `0x`-prefixed. */
     settlement_id: string;
@@ -725,6 +805,9 @@ export interface Settlement {
 /**
  * A page of the crossings one address is party to, oldest first. `cursor` is `undefined` when there are no more
  * crossings; a page can be empty and still carry a cursor.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface SettlementsPage {
     /** The crossings of this page. */
