@@ -185,7 +185,7 @@ describe("client request handling", () => {
 
             const outcome = await settle(get({ path: "/x" }, retrying));
 
-            expect(outcome.value).toEqual({ data: { ok: true }, cursor: undefined });
+            expect(outcome.value).toEqual({ data: { ok: true }, cursor: undefined, headers: expect.anything() });
             expect(fetchMock).toHaveBeenCalledTimes(3);
             const delays = setTimeoutSpy.mock.calls.map((call) => call[1]);
             expect(delays).toEqual([250, 500]);
@@ -220,7 +220,7 @@ describe("client request handling", () => {
 
             const outcome = await settle(get({ path: "/x" }, retrying));
 
-            expect(outcome.value).toEqual({ data: { ok: true }, cursor: undefined });
+            expect(outcome.value).toEqual({ data: { ok: true }, cursor: undefined, headers: expect.anything() });
             expect(setTimeoutSpy.mock.calls.map((call) => call[1])).toEqual([2000]);
         });
 
@@ -255,7 +255,7 @@ describe("client request handling", () => {
 
             const outcome = await settle(get({ path: "/x" }, retrying));
 
-            expect(outcome.value).toEqual({ data: { ok: true }, cursor: undefined });
+            expect(outcome.value).toEqual({ data: { ok: true }, cursor: undefined, headers: expect.anything() });
             expect(fetchMock).toHaveBeenCalledTimes(2);
         });
 

@@ -137,3 +137,23 @@ export function validatePaginationCount(count: unknown, paramName = "count"): vo
         throw new Error(`Invalid ${paramName}: expected an integer between 1 and 100, got ${JSON.stringify(count)}`);
     }
 }
+
+const ACCOUNT_HISTORY_CATEGORIES: readonly string[] = ["sent", "coin", "fa", "da"];
+
+/**
+ * Validates the `categories` of an account history request: `undefined`, or a non-empty array of `"sent"`,
+ * `"coin"`, `"fa"` and `"da"`.
+ * @throws Error if the categories are invalid
+ */
+export function validateHistoryCategories(categories: unknown, paramName = "categories"): void {
+    if (categories === undefined) return;
+    if (
+        !Array.isArray(categories) ||
+        categories.length === 0 ||
+        !categories.every((category) => ACCOUNT_HISTORY_CATEGORIES.includes(category as string))
+    ) {
+        throw new Error(
+            `Invalid ${paramName}: expected a non-empty array of "sent", "coin", "fa" and "da", got ${JSON.stringify(categories)}`,
+        );
+    }
+}

@@ -194,6 +194,43 @@ do {
 } while (cursor !== undefined);
 ```
 
+### Account History and Fungible Store Transactions
+
+`getAccountHistory` lists every finalized transaction that concerns an account, once each, with the categories it
+matched (`sent`, `coin`, `fa`, `da`). It lists SUPRA transfers between primary fungible stores, which
+`getAccountCoinTransactions` does not. It needs a node from `supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at
+v11.7.x answer HTTP 404, which the SDK throws as `SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits
+automated transactions and automation records; read those with `getAccountAutoTransactions`.
+
+```ts
+let cursor: string | undefined;
+do {
+  const page = await supra.account.getAccountHistory({
+    accountAddress: sender.address(),
+    options: { categories: ['sent', 'fa'], count: 50, start: cursor },
+  });
+  for (const { categories, transaction } of page.response) {
+    console.log(transaction.hash, categories);
+  }
+  // page.indexedFrom: the lowest block height the history covers, when the node reports one.
+  cursor = page.cursor;
+} while (cursor !== undefined);
+```
+
+The node applies `categories` while it scans, so a page can have fewer entries than `count`, or none, and still carry a
+cursor. The feed ends only when `cursor` is `undefined`; the cursor `"0"` does not end it.
+
+`getAccountFaTransactions` lists the transactions that withdrew from or deposited to one fungible store, given the
+store's address (Mainnet, Testnet and Devnet nodes serve it). It lists the movements of that one store: an account
+address returns an empty page. `getPrimaryStoreAddress` derives an account's primary store for a fungible asset (SUPRA
+by default). The method takes `count`, `start`, `ascending` and `type`, and is read page by page like the feeds above.
+To list everything that concerns an account, use `getAccountHistory` (nodes from `supra_node_v12.0.0`).
+
+```ts
+const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: sender.address() });
+const page = await supra.account.getAccountFaTransactions({ storeAddress, options: { count: 50 } });
+```
+
 ## Chain ID
 
 Every transaction carries the chain ID of the client's configuration: 8 for `Network.MAINNET`, 6 for `Network.TESTNET`,
@@ -265,7 +302,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraGasUnitPriceBelowMinimumError` | the node refuses a submission or a simulation because the gas unit price is below its minimum | `gasUnitPrice`, `minimumGasUnitPrice`, `major_status`, `cause` (the `SupraAPIError` or `SupraSimulationFailedError`) |
 | `SupraTimeoutError` | a request exceeds the timeout (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `cause` |
-| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503: the node may have accepted the transaction | `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause` |
+| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503: the node may have accepted the transaction; also after a v11.7 `Already scheduled` refusal of a copy whose read does not settle the outcome (see [Transaction outcomes](#transaction-outcomes)) | `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause`, `readStatus`, `readError` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
 | `SupraChainIdMismatchError` | before signing, the configured chain ID or the transaction's chain ID is not the node's | `configuredChainId`, `nodeChainId`, `transactionChainId` |
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` | `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
@@ -365,6 +402,26 @@ transfers, `publishPackage`, the automation task helpers, the multisig helpers a
   status or 503 did not accept the transaction; that is thrown as `SupraAPIError`, or as
   `SupraGasUnitPriceBelowMinimumError` for a gas unit price below the node's minimum. A 2xx answer whose body is not a
   transaction hash is an accepted submission, and the derived hash is used in place of the body.
+- A 400 that says the node's pool already holds the submitted transaction, for example when the same signed
+  transaction is submitted twice, is handled as follows when the transaction's sequence number is the caller's (the
+  `transaction.submit` methods, the submit methods of a built transaction, and helper calls with `sequenceNumber`).
+  The transaction commits at most once.
+  - A v12 node names the transaction (`transaction <hash> is already pending`) after it has forwarded it again: the
+    submission is handled as accepted with the derived hash, and the call waits for it or reads it back as above.
+  - A v11.7 node answers `Already scheduled digest=<hash>, ...`, also when its pool holds another transaction with the
+    same sequence number at a gas unit price at least this one's, and does not forward the submission. The SDK reads
+    the transaction by hash once, within 5 seconds and without retries. `Success` or `Fail`: handled as accepted.
+    `Pending` (the node's pool holds it, and its earlier forward may have failed), another non-final status, or a
+    failed read other than a 404: handled as an unknown outcome, with the refusal as `cause` of
+    `SupraSubmissionOutcomeUnknownError` and the read's status as `readStatus` or its error as `readError` (or a wait
+    for the hash with `enableWaitForTransaction: true`). Sending the same signed transaction to the same v11.7 node
+    again does not reach a validator while the node's pool holds it. A 404 or
+    `Invalid`: the refusal is thrown as `SupraAPIError`. The 404 is taken to come from the node that refused the
+    submission; several RPC nodes behind one URL can answer 404 for a transaction another of them holds.
+
+  A helper call whose number comes from the client's counter does not deduplicate: a repeated call, including one
+  from a restarted process that builds the same transaction again, submits a new transaction. When the node already
+  holds the same transaction, its number stays taken and the helper sends its transaction with the next number.
 
 ```ts
 import {
@@ -462,7 +519,9 @@ the entry functions of `Contract.fromABI` take the number from a counter that th
 - When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the
   account's, or a number that already has a pending transaction, for example one sent by another client), the helper
   sends the transaction once more with the next number. A second refusal is thrown. A transaction with an explicit
-  number is not retried.
+  number is not retried. When the refusal shows that the pending transaction is the one the helper built (another
+  call, for example of another client, built the same transaction with the same number), that number stays taken and
+  the helper sends its transaction once more with the next number (see [Transaction outcomes](#transaction-outcomes)).
 - When the node refuses a number because its queue for the account is full, `SupraAccountQueueFullError` is thrown and
   the transaction is not sent again.
 - After a submission whose outcome is unknown and that the node did not in fact accept, later transactions wait in the
@@ -515,12 +574,22 @@ it have been sent. The node holds at most 25 numbers per account by default and 
 (`enableWaitForTransaction: true`) when sending more than that.
 
 A transaction expires at `txExpiryTime` (seconds since the Unix epoch, used as given). Without it, a transaction expires
-`SupraConfig.txExpirySecs` seconds (default 60) after the client's clock in whole seconds, at most 595 seconds after
-it: the node refuses an expiration time more than 600 seconds after its own clock, and the 5 seconds left cover a
-node clock that is up to 5 seconds behind the client's, so `txExpirySecs: 600` is accepted. The node also refuses a
-transaction whose expiration time is not after its clock, so a client whose clock is far from the node's has its
-transactions refused (as expired, or as too far in the future); these refusals are thrown as they are. Set
-`txExpirySecs` or `txExpiryTime` for a transaction that is signed or submitted later.
+`SupraConfig.txExpirySecs` seconds (default 60) after the client's clock in whole seconds, at most 5 seconds less than
+the node's maximum time to live: the node refuses an expiration time more than that maximum after its own clock, and
+the 5 seconds left cover a node clock that is up to 5 seconds behind the client's, so a `txExpirySecs` equal to the
+maximum is accepted. The maximum is `max_transaction_time_to_live_seconds` of `GET /rpc/v3/transactions/parameters`
+(600 on Mainnet, Testnet and Devnet); `supra.getTransactionParameters()` returns it. The client reads it once, with
+the first builder that sends requests or the first signature that needs it, and keeps it; a failed read throws its
+error and nothing falls back to 600. A `txExpirySecs` above the maximum throws a `RangeError` when the transaction is
+built, and a transaction whose expiration time is more than the maximum (plus 5 seconds of slack, for the client's
+estimate of the node's clock) after the current time throws a `RangeError` before signing. The messages name the
+maximum and say whether it was read from the node or assumed (600, when the client has not read it;
+`getTransactionParameters()` reads it first). Signing with `verifyChainId: false` sends no request and does not check
+the expiration time, and the builders that send no request (`rawTxnObject` and the like) use the maximum the client
+has read, else 600, and throw the same `RangeError` for a `txExpirySecs` above it. The node also refuses a transaction whose expiration time is not
+after its clock, so a client whose clock is far from the node's has its transactions refused (as expired, or as too far
+in the future); these refusals are thrown as they are. Set `txExpirySecs` or `txExpiryTime` for a transaction that is
+signed or submitted later.
 
 ```ts
 const supra = new SupraClient({ network: Network.TESTNET });
@@ -722,6 +791,35 @@ const [rate] = await supra.methods.view<[{ value: bigint }]>({
 });
 console.log(rate.value); // 6442450944n
 ```
+
+### Generic view functions
+
+`methods.view` and the contract proxy convert a parameter or return type that is a type parameter, or contains one
+(`vector<T>`, `0x1::option::Option<T>`, `0x1::object::Object<T>`, a struct over `T`), as the type with each type
+parameter replaced by its type argument. For `#[view] public fun identity<T: copy + drop>(x: T): T`:
+
+```ts
+const [value] = await supra.methods.view<[bigint]>({
+    function: `${moduleAddress}::m::identity`,
+    typeArguments: ["u64"],
+    functionArguments: [12345n],
+});
+console.log(value); // 12345n
+```
+
+An `0x1::object::Object<…>` argument is given as its address. Inside a `vector` or an `Option` the node reads an
+`Object` as the struct `{ inner: <address> }`, and the SDK sends it in that form there.
+
+A v11 node (Mainnet, Testnet) reads every type parameter as `address`, so for any other type argument it refuses the
+request or reads the value's bytes as the wrong type. A type parameter that occurs in a parameter or return type outside
+`Object<…>` therefore needs a node from `supra_node_v12.0.0` (Devnet) unless its type argument is `address` or
+`signer`, or is `0x1::object::Object<…>` and the type parameter is the whole parameter or return type (inside a
+`vector` or `Option` a v12 node reads the `Object` as `{ inner }` and a v11 node as an address). For such a call the
+client reads `GET /rpc/v3/version` and keeps a `release` once the node reports one; on a node that reports none the call
+throws `SupraError` before the view request is sent, and the next such call reads the version again. Behind a load
+balancer whose nodes run different releases, as during an upgrade, the SDK cannot tell which node answers the view.
+Calls with only address-like type arguments make no version request and work on both. `methods.viewRaw` makes no such
+check.
 
 ### Automation tasks
 

@@ -157,6 +157,9 @@ beforeEach(() => {
                 }),
             );
         }
+        if (method === "GET" && path === "/transactions/parameters") {
+            return respond(json({ max_transaction_time_to_live_seconds: 600 }));
+        }
         if (method === "GET" && path === "/transactions/chain_id") {
             chainIdReads += 1;
             return respond(chainIdAnswers.shift() ?? json(255));

@@ -31,8 +31,14 @@ export type MultisigExecutionPayloadArgs =
  *   of the estimate throws its error and nothing is submitted.
  * - `txExpiryTime`: expiration time of the transaction, in seconds since the Unix epoch, used as given. Default the
  *   client's `txExpirySecs` (default `DEFAULT_TX_EXPIRATION_DURATION`, 60) seconds after the client's clock in whole
- *   seconds when the transaction is built, at most 595 seconds after it (`MAX_TX_EXPIRATION_DURATION -
- *   TX_EXPIRATION_MARGIN_SECS`).
+ *   seconds when the transaction is built, at most `TX_EXPIRATION_MARGIN_SECS` (5) seconds less than the node's
+ *   maximum time to live (`max_transaction_time_to_live_seconds`, 600 on Mainnet, Testnet and Devnet). The builders
+ *   that send requests read the maximum once per client and throw the error of a failed read; the builders that send
+ *   none use the maximum the client has read, else `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600), and throw a `RangeError`
+ *   when `txExpirySecs` is more than it, naming the maximum and saying whether it was read or assumed
+ *   (`getTransactionParameters()` reads it first). Signing throws a `RangeError` for an expiration time more than
+ *   `TX_EXPIRATION_MARGIN_SECS` (5) seconds beyond the node's maximum after the later of the client's clock and the
+ *   chain time it estimates from its reads of the latest block.
  * - `estimateMaxGas`: when no `maxGas` is set, estimate it (`true`) or use `DEFAULT_MAX_GAS_UNITS` (`false`). Default
  *   the client's `estimateMaxGas`, else `true`.
  *
@@ -88,8 +94,11 @@ export interface OptionalTransactionPayloadArgs {
      * helpers and the entry functions of `Contract.fromABI`). When it is set,
      * the helper uses it as given and does not wait for the other calls of the account; the client's counter records
      * the submitted transaction like its own and does not hand out its number while the transaction can commit. When
-     * it is absent, the helper takes the next number of the client's counter. The builders of `transaction.build`
-     * take `senderSequenceNumber` and ignore this field.
+     * it is absent, the helper takes the next number of the client's counter, and the call does not deduplicate: a
+     * repeated call, including one from a restarted process that builds the same transaction again, submits a new
+     * transaction, with the next number when the node already holds the same transaction. With this field set, a call
+     * that builds the same transaction as a pending one is handled as a submission of that transaction (see `Submit`).
+     * The builders of `transaction.build` take `senderSequenceNumber` and ignore this field.
      */
     sequenceNumber?: bigint | number;
 }

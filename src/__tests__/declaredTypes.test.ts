@@ -23,6 +23,10 @@ jest.mock("../client/get", () => ({
 import { get } from "../client/get";
 const mockGet = get as jest.MockedFunction<typeof get>;
 
+function ok<T>(data: T): { data: T; headers: Headers } {
+    return { data, headers: new Headers() };
+}
+
 interface RecordedResponses {
     accountInfo: { sequence_number: number; authentication_key: string };
     accountNotFound: { status: number; body: unknown };
@@ -65,7 +69,7 @@ describe.each(["v12", "v11"] as const)("declared types against responses recorde
 
     test("the node sends the sequence number as a number, and AccountData.sequence_number is a bigint", async () => {
         expect(typeof node.accountInfo.sequence_number).toBe("number");
-        mockGet.mockResolvedValue({ data: node.accountInfo });
+        mockGet.mockResolvedValue(ok(node.accountInfo));
 
         const info = await supra.account.getAccountInfo({ accountAddress: "0x1" });
 
@@ -78,7 +82,7 @@ describe.each(["v12", "v11"] as const)("declared types against responses recorde
     });
 
     test("getFungibleAssetMetadata returns FungibleAssetMetadata, the data of the node's resource", async () => {
-        mockGet.mockResolvedValue({ data: node.fungibleAssetMetadata });
+        mockGet.mockResolvedValue(ok(node.fungibleAssetMetadata));
 
         const metadata = await supra.fungibleAsset.getFungibleAssetMetadata({ assetAddress: SUPRA_FA });
 
@@ -89,7 +93,7 @@ describe.each(["v12", "v11"] as const)("declared types against responses recorde
     });
 
     test("getTransactionByHash returns TransactionResponse, narrowed by txn_type", async () => {
-        mockGet.mockResolvedValue({ data: node.transactionByHash });
+        mockGet.mockResolvedValue(ok(node.transactionByHash));
 
         const txn = await supra.transaction.getTransactionByHash({ transactionHash: `0x${"ab".repeat(32)}` });
 
@@ -101,7 +105,7 @@ describe.each(["v12", "v11"] as const)("declared types against responses recorde
     });
 
     test("a latest block without finalized transactions has no transactions property", async () => {
-        mockGet.mockResolvedValue({ data: node.latestBlock });
+        mockGet.mockResolvedValue(ok(node.latestBlock));
 
         const block = await supra.block.getLatestBlock();
 
@@ -185,7 +189,7 @@ describe("declared types that do not depend on a recorded response", () => {
         expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
 
         mockGet.mockReset();
-        mockGet.mockResolvedValue({ data: { status: "Pending" } });
+        mockGet.mockResolvedValue(ok({ status: "Pending" }));
         await expect(supra.transaction.getTransactionByHash({ transactionHash: hash })).resolves.toBeDefined();
     });
 });

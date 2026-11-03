@@ -38,7 +38,9 @@ export interface RetryConfig {
  * faster from one account, set `maxGas`; to submit in parallel, send from several accounts. A call with an explicit
  * `sequenceNumber` does not take part in this order. Calls request the account in the order they are made, except that
  * SUPRA fungible asset transfers (balance checks) and the multisig propose and execute helpers (the ABI of the
- * proposal's function, the next proposal) await reads before they request it.
+ * proposal's function, the next proposal) await reads before they request it. A helper call that takes its number from
+ * the counter does not deduplicate: a repeated call, including one from a restarted process that builds the same
+ * transaction again, submits a new transaction, with the next number when the node already holds the same transaction.
  *
  * The counter records every transaction of the account that the client submitted (accepted, or whose submission
  * request failed without an answer, explicit `sequenceNumber`s included) with its expiration time and hash (for a
@@ -54,11 +56,24 @@ export interface RetryConfig {
  * expiration time of a record by two seconds and no latest block read has reached it.
  *
  * `txExpirySecs` sets the expiration time of every transaction built without `txExpiryTime`: that many seconds after
- * the client's clock in whole seconds, at most 595 (`MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`) so that
- * a node whose clock is up to 5 seconds behind the client's accepts it. An integer from 1 to
- * `MAX_TX_EXPIRATION_DURATION` (600); default `DEFAULT_TX_EXPIRATION_DURATION` (60). The constructor throws a
- * `RangeError` otherwise. The node refuses a transaction whose expiration time is not after its clock, or more than 600
- * seconds after it, so a client whose clock is far from the node's has its transactions refused.
+ * the client's clock in whole seconds, at most `TX_EXPIRATION_MARGIN_SECS` (5) seconds less than the node's maximum
+ * time to live, so that a node whose clock is up to 5 seconds behind the client's accepts it. A positive integer;
+ * default `DEFAULT_TX_EXPIRATION_DURATION` (60). The constructor throws a `RangeError` otherwise. The node's maximum
+ * (`max_transaction_time_to_live_seconds` of `GET /rpc/v3/transactions/parameters`, 600 on Mainnet, Testnet and Devnet)
+ * is read once per client by the first builder or signature that needs it, and `getTransactionParameters()` reads it
+ * again. A builder that sends requests throws a `RangeError` when `txExpirySecs` is more than the maximum, and throws
+ * the error of a failed read of it, with no fallback. Signing throws a `RangeError` before signing when a
+ * transaction's expiration time, whoever set it, is more than the maximum after the later of the client's clock and
+ * the chain time it estimates from its reads of the latest block; with
+ * `verifyChainId: false` signing sends no request and does not check it. The builders that send no request
+ * (`transaction.build.rawTxnObject` and the like) use the maximum the client has read, else
+ * `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600), and throw a `RangeError` when `txExpirySecs` is more than it. Every
+ * `RangeError` of these checks names the maximum and says whether it was read from
+ * `GET /rpc/v3/transactions/parameters` or assumed because it had not been read; for an assumed one it names
+ * `getTransactionParameters()` as the way to read it first. The signing check allows `TX_EXPIRATION_MARGIN_SECS` (5)
+ * seconds beyond the maximum, because the client's estimate of the node's clock can trail it; the node refuses what it
+ * does not accept. The node refuses a transaction whose expiration time is not after its clock, or more than its
+ * maximum after it, so a client whose clock is far from the node's has its transactions refused.
  *
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`, and a submission request that exceeds it makes the submit helper throw
@@ -115,6 +130,15 @@ export type SupraConfig =
           /** `false` signs with `chainId` without reading the node's chain ID. Default `true`. */
           verifyChainId?: boolean;
       };
+
+/** The node's transaction parameters, from `GET /rpc/v3/transactions/parameters`. */
+export interface TransactionParameters {
+    /**
+     * The most seconds after the node's clock, in whole seconds, that the node accepts as a transaction's expiration
+     * time.
+     */
+    max_transaction_time_to_live_seconds: number;
+}
 
 /**
  * The body of `GET /rpc/v3/version`, returned by `SupraClient.getNodeVersion()`.

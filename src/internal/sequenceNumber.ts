@@ -28,6 +28,20 @@ const STALE_SEQUENCE_NUMBER_STATUSES: ReadonlySet<string> = new Set([
 const SEQUENCE_NUMBER_MESSAGE = /\bsequence[ _]number\b|\balready (?:pending|scheduled)\b/i;
 
 /**
+ * The v12 refusal of a transaction that the node's pool already holds: `transaction <hash> is already pending`, with
+ * the hash in lower-case hex without `0x`. The node gives it only when the pooled transaction is the submitted one.
+ */
+const ALREADY_PENDING_TRANSACTION_MESSAGE = /\btransaction (?:0x)?([0-9a-f]+) is already pending\b/i;
+
+/**
+ * The v11.7 refusal of a sequence number for which the node's pool already holds a transaction at a gas unit price at
+ * least the submitted one's: `Already scheduled digest=<hash>, sender=<address>, sequence_number=<n>`, with the hash in
+ * lower-case hex without `0x`. The hash is the submitted transaction's, whether the pooled transaction is the same
+ * transaction or another one with that number.
+ */
+const ALREADY_SCHEDULED_MESSAGE = /\bAlready scheduled digest=(?:0x)?([0-9a-f]+)\b/i;
+
+/**
  * Messages of the nodes' refusal of a number beyond the numbers they queue for the account ahead of its sequence
  * number on the chain: v12 names the highest number it queues (`sequence number 30 is above 25, the highest sequence
  * number this node can queue for the account`); v11.7.0 names the account's next number (`has sequence number 30 but
@@ -596,6 +610,11 @@ export function isAccountQueueFullRefusal(error: unknown): error is SupraAPIErro
  * `SEQUENCE_NUMBER_TOO_NEW`, or a status 400 whose message names the sequence number: the nodes refuse a number below
  * the account's next number, or a number that already has a pending transaction, with a message of that form and no VM
  * status. A refusal because the account's queue on the node is full (`isAccountQueueFullRefusal`) is not a stale number.
+ *
+ * A submission checks `pooledSubmissionOf` first. A refusal that shows the node holds the submitted transaction itself
+ * is an acceptance or an unknown outcome when the transaction's number did not come from the counter, and does not
+ * reach this classification; with a number from the counter, the number is recorded and the refusal is a stale
+ * number.
  */
 export function isStaleSequenceNumberError(error: unknown): boolean {
     if (isAccountQueueFullRefusal(error)) {
@@ -612,6 +631,39 @@ export function isStaleSequenceNumberError(error: unknown): boolean {
         return error.major_status !== undefined && STALE_SEQUENCE_NUMBER_STATUSES.has(error.major_status);
     }
     return false;
+}
+
+/**
+ * What the node's refusal of a submission shows its pool holds, for the submitted transaction whose hash is `hash`:
+ *
+ * - `"transaction"`: the transaction itself (v12: `transaction <hash> is already pending`, naming `hash`).
+ * - `"sequenceNumber"`: a transaction with the submitted transaction's sequence number, which is the submitted
+ *   transaction or another one (v11.7: `Already scheduled digest=<hash>, ...`, naming `hash`; the node names the
+ *   submitted transaction in both cases).
+ * - `undefined`: neither; this includes those messages when they name another hash, and every error other than a
+ *   status 400 without a Move VM status.
+ *
+ * The hashes are compared without their `0x` prefix and case.
+ */
+export function pooledSubmissionOf(error: unknown, hash: string): "transaction" | "sequenceNumber" | undefined {
+    if (!(error instanceof SupraAPIError) || error.status !== 400 || error.major_status !== undefined) {
+        return undefined;
+    }
+    const submitted = hexDigitsOf(hash);
+    const pending = ALREADY_PENDING_TRANSACTION_MESSAGE.exec(error.message);
+    if (pending !== null && hexDigitsOf(pending[1] as string) === submitted) {
+        return "transaction";
+    }
+    const scheduled = ALREADY_SCHEDULED_MESSAGE.exec(error.message);
+    if (scheduled !== null && hexDigitsOf(scheduled[1] as string) === submitted) {
+        return "sequenceNumber";
+    }
+    return undefined;
+}
+
+/** The hex digits of a hash, without a `0x` or `0X` prefix, in lower case. */
+function hexDigitsOf(hash: string): string {
+    return hash.replace(/^0x/i, "").toLowerCase();
 }
 
 /**

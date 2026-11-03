@@ -45,7 +45,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   timeout; carries `hash`, `timeoutMs`, `lastStatus`, `transaction` and the last read error as `cause`). All three
   extend `SupraError`.
 - **`SupraSubmissionOutcomeUnknownError`** (extends `SupraError`; carries `hash`, `sender`, `sequenceNumber`,
-  `expirationTimestampSecs`, `waitError`, and the error of the request as `cause`) is thrown by every submit helper
+  `expirationTimestampSecs`, `waitError`, `readStatus`, `readError`, and the error of the request as `cause`; the
+  `read` fields are set after a v11.7 `Already scheduled` refusal, see Fixed) is thrown by every submit helper
   when the submission request times out (`SupraTimeoutError`), fails before the node answers (`SupraNetworkError`), or
   is answered with a 5xx status other than 503 (`SupraAPIError`). In each case the node may have accepted the
   transaction; look `hash` up or wait for it before sending the transaction again. The submit helpers derive the hash
@@ -113,9 +114,13 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   transactions uses the higher of the account's number read and the highest number the client has observed on the
   chain. A refusal for a stale number
   (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the account's, or a number that already has a
-  pending transaction) makes the helper send the transaction once more with the next number. A transaction refused
-  for another reason has no record, and the next call uses its number. Transactions with an explicit
-  `sequenceNumber` are recorded as well. After a submission whose outcome is unknown that the node did not accept,
+  pending transaction) makes the helper send the transaction once more with the next number. A helper call that takes
+  its number from the counter does not deduplicate: a repeated call, including one from a restarted process that
+  builds the same transaction again, submits a new transaction; when the node already holds the same transaction, its
+  number stays recorded and the helper sends its transaction with the next number. A helper call with an explicit
+  `sequenceNumber` whose transaction the node already holds is handled as the submit methods handle it (see Fixed).
+  A transaction refused for another reason has no record, and the next call uses its number. Transactions with an
+  explicit `sequenceNumber` are recorded as well. After a submission whose outcome is unknown that the node did not accept,
   later calls wait behind its number in the node until the chain's time reaches its expiration time, and the next
   call then takes that number. Calls of one client
   from one account are submitted one after another: a call holds the account from taking its number until the node
@@ -131,10 +136,22 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   submission whose sequence number is beyond the numbers it queues for the account ahead of the chain's (25 by
   default). The helpers do not send it again; the next call reads the chain before it takes a number.
 - **`SupraConfig.txExpirySecs`** sets how many seconds after the client's clock (in whole seconds) a transaction built
-  without `txExpiryTime` expires: an integer from 1 to `MAX_TX_EXPIRATION_DURATION` (600), default
-  `DEFAULT_TX_EXPIRATION_DURATION` (60). The expiration time is at most 595 seconds after the client's clock
-  (`MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`), so that a node whose clock is up to 5 seconds behind the
-  client's accepts `txExpirySecs: 600`.
+  without `txExpiryTime` expires: a positive integer, default `DEFAULT_TX_EXPIRATION_DURATION` (60). The expiration
+  time is at most `TX_EXPIRATION_MARGIN_SECS` (5) seconds less than the node's maximum time to live after the client's
+  clock, so that a node whose clock is up to 5 seconds behind the client's accepts it. A builder that sends requests
+  throws a `RangeError` when `txExpirySecs` is more than the node's maximum.
+- **`getTransactionParameters()`** reads `GET /rpc/v3/transactions/parameters` and returns
+  `{ max_transaction_time_to_live_seconds }`, the most seconds after the node's clock that the node accepts as a
+  transaction's expiration time (600 on Mainnet, Testnet and Devnet). The client reads it once, when a builder that
+  sends requests or a signature first needs it, and keeps it; `getTransactionParameters()` reads it again and the
+  client uses the new value. A failed read throws its error and is not kept: there is no fallback to 600. Signing
+  throws a `RangeError` before signing when a transaction's expiration time, whoever set it, is more than the node's
+  maximum after the later of the client's clock and the chain time estimated from the client's reads of the latest
+  block, allowing `TX_EXPIRATION_MARGIN_SECS` (5) seconds of slack because that estimate can trail the node's clock;
+  with `verifyChainId: false` signing sends no request and does not check it. The builders that send no request
+  (`rawTxnObject` and the like) use the maximum the client has read, else `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600),
+  and throw a `RangeError` when `txExpirySecs` is more than it. The messages of these `RangeError`s name the maximum
+  and say whether it was read from the node or assumed; for an assumed one they name `getTransactionParameters()`.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
   `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage`,
@@ -168,6 +185,27 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
 - `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
+- **`account.getPrimaryStoreAddress({ accountAddress, metadataAddress? })`** returns the address of an account's
+  primary fungible store for a fungible asset (default SUPRA, `0xa`) with
+  `0x1::primary_fungible_store::primary_store_address`.
+- **`account.getAccountFaTransactions({ storeAddress, options? })`** reads
+  `GET /rpc/v3/accounts/{address}/fa_transactions`: the finalized transactions that withdrew from or deposited to one
+  fungible store. `storeAddress` is the store's address, for example from `getPrimaryStoreAddress`; an account
+  address returns an empty page. `getAccountHistory` lists everything that concerns an account. `options`
+  are `count`, `start`, `ascending` and `type`. Mainnet, Testnet and Devnet nodes serve the route. The feed ends like
+  `getAccountCoinTransactions`: `cursor` is `undefined` when the header is absent or empty, or on an empty page with
+  the cursor `"0"`.
+- **`account.getAccountHistory({ accountAddress, options? })`** reads `GET /rpc/v3/accounts/{address}/history`, which
+  nodes from `supra_node_v12.0.0` serve (Devnet): every finalized transaction that concerns the account, once each,
+  as `{ categories, transaction }` entries (`AccountHistoryEntry`). `options` are `categories` (a non-empty subset of
+  `"sent"`, `"coin"`, `"fa"` and `"da"`, default all four), `count`, `ascending` and `start`. The feed ends only when a
+  response has no `x-supra-cursor` header: an empty page that carries a cursor, and the cursor `"0"`, do not end it.
+  The page (`AccountHistoryPage`) also carries `indexedFrom` (`x-supra-history-indexed-from`, the lowest block height
+  the history covers) and `oldestBlock` (`x-supra-oldest-block`). The history omits automated transactions and
+  automation records; read them with `getAccountAutoTransactions`. It lists SUPRA transfers between primary fungible
+  stores, which `getAccountCoinTransactions` does not. Mainnet and Testnet nodes at v11.7.x answer HTTP 404, which
+  the method throws as **`SupraRouteUnsupportedError`** (extends `SupraNotFoundError`; carries `method` and
+  `minimumNodeRelease`, `"supra_node_v12.0.0"`).
 - **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms; an integer up to 2147483647) for predefined
   networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`, `maxDelayMs` up to 2147483647) turns on retries of GET
@@ -243,6 +281,24 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   also inside `vector` and `Option`, returns `{ value: bigint }` where it returned `{ value: string }` (the node's
   JSON). The typed contract proxy types these results with the new `MoveResultToTS`; `ReturnTypes` uses it, and
   `MoveToTS` no longer maps them to the struct name string.
+- **Breaking:** `methods.view` and the contract proxy convert a view argument or result whose type is a type parameter
+  of the function, or contains one (`vector<T>`, `0x1::option::Option<T>`, a struct over `T`), as the type with each
+  type parameter replaced by the call's type argument, as a node from `supra_node_v12.0.0` reads it. They sent and
+  returned such values as given and as the node's JSON. On a v12 node, `identity<T>(x: T): T` with the type argument
+  `u64` takes a `bigint` (sent as a JSON number and refused by the node in 1.2.0) and returns a `bigint` where it
+  returned a string, and with `0x1::object::Object<…>` returns the address where it returned `{ inner }`. Arguments
+  are checked against the substituted type before the request: `"18446744073709551616"` for `u64`, `"300"` for `u8`
+  and `"1"` for `bool` throw, where 1.2.0 sent them.
+- **Breaking:** a generic view whose type parameter occurs in a parameter or return type (outside
+  `0x1::object::Object<…>`) throws `SupraError` before the view request on a node older than `supra_node_v12.0.0`,
+  which reads every type parameter as `address`, unless its type argument is `address` or `signer`, or is
+  `0x1::object::Object<…>` and the type parameter is the whole parameter or return type. To tell, the client reads
+  `GET /rpc/v3/version` and keeps a `release` once the node reports one; after a node without one it reads again on the
+  next such call. Behind a load balancer whose nodes run different releases, the node that answers the version request
+  need not be the node that answers the view. Calls with only address-like type arguments make no version request and
+  behave as in 1.2.0 on a v11 node. In 1.2.0 such a call reached a v11 node, which refused it, or, for a value whose
+  encoding is 32 bytes (a `u256`, for example), read the value's bytes as the type argument and answered with an
+  address-formatted string. `methods.viewRaw` makes no such check.
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
   an error status, which is thrown as `SupraAPIError`.
@@ -351,11 +407,14 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   node discarded after accepting it frees its number when any read of it through the client (`waitForTransaction`,
   `getTransactionByHash`, `isPendingTransaction`, a submission's wait or read-back) returns `Invalid`.
 - **Breaking:** a transaction built without `txExpiryTime` expires `DEFAULT_TX_EXPIRATION_DURATION` (now 60) seconds
-  after the client's clock in whole seconds, or `SupraConfig.txExpirySecs` seconds (at most 595); it expired 300
-  seconds after the client's clock. This applies to every builder, including `rawTxnObject` and the other builders of
-  `transaction.build`. The node refuses a transaction whose expiration time is not after its clock or more than 600
-  seconds after it, so a client whose clock is far from the node's has its transactions refused. Set `txExpiryTime`
-  (absolute, used as given) or `txExpirySecs` for a transaction that is signed or submitted later.
+  after the client's clock in whole seconds, or `SupraConfig.txExpirySecs` seconds (at most 5 seconds less than the
+  node's maximum time to live, which `GET /rpc/v3/transactions/parameters` serves); it expired 300 seconds after the
+  client's clock. This applies to every builder, including `rawTxnObject` and the other builders of
+  `transaction.build`. The node refuses a transaction whose expiration time is not after its clock or more than its
+  maximum after it, so a client whose clock is far from the node's has its transactions refused. A transaction whose
+  expiration time is more than the node's maximum after the client's clock is refused with a `RangeError` before
+  signing, where 1.2.0 sent it and the node refused it. Set `txExpiryTime` (absolute, used as given) or `txExpirySecs`
+  for a transaction that is signed or submitted later.
 - **Breaking:** `signTransaction`, `transaction.build.signedTransaction`, `transaction.build.sendTxnPayload` and the
   `signTransaction`, `signedTransaction` and `sendTxnPayload` methods of a built transaction return promises, since a
   client's first signature reads the node's chain ID. Code that already awaits them is unaffected.
@@ -479,6 +538,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 ### Fixed
 
+- A view argument of type `0x1::object::Object<…>` inside a `vector` or an `Option` (for example
+  `vector<Object<Metadata>>`) is sent as `{ inner: <address> }`, the form the node reads there. It was sent as the
+  address, which the node refused. A top-level `Object<…>` argument is still sent as the address.
 - `transaction.build.multisigRawTxnObject` builds the execution of a proposal whose payload is stored on chain
   (`create_transaction`) when `function`, `functionTypeArgs` and `functionArgs` are left out. The payload JSON of the
   submission carries no `transaction_payload` then; it threw `Multisig payload is missing`. The derived transaction
@@ -487,6 +549,18 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   an empty body, or a value that is not a hash) is handled as an accepted submission with the hash derived from the
   signed transaction: the wait or the read-back uses that hash. A body that was not JSON threw a `SupraAPIError` with
   the 2xx status, and the other bodies were returned as the hash.
+- A submission through `transaction.submit.*` or the submit methods of a built transaction that the node refuses with
+  a 400 because its pool already holds the submitted transaction, for example when the same signed transaction is
+  submitted twice, is no longer thrown as `SupraAPIError`. The transaction commits at most once. A v12 node names the
+  transaction (`transaction <hash> is already pending`) after it has forwarded it again: the submission is handled as
+  accepted with the hash derived from the signed transaction, and the wait or the read-back uses that hash. A v11.7
+  node answers `Already scheduled digest=<hash>, ...`, also when its pool holds another transaction with the same
+  sequence number at a gas unit price at least this one's, and does not forward the submission, so the transaction is
+  read by hash once, within 5 seconds and without retries: `Success` or `Fail` is handled as accepted; `Pending`,
+  another non-final status, or a failed read other than a 404 throws `SupraSubmissionOutcomeUnknownError` with the
+  refusal as `cause` and the read's status as `readStatus` or its error as `readError` (or waits for the hash with
+  `enableWaitForTransaction`); a 404 or `Invalid` throws the refusal as
+  `SupraAPIError`, as in 1.2.0.
 - `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
   signatures were replaced with zeros when the simulation request failed.
 - `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset` and

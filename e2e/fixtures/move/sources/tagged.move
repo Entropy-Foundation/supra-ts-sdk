@@ -1,6 +1,7 @@
 /// Entry and view functions used by the end-to-end tests: functions with an unconstrained type
-/// parameter, and functions whose arguments exercise the encoding of `vector<u8>`, `Option`,
-/// fixed-point numbers and several signers.
+/// parameter, views whose parameter and return types are type parameters, and functions whose
+/// arguments exercise the encoding of `vector<u8>`, `Option`, fixed-point numbers and several
+/// signers.
 module sdk_e2e::tagged {
     use std::fixed_point32::{Self, FixedPoint32};
     use std::fixed_point64::{Self, FixedPoint64};
@@ -20,6 +21,36 @@ module sdk_e2e::tagged {
     #[view]
     public fun echo<T>(value: u64): u64 {
         value
+    }
+
+    /// A value of a type parameter in a struct, for the generic views.
+    struct Boxed<T> has copy, drop {
+        value: T,
+    }
+
+    #[view]
+    public fun identity<T: copy + drop>(value: T): T {
+        value
+    }
+
+    #[view]
+    public fun identity_vector<T: copy + drop>(values: vector<T>): vector<T> {
+        values
+    }
+
+    #[view]
+    public fun identity_option<T: copy + drop>(value: Option<T>): Option<T> {
+        value
+    }
+
+    #[view]
+    public fun boxed<T: copy + drop>(value: T): Boxed<T> {
+        Boxed { value }
+    }
+
+    #[view]
+    public fun swap<T0: copy + drop, T1: copy + drop>(first: T0, second: T1): (T1, T0) {
+        (second, first)
     }
 
     /// Succeeds with two signers.

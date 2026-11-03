@@ -25,7 +25,7 @@ export async function get<Res>(
     args: RequestParams,
     config: NetworkConfig,
     rpcVersion: string = DEFAULT_RPC_VERSION,
-): Promise<{ data: Res; cursor?: string | undefined }> {
+): Promise<{ data: Res; cursor?: string | undefined; headers: Headers }> {
     const url = buildRpcUrl(config.rpcUrl, rpcVersion, args.path);
     if (args.query) {
         for (const [key, value] of Object.entries(args.query)) {
@@ -54,6 +54,7 @@ export async function get<Res>(
         return {
             data: data as Res,
             cursor,
+            headers: response.headers,
         };
     }
 

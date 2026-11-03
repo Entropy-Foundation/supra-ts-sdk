@@ -102,6 +102,9 @@ function stubFetch(): void {
         const method = init?.method ?? "GET";
         requests.push({ method, path, body: typeof init?.body === "string" ? init.body : undefined });
 
+        if (method === "GET" && path === "/transactions/parameters") {
+            return respond(json({ max_transaction_time_to_live_seconds: 600 }));
+        }
         if (method === "POST" && path === "/transactions/simulate") return respond(node.simulate());
         if (method === "POST" && path === "/transactions/submit") return respond(node.submit());
         if (method === "GET" && path.startsWith("/transactions/")) return respond(node.transaction());

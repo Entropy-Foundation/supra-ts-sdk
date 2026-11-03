@@ -98,6 +98,9 @@ function stubNode(stub: Stub): Recorded[] {
             }
             return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(response(answer));
         }
+        if (method === "GET" && path === "/transactions/parameters") {
+            return Promise.resolve(response(json({ max_transaction_time_to_live_seconds: 600 })));
+        }
         if (method === "GET" && path === "/transactions/estimate_gas_price") {
             return Promise.resolve(
                 response(

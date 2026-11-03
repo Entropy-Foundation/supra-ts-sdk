@@ -1,14 +1,29 @@
 import { getPage } from "../client/cursor";
 import { get } from "../client/get";
-import { SupraAPIError } from "../errors/apiError";
+import { SupraAPIError, SupraNotFoundError, SupraRouteUnsupportedError } from "../errors/apiError";
 import { standardizeAddress } from "../helper/account";
 import { isMoveStruct } from "../helper/general";
-import type { AccountAddressInput, AccountData, PaginatedResponse, SupraBalance } from "../types/account";
+import type {
+    AccountAddressInput,
+    AccountData,
+    AccountHistoryCategory,
+    AccountHistoryEntry,
+    AccountHistoryPage,
+    PaginatedResponse,
+    SupraBalance,
+} from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
-import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
+import type {
+    AutoTransactionResponse,
+    CommittedTransactionResponse,
+    TransactionQueryType,
+    TransactionResponse,
+} from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { OBJECT_CORE, SUPRA_COIN_TYPE, SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
 import { viewInternal } from "./methods";
+
+const FUNGIBLE_ASSET_METADATA = "0x1::fungible_asset::Metadata";
 
 export function getAccountLegacyCoins(resources: MoveResource[]) {
     return resources
@@ -190,6 +205,128 @@ export async function getAccountCoinTransactionsInternal<T extends TransactionRe
         config,
         (data) => data,
     );
+}
+
+/**
+ * Reads `/accounts/{address}/fa_transactions`. The end of the feed is read as for `coin_transactions`, see
+ * {@link nextPageCursor}.
+ */
+export async function getAccountFaTransactionsInternal<T extends TransactionResponse = TransactionResponse>(
+    args: {
+        storeAddress: AccountAddressInput;
+        options?: {
+            count?: number;
+            start?: string | undefined;
+            ascending?: boolean;
+            type?: TransactionQueryType;
+        };
+    },
+    config: NetworkConfig,
+): Promise<PaginatedResponse<T[]>> {
+    return getPage<T[], T>(
+        {
+            path: `/accounts/${standardizeAddress(args.storeAddress)}/fa_transactions`,
+            query: {
+                count: args.options?.count,
+                start: args.options?.start,
+                ascending: args.options?.ascending,
+                type: args.options?.type,
+            },
+            cursorParam: "start",
+        },
+        config,
+        (data) => data,
+    );
+}
+
+/**
+ * Reads the address of the primary fungible store that `accountAddress` has (or would have) for the fungible asset
+ * `metadataAddress` (default SUPRA), with `0x1::primary_fungible_store::primary_store_address`.
+ */
+export async function getPrimaryStoreAddressInternal(
+    args: { accountAddress: AccountAddressInput; metadataAddress?: AccountAddressInput | undefined },
+    config: NetworkConfig,
+): Promise<string> {
+    const [store] = await viewInternal<[string]>(
+        {
+            function: "0x1::primary_fungible_store::primary_store_address",
+            functionArguments: [
+                standardizeAddress(args.accountAddress),
+                standardizeAddress(args.metadataAddress ?? SUPRA_FUNGIBLE_ASSET_ADDRESS),
+            ],
+            typeArguments: [FUNGIBLE_ASSET_METADATA],
+        },
+        config,
+    );
+    return store;
+}
+
+/** Minimum node release that serves `/accounts/{address}/history`. */
+export const ACCOUNT_HISTORY_MIN_NODE_RELEASE = "supra_node_v12.0.0";
+
+function heightHeader(headers: Headers | undefined, name: string): number | undefined {
+    const value = headers?.get(name);
+    if (value === undefined || value === null || !/^\d+$/.test(value)) {
+        return undefined;
+    }
+    return Number(value);
+}
+
+/**
+ * Reads `/accounts/{address}/history`. The feed ends only when the response has no `x-supra-cursor` header: a page
+ * can be empty and carry a cursor, and `"0"` is a valid cursor. A 404 with an empty body is the answer of a node that
+ * does not serve the route (older than v12) and is thrown as {@link SupraRouteUnsupportedError}; a 404 with a body
+ * is the node's error for the request (for example a transaction pruned during the read) and is thrown unchanged.
+ */
+export async function getAccountHistoryInternal<T extends CommittedTransactionResponse = CommittedTransactionResponse>(
+    args: {
+        accountAddress: AccountAddressInput;
+        options?: {
+            categories?: readonly AccountHistoryCategory[];
+            count?: number;
+            ascending?: boolean;
+            start?: string | undefined;
+        };
+    },
+    config: NetworkConfig,
+): Promise<AccountHistoryPage<T>> {
+    const start = args.options?.start;
+    const categories = args.options?.categories;
+    let result;
+    try {
+        result = await get<AccountHistoryEntry<T>[]>(
+            {
+                path: `/accounts/${standardizeAddress(args.accountAddress)}/history`,
+                query: {
+                    categories: categories === undefined ? undefined : categories.join(","),
+                    count: args.options?.count,
+                    ascending: args.options?.ascending,
+                    start: start === undefined || start === "" ? undefined : start,
+                },
+            },
+            config,
+        );
+    } catch (error) {
+        if (error instanceof SupraNotFoundError && error.data === undefined) {
+            throw new SupraRouteUnsupportedError({
+                status: error.status,
+                statusText: error.statusText,
+                url: error.url,
+                data: error.data,
+                method: "getAccountHistory",
+                minimumNodeRelease: ACCOUNT_HISTORY_MIN_NODE_RELEASE,
+            });
+        }
+        throw error;
+    }
+
+    const { data, cursor, headers } = result;
+    return {
+        response: data,
+        cursor: cursor === undefined || cursor === "" ? undefined : cursor,
+        indexedFrom: heightHeader(headers, "x-supra-history-indexed-from"),
+        oldestBlock: heightHeader(headers, "x-supra-oldest-block"),
+    };
 }
 
 export async function getAccountAutoTransactionsInternal<T extends AutoTransactionResponse = AutoTransactionResponse>(

@@ -29,14 +29,16 @@ export const MAX_GAS_UNITS_PER_TRANSACTION = BigInt(2_000_000_000);
  */
 export const DEFAULT_TX_EXPIRATION_DURATION = 60;
 /**
- * The largest `SupraConfig.txExpirySecs`: the nodes (v11.7.0 and v12) refuse a transaction whose expiration time is
- * more than 600 seconds after their clock in whole seconds.
+ * The node's maximum time to live of a transaction, in seconds, as Mainnet, Testnet and Devnet configure it
+ * (`max_transaction_time_to_live_seconds` of `GET /rpc/v3/transactions/parameters`). Only the builders that make no
+ * request use it, and only for a client that has not read the node's value: the builders that make requests, and
+ * signing, use the node's value.
  */
-export const MAX_TX_EXPIRATION_DURATION = 600;
+export const ASSUMED_MAX_TX_EXPIRATION_DURATION = 600;
 /**
  * Seconds by which the clocks of the client and of the node that receives a transaction may differ. A transaction
- * built without `txExpiryTime` expires at most `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS` (595) seconds
- * after the client's clock, so that a node accepts it when `txExpirySecs` is 600.
+ * built without `txExpiryTime` expires at most this many seconds before the node's maximum time to live after the
+ * client's clock, so that a node whose clock is that far behind the client's accepts it.
  */
 export const TX_EXPIRATION_MARGIN_SECS = 5;
 export const MILLISECONDS_PER_SECOND = 1000;

@@ -121,6 +121,8 @@ function stubFetch(): void {
             response = answer(HASH);
         } else if (method === "GET" && path === "/transactions/chain_id") {
             response = answer(255);
+        } else if (method === "GET" && path === "/transactions/parameters") {
+            response = answer({ max_transaction_time_to_live_seconds: 600 });
         } else if (method === "GET" && path === "/transactions/estimate_gas_price") {
             response = answer({
                 mean_gas_price: 100_000,
