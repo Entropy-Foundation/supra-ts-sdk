@@ -294,10 +294,11 @@ export class Submit {
      * `supra_node_v12.0.0` (Devnet) admits the submission and the transaction creates the account, so the sender's
      * sequence number is 1 afterwards. A v11.7.x node (Mainnet, Testnet) refuses the submission with HTTP 400,
      * "Transaction validation failed: Failed to read the AccountResource". `rawTxnObject` reads nothing from the
-     * node, so the number is the caller's.
+     * node, so the number is the caller's. The fee payer pays the gas, but a new sender holds no SUPRA, so its payload
+     * must not spend from the sender's balance (a transfer from it aborts); `create_account` below spends nothing.
      * @example
      * ```typescript
-     * import { BCS, Network, SupraAccount, SupraClient, TxnBuilderTypes } from "supra-ts-sdk";
+     * import { Network, SupraAccount, SupraClient, TxnBuilderTypes } from "supra-ts-sdk";
      *
      * const supra = new SupraClient({ network: Network.TESTNET });
      * const account = new SupraAccount(); // the sender
@@ -314,9 +315,9 @@ export class Submit {
      *   const supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject({
      *       senderAddress: accountAddress,
      *       senderSequenceNumber,
-     *       function: "0x1::supra_account::transfer",
+     *       function: "0x1::supra_account::create_account",
      *       functionTypeArgs: [],
-     *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+     *       functionArgs: [new SupraAccount().address().toUint8Array()],
      *       optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
      *   });
      *

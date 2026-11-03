@@ -414,6 +414,9 @@ submission, the transaction creates the account, and the sender's sequence numbe
 (Mainnet, Testnet) refuses the submission with HTTP 400, "Transaction validation failed: Failed to read the
 AccountResource".
 
+The fee payer pays the gas, but a new sender holds no SUPRA, so its payload must not spend from the sender's balance (a
+transfer from it aborts). `0x1::supra_account::create_account` spends nothing.
+
 ### Sequence numbers
 
 A transaction carries the sender's sequence number, and the node executes a transaction only when its number is the

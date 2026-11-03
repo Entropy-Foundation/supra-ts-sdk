@@ -701,7 +701,8 @@ A sender with no `Account` resource (`isAccountExists` is `false`) uses sequence
 `getAccountInfo`, which throws for an absent account. The simulation succeeds. A node from `supra_node_v12.0.0` (Devnet)
 admits the submission, and the sender's sequence number is 1 afterwards; a v11.7.x node (Mainnet, Testnet) refuses it
 with HTTP 400 ("Failed to read the AccountResource"). `rawTxnObject` reads nothing from the node, so the caller passes
-the number.
+the number. The fee payer pays the gas, but a new sender holds no SUPRA, so its payload must not spend from the sender's
+balance (a transfer from it aborts); `create_account` below spends nothing.
 
 ```typescript
 const accountAddress = account.address();
@@ -712,9 +713,9 @@ const senderSequenceNumber = (await supra.account.isAccountExists({ accountAddre
 const sponsoredTxn = supra.transaction.build.rawTxnObject({
     senderAddress: accountAddress,
     senderSequenceNumber,   // 0n for a sender with no account, else the account's next sequence number
-    function: "0x1::supra_account::transfer",
+    function: "0x1::supra_account::create_account",
     functionTypeArgs: [],
-    functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+    functionArgs: [new SupraAccount().address().toUint8Array()],
     optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
 });
 
