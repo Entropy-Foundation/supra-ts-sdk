@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - YYYY-MM-DD
+## [2.0.0] - 2026-11-03
 
-This release supports Supra node v11.7.0, which runs on Mainnet and Testnet, and the v12.0.0 release candidates, which
+This release supports Supra node v11.7.2, which runs on Mainnet and Testnet, and the v12.0.0 release candidates, which
 run on Devnet. [`compatibility.json`](./compatibility.json) lists the node releases that each SDK release supports.
 Entries marked **Breaking:** change behaviour or types that code written for 1.2.0 can depend on;
 [MIGRATION.md](./MIGRATION.md) describes what to change for each of them.

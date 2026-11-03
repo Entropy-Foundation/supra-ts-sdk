@@ -1,6 +1,6 @@
 # Migrating from 1.2.0 to 2.0.0
 
-`supra-ts-sdk` 2.0.0 supports Supra node v11.7.0 (Mainnet and Testnet) and the v12.0.0 release candidates (Devnet).
+`supra-ts-sdk` 2.0.0 supports Supra node v11.7.2 (Mainnet and Testnet) and the v12.0.0 release candidates (Devnet).
 This guide lists every breaking change from 1.2.0, grouped by topic, and what to change for each. The
 [CHANGELOG](./CHANGELOG.md) lists every change of the release, including the additions.
 
