@@ -345,7 +345,7 @@ await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: account
 
 ## Automation Tasks
 
-An automation task is registered with `transaction.build.automationRegistrationRawTxnObject`, a builder that makes no request (pass `gasUnitPrice`, and `maxGas` for a sender with less than 20 SUPRA). Passing `automationTaskType` (`"User"` or `"System"`) or `automationPriority` (a `u64` `bigint`) makes it a version 2 registration; without them it is version 1. v11.7.0 and v12 nodes accept both. Without a priority the registry uses the task's index as its priority. A `"System"` task can be registered only by an account the Supra framework has authorised (others abort with `EUNAUTHORIZED_SYSTEM_ACCOUNT`). `automationGasPriceCap` must not be below the node's minimum gas unit price, and `automationAuxData` must be `[]`.
+An automation task is registered with `transaction.build.automationRegistrationRawTxnObject`, a builder that makes no request (pass `gasUnitPrice`, and `maxGas` for a sender with less than 20 SUPRA). Passing `automationTaskType` (`"User"` or `"System"`) or `automationPriority` (a `u64` `bigint`) makes it a version 2 registration; without them it is version 1. v11.7.0 and v12 nodes accept both. Without a priority the registry uses the task's index as its priority. `automationPriority` is for system tasks only: a user task that carries one aborts (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when it is given with `"User"` or with no task type. A `"System"` task can be registered only by an account the Supra framework has authorised (others abort with `EUNAUTHORIZED_SYSTEM_ACCOUNT`). `automationGasPriceCap` must be at least the node's minimum gas unit price (`supra.getMinGasUnitPrice()`); a lower cap is refused at validation (submit: `SupraAPIError`, 400 `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND`; simulation: `SupraSimulationFailedError`), and the builder does not check it. `automationAuxData` must be `[]`.
 
 The registration's `0x1::automation_registry::AutomationTaskMetaData` event carries the `task_index`. `supra.automation.cancelAutomationTask` (`cancel_task`) and `supra.automation.stopAutomationTasks` (`stop_tasks`) take it, submit through the client's sequence-number counter like the transfers, and estimate their max gas. Both abort for a task of another account and while the registry moves to the next automation cycle (`ECYCLE_TRANSITION_IN_PROGRESS`).
 
@@ -363,7 +363,6 @@ const registration = supra.transaction.build.automationRegistrationRawTxnObject(
     automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
     automationAuxData: [],
     automationTaskType: "User",
-    automationPriority: 10n,
     optionalTransactionPayloadArgs: { gasUnitPrice },
 });
 const registered = await registration.submitTransaction({

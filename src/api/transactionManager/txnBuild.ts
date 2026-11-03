@@ -217,6 +217,10 @@ export class Build {
      * version 2 registration of task type `User` without a priority register the same task; the node records the
      * version in the transaction's payload.
      *
+     * A priority belongs to system tasks only. The registry aborts the registration of a user task that carries one
+     * (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when `automationPriority` is given
+     * with task type `"User"` or with no task type.
+     *
      * The node registers the task with `0x1::automation_registry`, which emits an
      * `0x1::automation_registry::AutomationTaskMetaData` event whose `task_index` is the index that
      * `Automation.cancelAutomationTask` and `Automation.stopAutomationTasks` take.
@@ -226,18 +230,21 @@ export class Build {
      * @param args.functionTypeArgs - Target function type args
      * @param args.functionArgs - Target function args
      * @param args.automationMaxGasAmount - Max gas amount for automated transaction
-     * @param args.automationGasPriceCap - Gas unit price upper limit that user is willing to pay. The node refuses a
-     * registration whose cap is below its minimum gas unit price.
+     * @param args.automationGasPriceCap - Gas unit price upper limit that user is willing to pay. It must be at
+     * least the node's minimum gas unit price (`getMinGasUnitPrice()`). Otherwise the node refuses the registration at
+     * validation: the submit call answers with a `SupraAPIError` (status 400, `MoveTransactionValidationFailed` with
+     * `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND`) and a simulation reports `Invalid` with the same status, as a
+     * `SupraSimulationFailedError`. The builder does not check the cap.
      * @param args.automationFeeCapForEpoch - Maximum automation fee that user is willing to pay for epoch.
      * @param args.automationExpirationTimestampSecs - Expiration time of the automated transaction in seconds since UTC Epoch start.
      * @param args.automationAuxData - Reserved for future extensions of registration parameters. Where the node adds
      * the task type and the priority to the auxiliary data (feature `SUPRA_AUTOMATION_V2`, enabled on Mainnet, Testnet
      * and Devnet), the registry accepts only an empty list.
-     * @param args.automationTaskType - Task type of a version 2 registration: `"User"` (the default when only
-     * `automationPriority` is given) or `"System"`. Only an account that the Supra framework has authorised to
-     * register system tasks can register a `"System"` task; the registration of any other account aborts.
-     * @param args.automationPriority - Priority of a version 2 registration, a `u64`. Without a priority the registry
-     * uses the task's index as its priority.
+     * @param args.automationTaskType - Task type of a version 2 registration: `"User"` or `"System"`. Only an account
+     * that the Supra framework has authorised to register system tasks can register a `"System"` task; the
+     * registration of any other account aborts.
+     * @param args.automationPriority - Priority of a system task, a `u64`; allowed only with `automationTaskType:
+     * "System"`. A user task has no priority: the registry uses the task's index as its priority.
      * @param args.optionalTransactionPayloadArgs Optional arguments for transaction payload. This builder makes no
      * request: without a `maxGas` on the call or the client, the max gas is `DEFAULT_MAX_GAS_UNITS` (20,000 units). The
      * node requires the sender's SUPRA balance to cover `max gas × gas unit price` at validation: 20,000 units at a
@@ -245,8 +252,9 @@ export class Build {
      * cannot read the node's gas unit price estimate: without a `gasUnitPrice` on the call or the client it throws a
      * `RangeError`; `supra.getEstimatedGasUnitPrice()` returns the estimate.
      * @returns Raw transaction object
-     * @throws `RangeError` before building when `automationTaskType` is not `"User"` or `"System"`, or
-     * `automationPriority` is not a `bigint` from 0 to 2^64 - 1
+     * @throws `RangeError` before building when `automationTaskType` is not `"User"` or `"System"`,
+     * `automationPriority` is given without `automationTaskType: "System"`, or `automationPriority` is not a `bigint`
+     * from 0 to 2^64 - 1
      * @example
      * ```typescript
      * import { BCS, MILLISECONDS_PER_SECOND, Network, SupraAccount, SupraClient } from "supra-ts-sdk";
@@ -258,7 +266,7 @@ export class Build {
      * async function runExample() {
      *     const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
      *
-     *     // Version 2 registration of a user task with priority 10
+     *     // Version 2 registration of a user task (a user task has no priority)
      *     const registration = supra.transaction.build.automationRegistrationRawTxnObject({
      *         senderAddress: account.address(),
      *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
@@ -271,7 +279,6 @@ export class Build {
      *         automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 60 * 60),
      *         automationAuxData: [],
      *         automationTaskType: "User",
-     *         automationPriority: 10n,
      *         optionalTransactionPayloadArgs: { gasUnitPrice },
      *     });
      *
