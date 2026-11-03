@@ -229,7 +229,7 @@ describeE2E("v4 operations", () => {
             expect(settlement.stages[0]).toMatchObject({
                 stage: "recorded",
                 transaction_hash: depositHash.replace(/^0x/, ""),
-                amount: 12_345,
+                amount: 12_345n,
             });
             expect(settlement.stages[0]?.recipient).toEqual({ domain: "evm", address: recipient });
 
@@ -252,6 +252,8 @@ describeE2E("v4 operations", () => {
                 (value) => value.stages.some((stage) => stage.stage === "credited_on_evm"),
             );
             expect(settled.settlement_id).toBe(settlement.settlement_id);
+            expect(settled.stages.every((stage) => typeof stage.amount === "bigint")).toBe(true);
+            expect(settled.stages.find((stage) => stage.stage === "credited_on_evm")?.amount).toBe(12_345n);
             expect(settled.stages.map((stage) => stage.stage)).toEqual(
                 expect.arrayContaining(["recorded", "credited_on_evm"]),
             );
