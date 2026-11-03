@@ -205,10 +205,12 @@ const { response: resources, cursor } = await supra.account.getAccountResources(
     options: { count: 10 },
 });
 
-// Get specific resource
-const resource = await supra.account.getAccountResource<{ coin: { value: string } }>({
+// Get specific resource. 0x1::account::Account exists for every account. A CoinStore<SupraCoin> resource exists only
+// for SUPRA held as a coin (Mainnet, Testnet); it is a 404 for an account whose SUPRA is in a primary fungible
+// store (Devnet). Read SUPRA balances with getAccountSupraCoinBalance.
+const resource = await supra.account.getAccountResource<{ sequence_number: string; authentication_key: string }>({
     accountAddress: account.address(),
-    resourceType: "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>",
+    resourceType: "0x1::account::Account",
 });
 
 // Get account modules (paginated)
@@ -243,7 +245,8 @@ for (const { categories, transaction } of history.response) {
 // Get the fungible asset transactions of ONE fungible store (all networks). It takes a store address, not an
 // account address (an account address returns an empty page). Derive the primary store of an account first
 // (SUPRA by default; pass metadataAddress for another asset). For everything that concerns an account use
-// getAccountHistory (nodes from supra_node_v12.0.0).
+// getAccountHistory (nodes from supra_node_v12.0.0). SUPRA held in a CoinStore (Mainnet, Testnet) is listed by
+// getAccountCoinTransactions({ accountAddress }), which returns an empty page for SUPRA held in a primary store.
 const storeAddress: string = await supra.account.getPrimaryStoreAddress({ accountAddress: account.address() });
 const { response: faTxns } = await supra.account.getAccountFaTransactions({
     storeAddress,
@@ -785,9 +788,13 @@ const sponsored = await supra.transaction.submit.submitSponsorTransaction({
 
 ## Events
 
+SUPRA deposits are `0x1::coin::CoinDeposit` events (field `account`) where SUPRA is held in a `CoinStore` (Mainnet,
+Testnet) and `0x1::fungible_asset::Deposit` events (field `store`: the fungible store, not the account) where it is held
+in a primary fungible store (Devnet). Read both on a network that may hold SUPRA in both forms.
+
 ```typescript
 const { response: events, cursor } = await supra.events.getEventsByType({
-    eventType: "0x1::fungible_asset::Deposit",
+    eventType: "0x1::coin::CoinDeposit", // or "0x1::fungible_asset::Deposit"
     options: { limit: 100, startHeight: 1000, endHeight: 2000 }, // endHeight is exclusive
 });
 ```

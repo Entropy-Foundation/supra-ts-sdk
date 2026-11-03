@@ -173,13 +173,19 @@ console.log(info.version, info.branch, info.commit_hash, info.build_time, info.b
 Paginated methods return `{ response, cursor }`. Pass `cursor` back unchanged until it is `undefined`. A page
 can be empty and still carry a cursor.
 
+This example reads the feed of the account's primary fungible store, which holds the account's SUPRA on a chain
+created from the `supra_node_v12.0.0` genesis (Devnet) and works on every network. SUPRA held in a `CoinStore`
+(Mainnet and Testnet nodes at v11.7.x) is listed by `getAccountCoinTransactions`, which takes the account address and
+returns an empty page for SUPRA held in a primary store. `getAccountHistory`, below, covers both.
+
 ```ts
 import { TransactionType } from 'supra-ts-sdk';
 
+const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: sender.address() });
 let cursor: string | undefined;
 do {
-  const page = await supra.account.getAccountCoinTransactions({
-    accountAddress: sender.address(),
+  const page = await supra.account.getAccountFaTransactions({
+    storeAddress,
     options: { count: 50, start: cursor },
   });
   for (const txn of page.response) {
@@ -198,9 +204,10 @@ do {
 
 `getAccountHistory` lists every finalized transaction that concerns an account, once each, with the categories it
 matched (`sent`, `coin`, `fa`, `da`). It lists SUPRA transfers between primary fungible stores, which
-`getAccountCoinTransactions` does not. It needs a node from `supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at
-v11.7.x answer HTTP 404, which the SDK throws as `SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits
-automated transactions and automation records; read those with `getAccountAutoTransactions`.
+`getAccountCoinTransactions` does not, and lists SUPRA held in a `CoinStore` as well. It needs a node from
+`supra_node_v12.0.0` (Devnet): Mainnet and Testnet nodes at v11.7.x answer HTTP 404, which the SDK throws as
+`SupraRouteUnsupportedError`, a `SupraNotFoundError`. It omits automated transactions and automation records; read
+those with `getAccountAutoTransactions`.
 
 ```ts
 let cursor: string | undefined;

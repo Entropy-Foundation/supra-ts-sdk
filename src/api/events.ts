@@ -31,6 +31,10 @@ export class Events {
 
     /**
      * Get the events of the given type.
+     *
+     * SUPRA deposits are `0x1::coin::CoinDeposit` events (field `account`) where SUPRA is held in a `CoinStore`, and
+     * `0x1::fungible_asset::Deposit` events (field `store`, the fungible store, not the account) where it is held in
+     * a primary fungible store.
      * @param args.eventType - Type of event
      * @param args.options - The options object is required and can be empty.
      * @param args.options.startHeight - Starting block height (inclusive)
@@ -48,7 +52,7 @@ export class Events {
      * const supra = new SupraClient({ network: Network.TESTNET });
      *
      * async function runExample() {
-     *    const eventType = "0x1::coin::Transfer";
+     *    const eventType = "0x1::coin::CoinDeposit";
      *    const {response: events, cursor} = await supra.events.getEventsByType({ eventType: eventType, options: {} });
      *    console.log(events);
      * }
