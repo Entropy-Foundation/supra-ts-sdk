@@ -153,6 +153,68 @@ describe("viewBatch", () => {
         ]);
     });
 
+    describe("an element of a generic view function", () => {
+        const genericAbi = {
+            address: "0x1",
+            name: "m",
+            friends: [],
+            exposed_functions: ["echo", "object"].map((name) => ({
+                name,
+                visibility: "public",
+                is_entry: false,
+                is_view: true,
+                generic_type_params: [{ constraints: ["copy", "drop"] }],
+                params: [name === "echo" ? "T0" : "0x1::object::Object<T0>"],
+                return: [name === "echo" ? "T0" : "0x1::object::Object<T0>"],
+            })),
+            structs: [],
+        } as never;
+
+        it("encodes the argument and converts the result as the type argument, with no version read", async () => {
+            mockPost.mockResolvedValue({ results: [{ result: ["12345"] }, { result: [{ inner: "0xa" }] }] });
+
+            const response = await methods.viewBatch({
+                requests: [
+                    { function: "0x1::m::echo", typeArguments: ["u64"], functionArguments: [12345n], abi: genericAbi },
+                    {
+                        function: "0x1::m::object",
+                        typeArguments: ["0x1::fungible_asset::Metadata"],
+                        functionArguments: ["0xa"],
+                        abi: genericAbi,
+                    },
+                ],
+            });
+
+            expect(mockPost.mock.calls[0]![0].data).toEqual({
+                requests: [
+                    { function: "0x1::m::echo", type_arguments: ["u64"], arguments: ["12345"] },
+                    {
+                        function: "0x1::m::object",
+                        type_arguments: ["0x1::fungible_asset::Metadata"],
+                        arguments: ["0xa"],
+                    },
+                ],
+            });
+            expect(response.results).toEqual([{ result: [12345n] }, { result: ["0xa"] }]);
+            expect(mockGet).not.toHaveBeenCalled();
+        });
+
+        it("throws SupraRouteUnsupportedError for a 404, without reading the node release", async () => {
+            mockPost.mockRejectedValue(v11NotFound());
+
+            const failure = await methods
+                .viewBatch({
+                    requests: [
+                        { function: "0x1::m::echo", typeArguments: ["u64"], functionArguments: [1n], abi: genericAbi },
+                    ],
+                })
+                .catch((error: unknown) => error);
+
+            expect(failure).toBeInstanceOf(SupraRouteUnsupportedError);
+            expect(mockGet).not.toHaveBeenCalled();
+        });
+    });
+
     it("reads no ABI for an element that carries one", async () => {
         mockPost.mockResolvedValue({ results: [{ result: ["5"] }] });
 

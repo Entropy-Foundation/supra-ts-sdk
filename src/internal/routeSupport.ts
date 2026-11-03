@@ -24,6 +24,11 @@ function isHandlerNotFoundBody(data: unknown, id: string): boolean {
  * Runs a request to a route that only nodes from {@link V4_ROUTES_MIN_NODE_RELEASE} serve, and rethrows an HTTP 404 as
  * `SupraRouteUnsupportedError` naming `method`.
  *
+ * Unlike `getAccountHistory`, which maps only a 404 with an empty body, this maps every 404 of a route whose v12
+ * handler never answers 404 itself: a v11.7.x node answers the settlements list with a plain-text 404 (the path
+ * matches `/transactions/{hash}`), which an empty-body rule would leave as a plain not-found. A route whose handler
+ * does answer 404 is named in `handlerNotFoundFor`.
+ *
  * @param args.handlerNotFoundFor - The id of the resource of a route whose handler answers 404 itself for a resource
  * it does not hold (a settlement id the node never executed): a 404 whose JSON `message` names that id is then the
  * node's answer and is rethrown unchanged, and any other 404 means the route is absent.
