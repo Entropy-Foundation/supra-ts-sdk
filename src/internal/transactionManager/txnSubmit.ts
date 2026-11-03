@@ -2,12 +2,17 @@ import { HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core
 import { post } from "../../client/post";
 import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
-import type { CommittedTransactionResponse, WaitForTransactionOptions } from "../../types/transaction";
+import {
+    TransactionStatus,
+    type CommittedTransactionResponse,
+    type WaitForTransactionOptions,
+} from "../../types/transaction";
 import { SupraAPIError } from "../../errors/apiError";
 import { SupraSubmissionOutcomeUnknownError, SupraTransactionTimeoutError } from "../../errors/transactionError";
 import { ed25519TransactionAuthenticator, transactionHashOf, withTransactionHash } from "./txnHash";
 import {
     bindReservation,
+    pooledSubmissionOf,
     reservationOf,
     sequenceNumberTrackerOf,
     settleFailedSubmissionInternal,
@@ -266,7 +271,19 @@ async function submitUnmappedTxnInternal(
         if (isUnreadableAcceptance(error)) {
             // The node accepted the transaction with a 2xx status, and its body is not JSON.
             answer = undefined;
+        } else if (reservation === undefined && (await holdsSubmittedTransaction(error, derivedHash, config))) {
+            // The node's pool holds this transaction, which the caller signed or numbered (its number did not come
+            // from the counter), from an earlier submission of it. It is pending, so the submission is handled as
+            // accepted, with the derived hash, and the record below keeps its number taken.
+            answer = derivedHash;
         } else {
+            if (reservation !== undefined && (await holdsSubmittedTransaction(error, derivedHash, config))) {
+                // The number came from the counter, so the pooled transaction was submitted by another call (of another
+                // client, or of this client before `resetSequenceNumber`) that built the same transaction. Its number is
+                // recorded as taken, and the refusal is settled below as a stale number, so the helper sends its own
+                // transaction once more with the next number.
+                tracker.record(rawTxn.sender, rawTxn.sequence_number, rawTxn.expiration_timestamp_secs, derivedHash);
+            }
             const settled = settleFailedSubmissionInternal({ rawTxn, reservation, hash: derivedHash }, error, config);
             if (!settled.mayHaveAccepted) {
                 // A refusal, including one for a price below the node's minimum: the number is handed out again.
@@ -307,6 +324,35 @@ async function submitUnmappedTxnInternal(
  */
 function isUnreadableAcceptance(error: unknown): boolean {
     return error instanceof SupraAPIError && error.status >= 200 && error.status < 300;
+}
+
+/**
+ * Whether the error of a submission request is the node's refusal of a transaction that its pool already holds, the
+ * submitted transaction whose hash is `hash` (`pooledSubmissionOf`):
+ *
+ * - The v12 refusal that names `hash` (`"transaction"`): yes.
+ * - The v11.7 refusal that names `hash` (`"sequenceNumber"`), which the node also gives when its pool holds another
+ *   transaction with the same sequence number: the transaction is read by hash from the node. Yes when the read
+ *   returns a status other than `Invalid`; no when it returns `Invalid`, 404 or fails.
+ * - Any other error: no.
+ */
+async function holdsSubmittedTransaction(error: unknown, hash: string, config: NetworkConfig): Promise<boolean> {
+    const pooled = pooledSubmissionOf(error, hash);
+    if (pooled === "transaction") {
+        return true;
+    }
+    if (pooled === undefined) {
+        return false;
+    }
+    try {
+        const transaction = await getTransactionByHashInternal(
+            { transactionHash: hash, exclude_uncommitted: false },
+            config,
+        );
+        return transaction.status !== TransactionStatus.Invalid;
+    } catch {
+        return false;
+    }
 }
 
 /** Whether the node's answer to a submission is a transaction hash: `0x` followed by 64 hex digits. */

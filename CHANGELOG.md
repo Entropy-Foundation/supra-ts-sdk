@@ -474,6 +474,17 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   an empty body, or a value that is not a hash) is handled as an accepted submission with the hash derived from the
   signed transaction: the wait or the read-back uses that hash. A body that was not JSON threw a `SupraAPIError` with
   the 2xx status, and the other bodies were returned as the hash.
+- A submission that the node refuses with a 400 because its pool already holds the submitted transaction, for example
+  when the same signed transaction is submitted twice, is handled as an accepted submission with the hash derived from
+  the signed transaction when the transaction's sequence number is the caller's (`transaction.submit.*`, the submit
+  methods of a built transaction, and helper calls with `sequenceNumber`): the wait or the read-back uses that hash,
+  and the number stays taken in the client's counter. The refusal was thrown as `SupraAPIError`. For a helper call
+  whose number came from the client's counter, the pending transaction is another call's that built the same
+  transaction: the number stays taken and the helper sends its transaction once more with the next number. A v12 node
+  names the transaction (`transaction <hash> is already pending`). A v11.7 node answers
+  `Already scheduled digest=<hash>, ...` also when its pool holds another transaction with the same sequence number,
+  so the transaction is first read by hash, and the refusal is handled as before when that read returns 404 or
+  `Invalid`, or fails.
 - `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
   signatures were replaced with zeros when the simulation request failed.
 - `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset` and

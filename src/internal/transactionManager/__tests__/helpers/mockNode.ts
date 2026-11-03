@@ -16,11 +16,14 @@ import { hashOfSubmittedBody } from "./submittedHash";
  *   `SEQUENCE_NUMBER_TOO_NEW` above the chain's number, `SEQUENCE_NUMBER_TOO_OLD` below it, a Move abort for a transfer
  *   of `ABORT_AMOUNT`, and otherwise `Success` with 1,000 gas units used.
  * - A submission is refused with 400 and the messages of a v12 node: below the chain's number, for a number in the
- *   pool (`already pending`), for a number at or beyond the window ahead of the chain's number (the account's queue is
- *   full), for an expiration time not after the node's clock, and for an expiration time more than 600 s after the
- *   node's clock in whole seconds. Otherwise it is accepted. `refuseNext` answers the next submissions of a number with
- *   the status and message given, and pools the transaction when `pool` is set. A pooled transaction has the hash a
- *   node gives it: the Keccak-256 of the BCS of the signed transaction in the request body (`hashOfSubmittedBody`).
+ *   pool (`transaction <hash> is already pending` when the pooled transaction is the submitted one, else `a transaction
+ *   with sequence number N is already pending`; with `duplicateMessages: "v11"`, the v11.7 `Already scheduled
+ *   digest=<hash of the submitted transaction>, ...` for both), for a number at or beyond the window ahead of the chain's
+ *   number (the account's queue is full), for an expiration time not after the node's clock, and for an expiration time
+ *   more than 600 s after the node's clock in whole seconds. Otherwise it is accepted. `refuseNext` answers the next
+ *   submissions of a number with the status and message given (a function of the submitted transaction's hash, or a
+ *   string), and pools the transaction when `pool` is set. A pooled transaction has the hash a node gives it: the
+ *   Keccak-256 of the BCS of the signed transaction in the request body (`hashOfSubmittedBody`).
  * - `GET /transactions/estimate_gas_price` returns `gasPrice` (median and minimum, 100,000 each by default). A
  *   submission or simulation whose gas unit price is below `gasPrice.min` is refused with
  *   `GAS_UNIT_PRICE_BELOW_MIN_BOUND`, as the nodes do (400 for a submission, status `Invalid` for a simulation).
@@ -58,6 +61,8 @@ export interface MockNodeOptions {
     window?: number;
     /** The node's clock at the start, in milliseconds since the Unix epoch. */
     startMs?: number;
+    /** The messages of the refusal of a number in the pool: a v12 node's (default) or a v11.7 node's. */
+    duplicateMessages?: "v12" | "v11";
 }
 
 /** The node's monotonic clock, read from `performance.now` directly, so a test's mock of the SDK's clocks does not move it. */
@@ -93,7 +98,10 @@ export class MockNode {
     /** The number of requests of each kind. */
     readonly counts: Record<string, number> = {};
     /** The answer to the next submissions of a sequence number: `times` of them (default 1). */
-    readonly refuseNext = new Map<number, { status: number; message: string; times?: number; pool?: boolean }>();
+    readonly refuseNext = new Map<
+        number,
+        { status: number; message: string | ((hash: string) => string); times?: number; pool?: boolean }
+    >();
     /** The sequence numbers submitted, in order of arrival. */
     readonly submitted: number[] = [];
     /** Every submission, in order of arrival. */
@@ -116,6 +124,7 @@ export class MockNode {
     private seed: number;
     private readonly latencyMs: [number, number];
     private readonly window: number;
+    private readonly duplicateMessages: "v12" | "v11";
     private readonly startMs: number;
     private readonly startPerformance = nodePerformanceNow();
     private advancedMs = 0;
@@ -127,6 +136,7 @@ export class MockNode {
         this.latencyMs = options.latencyMs ?? [1, 2];
         this.seed = options.seed ?? 1;
         this.window = options.window ?? 25;
+        this.duplicateMessages = options.duplicateMessages ?? "v12";
         this.startMs = options.startMs ?? Date.now();
         if (options.blockMs !== undefined) {
             this.timer = setInterval(() => this.tick(), options.blockMs);
@@ -367,17 +377,15 @@ export class MockNode {
             if (refusal.pool === true) {
                 this.accept(sequenceNumber, expiration, body);
             }
-            answer = { status: refusal.status, body: { message: refusal.message } };
+            const message =
+                typeof refusal.message === "string" ? refusal.message : refusal.message(hashOfSubmittedBody(body));
+            answer = { status: refusal.status, body: { message } };
         } else if (sequenceNumber < this.chain) {
             answer = refused(
                 `sequence number ${sequenceNumber} is below the account's next sequence number ${this.chain}`,
             );
         } else if (this.pool.has(sequenceNumber)) {
-            answer = refused(
-                `a transaction with sequence number ${sequenceNumber} is already pending for this account at gas ` +
-                    "unit price 100000; a replacement must offer a higher gas unit price than that, and this one " +
-                    "offers 100000",
-            );
+            answer = this.refuseDuplicate(sequenceNumber, body);
         } else if (sequenceNumber >= this.chain + this.window) {
             answer = refused(
                 `sequence number ${sequenceNumber} is above ${this.chain + this.window - 1}, the highest sequence ` +
@@ -420,6 +428,24 @@ export class MockNode {
         this.submissions.push({ sequenceNumber, expiration, body, status: answer.status });
         this.log.push(`SUBMIT ${sequenceNumber} (chain ${this.chain}) -> 400 below the minimum gas unit price`);
         return this.respond(answer);
+    }
+
+    /** The refusal of a submission whose number the pool holds, in the messages of `duplicateMessages`. */
+    private refuseDuplicate(sequenceNumber: number, body: string): Answer {
+        const hash = hashOfSubmittedBody(body);
+        const digits = hash.replace(/^0x/, "");
+        if (this.duplicateMessages === "v11") {
+            const sender = (JSON.parse(body) as { Move: { raw_txn: { sender: string } } }).Move.raw_txn.sender;
+            return refused(`Already scheduled digest=${digits}, sender=${sender}, sequence_number=${sequenceNumber}`);
+        }
+        if (this.pool.get(sequenceNumber)?.hash === hash) {
+            return refused(`transaction ${digits} is already pending`);
+        }
+        return refused(
+            `a transaction with sequence number ${sequenceNumber} is already pending for this account at gas ` +
+                "unit price 100000; a replacement must offer a higher gas unit price than that, and this one " +
+                "offers 100000",
+        );
     }
 
     /** Pools the transaction of `body` under the hash a node gives it, and returns that hash. */

@@ -354,6 +354,14 @@ transfers, `publishPackage`, the automation task helpers, the multisig helpers a
   status or 503 did not accept the transaction; that is thrown as `SupraAPIError`, or as
   `SupraGasUnitPriceBelowMinimumError` for a gas unit price below the node's minimum. A 2xx answer whose body is not a
   transaction hash is an accepted submission, and the derived hash is used in place of the body.
+- A 400 that says the node's pool already holds the submitted transaction, for example when the same signed
+  transaction is submitted twice, is handled as an accepted submission with the derived hash when the transaction's
+  sequence number is the caller's (the `transaction.submit` methods, the submit methods of a built transaction, and
+  helper calls with `sequenceNumber`): the call waits for it or reads it back as above, and the transaction commits
+  once. A v12 node names the transaction (`transaction <hash> is already pending`). A v11.7 node answers
+  `Already scheduled digest=<hash>, ...` also when its pool holds another transaction with the same sequence number,
+  so the SDK first reads the transaction by hash; when that read returns 404 or `Invalid`, or fails, the refusal is
+  thrown as `SupraAPIError`.
 
 ```ts
 import {
@@ -430,7 +438,9 @@ the entry functions of `Contract.fromABI` take the number from a counter that th
 - When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the
   account's, or a number that already has a pending transaction, for example one sent by another client), the helper
   sends the transaction once more with the next number. A second refusal is thrown. A transaction with an explicit
-  number is not retried.
+  number is not retried. When the refusal shows that the pending transaction is the one the helper built (another
+  call, for example of another client, built the same transaction with the same number), that number stays taken and
+  the helper sends its transaction once more with the next number (see [Transaction outcomes](#transaction-outcomes)).
 - When the node refuses a number because its queue for the account is full, `SupraAccountQueueFullError` is thrown and
   the transaction is not sent again.
 - After a submission whose outcome is unknown and that the node did not in fact accept, later transactions wait in the
