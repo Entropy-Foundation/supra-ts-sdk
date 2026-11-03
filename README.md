@@ -738,12 +738,19 @@ const [value] = await supra.methods.view<[bigint]>({
 console.log(value); // 12345n
 ```
 
+An `0x1::object::Object<…>` argument is given as its address. Inside a `vector` or an `Option` the node reads an
+`Object` as the struct `{ inner: <address> }`, and the SDK sends it in that form there.
+
 A v11 node (Mainnet, Testnet) reads every type parameter as `address`, so for any other type argument it refuses the
-request or reads the value's bytes as the wrong type. Type arguments other than `address`, `signer` and
-`0x1::object::Object<…>`, for a type parameter that occurs in a parameter or return type outside `Object<…>`, therefore
-need a node from `supra_node_v12.0.0` (Devnet). For such a call the client reads `GET /rpc/v3/version` once and keeps
-the answer; on a node that reports no `release` the call throws `SupraError` before the view request is sent. Calls with
-only address-like type arguments make no version request and work on both.
+request or reads the value's bytes as the wrong type. A type parameter that occurs in a parameter or return type outside
+`Object<…>` therefore needs a node from `supra_node_v12.0.0` (Devnet) unless its type argument is `address` or
+`signer`, or is `0x1::object::Object<…>` and the type parameter is the whole parameter or return type (inside a
+`vector` or `Option` a v12 node reads the `Object` as `{ inner }` and a v11 node as an address). For such a call the
+client reads `GET /rpc/v3/version` and keeps a `release` once the node reports one; on a node that reports none the call
+throws `SupraError` before the view request is sent, and the next such call reads the version again. Behind a load
+balancer whose nodes run different releases, as during an upgrade, the SDK cannot tell which node answers the view.
+Calls with only address-like type arguments make no version request and work on both. `methods.viewRaw` makes no such
+check.
 
 ### Automation tasks
 

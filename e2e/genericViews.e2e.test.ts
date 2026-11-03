@@ -10,8 +10,9 @@ import { publishTaggedModule } from "./helpers/taggedModule";
  * views of `sdk_e2e::tagged` in `fixtures/move`), called through `methods.view`.
  *
  * A node from `supra_node_v12.0.0` converts arguments and results of a type parameter as the request's type argument.
- * A v11 node reads every type parameter as `address`: there only address type arguments, and `Object<T>`, which it
- * lays out as an address, can be called, and the SDK refuses any other type argument before the view request.
+ * A v11 node reads every type parameter as `address`: there only address type arguments, and `Object<T>` for a type
+ * parameter that is a whole parameter or return type, can be called. The SDK refuses any other type argument before the
+ * view request, including `Object<T>` inside a `vector` or `Option`, which a v12 node reads as `{ inner }`.
  */
 
 /** `test` on a v12 node; skipped on a v11 node, which reads every type parameter as `address`. */
@@ -109,6 +110,16 @@ describeE2E("generic view functions", () => {
         testFromV12("boxed<u64> returns the struct as the node's JSON", async () => {
             expect(await view("boxed", ["u64"], [7n])).toEqual([{ value: "7" }]);
         });
+
+        testFromV12(
+            "identity_vector<Object<Metadata>> and identity_option<Object<Metadata>> take addresses",
+            async () => {
+                const [list] = await view<[string[]]>("identity_vector", [METADATA_OBJECT], [["0xa"]]);
+                expect(list.map(standardizeAddress)).toEqual([standardizeAddress("0xa")]);
+                const [some] = await view<[string | null]>("identity_option", [METADATA_OBJECT], ["0xa"]);
+                expect(standardizeAddress(some!)).toBe(standardizeAddress("0xa"));
+            },
+        );
     });
 
     describe("other type arguments, before v12", () => {
@@ -117,6 +128,7 @@ describeE2E("generic view functions", () => {
             ["identity", "u64", 12345n],
             ["identity", "bool", true],
             ["identity_vector", "u256", [1n]],
+            ["identity_vector", METADATA_OBJECT, ["0xa"]],
         ] as [string, string, SimpleEntryFunctionArgumentTypes][])(
             "%s<%s> throws SupraError before the view request",
             async (name, typeArgument, value) => {

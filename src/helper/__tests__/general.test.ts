@@ -215,13 +215,31 @@ describe("address and Object<T> view arguments", () => {
 
     it.each(["address", OBJECT])("sends a HexString %s argument as its string", (type) => {
         expect(convertArgsValueToJSONParsable(type, new HexString("0xa"))).toBe("0xa");
-        expect(convertArgsValueToJSONParsable(`vector<${type}>`, [new HexString("0x1"), "0x2"])).toEqual([
+    });
+
+    it("sends an address inside vector and Option as its string", () => {
+        expect(convertArgsValueToJSONParsable("vector<address>", [new HexString("0x1"), "0x2"])).toEqual([
             "0x1",
             "0x2",
         ]);
-        expect(convertArgsValueToJSONParsable(`0x1::option::Option<${type}>`, new HexString("0x3"))).toEqual({
+        expect(convertArgsValueToJSONParsable("0x1::option::Option<address>", new HexString("0x3"))).toEqual({
             vec: ["0x3"],
         });
+    });
+
+    it("sends an Object inside vector and Option as the struct { inner }, which the node reads there", () => {
+        expect(convertArgsValueToJSONParsable(`vector<${OBJECT}>`, [new HexString("0x1"), "0x2"])).toEqual([
+            { inner: "0x1" },
+            { inner: "0x2" },
+        ]);
+        expect(convertArgsValueToJSONParsable(`0x1::option::Option<${OBJECT}>`, "0x3")).toEqual({
+            vec: [{ inner: "0x3" }],
+        });
+        expect(convertArgsValueToJSONParsable(`0x1::option::Option<${OBJECT}>`, null)).toEqual({ vec: [] });
+        expect(convertArgsValueToJSONParsable(`vector<vector<${OBJECT}>>`, [["0x4"]])).toEqual([[{ inner: "0x4" }]]);
+        expect(() => convertArgsValueToJSONParsable(`vector<${OBJECT}>`, [{ inner: "0x1" }] as never)).toThrow(
+            /Expected an address/,
+        );
     });
 
     it.each(["address", OBJECT])("refuses a %s argument without a hex digit, or malformed", (type) => {
@@ -844,9 +862,17 @@ describe("generic view arguments and results", () => {
 
 describe("typeArgumentReadAsAddress", () => {
     it("is undefined for address-like type arguments", () => {
-        expect(typeArgumentReadAsAddress(["T0", "vector<T1>"], ["address", METADATA_OBJECT])).toBeUndefined();
-        expect(typeArgumentReadAsAddress(["T0"], ["signer"])).toBeUndefined();
+        expect(typeArgumentReadAsAddress(["T1", "vector<T0>"], ["address", METADATA_OBJECT])).toBeUndefined();
+        expect(typeArgumentReadAsAddress(["T0", "0x1::option::Option<T0>"], ["signer"])).toBeUndefined();
         expect(isAddressLikeTypeArgument("0x1::object::ObjectCore")).toBe(false);
+    });
+
+    it("is an Object type argument whose type parameter is inside a vector, an Option or a struct", () => {
+        expect(typeArgumentReadAsAddress(["vector<T0>"], [METADATA_OBJECT])).toBe(METADATA_OBJECT);
+        expect(typeArgumentReadAsAddress(["T0", "0x1::option::Option<T0>"], [METADATA_OBJECT])).toBe(METADATA_OBJECT);
+        expect(typeArgumentReadAsAddress(["0xabc::m::Boxed<T0>"], [METADATA_OBJECT])).toBe(METADATA_OBJECT);
+        expect(isAddressLikeTypeArgument(METADATA_OBJECT, false)).toBe(false);
+        expect(isAddressLikeTypeArgument("address", false)).toBe(true);
     });
 
     it("is undefined for a type parameter that occurs only inside Object<T>, or not at all", () => {

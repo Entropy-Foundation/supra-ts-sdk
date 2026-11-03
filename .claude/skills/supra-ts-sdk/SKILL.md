@@ -415,7 +415,7 @@ When passing **function arguments** to `view()`:
 | `u64`, `u128`, `u256` | `bigint` (e.g., `100n`), a decimal string, or a `number` up to 2^53 - 1 |
 | `bool` | `boolean` (or `"true"` / `"false"`; other values throw) |
 | `address` | `string` or `HexString` (1 to 64 hex digits, e.g., `"0x1"`; `""` and `"0x"` throw) |
-| `0x1::object::Object<T>` | the object's address, as for `address` (e.g., `"0xa"`) |
+| `0x1::object::Object<T>` | the object's address, as for `address` (e.g., `"0xa"`); inside `vector` or `Option` it is sent as `{ inner: "0xa" }` |
 | `vector<u8>` | `string` (hex) |
 | `vector<T>` | `T[]` |
 | `0x1::string::String` | `string` |
@@ -438,9 +438,10 @@ When **return types** come back from `view()`:
 A parameter or return type that is a type parameter of the function, or contains one (`vector<T>`, `Option<T>`, a
 struct over `T`), is converted as its type argument: `identity<T>(x: T): T` called with `typeArguments: ["u64"]` takes
 and returns a `bigint`. A v11 node reads every type parameter as `address`, so type arguments other than `address`,
-`signer` and `0x1::object::Object<…>` need a node from `supra_node_v12.0.0` (Devnet). For such a call the client reads
-`GET /rpc/v3/version` once per client and throws `SupraError` before the view request when the node reports no
-`release`; calls with only address-like type arguments make no version request.
+`signer` and `0x1::object::Object<…>` (the last only where the type parameter is the whole parameter or return type) need
+a node from `supra_node_v12.0.0` (Devnet). For such a call the client reads `GET /rpc/v3/version`, keeps a `release`
+once the node reports one, and throws `SupraError` before the view request when the node reports none; calls with only
+address-like type arguments make no version request. `viewRaw` makes no such check.
 
 ---
 

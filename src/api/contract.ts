@@ -50,9 +50,9 @@ export class Contract {
      * The fromABI function takes an array of MoveModule (Contract ABI) objects as input.
      *
      * `contracts.<module name>.view.<function>(args)` calls a view function and returns its results converted to
-     * TypeScript values, as `methods.view` does, including the type parameters of generic views: a type argument other
-     * than `address`, `signer` or `0x1::object::Object<…>` needs a node from `supra_node_v12.0.0`, and the call throws
-     * `SupraError` before the view request on an earlier node. `contracts.<module name>.entry.<function>(args)` builds,
+     * TypeScript values, as `methods.view` does, including the type parameters of generic views: a type argument that
+     * an earlier node reads differently needs a node from `supra_node_v12.0.0`, and the call throws `SupraError` before
+     * the view request on an earlier node (see `methods.view`). `contracts.<module name>.entry.<function>(args)` builds,
      * signs and submits an entry function
      * transaction: the `&signer` argument is the sender's `SupraAccount`, `optionalTransactionPayloadArgs` and
      * `enableTransactionWaitAndSimulationArgs` are optional, the sequence number comes from the client's counter unless

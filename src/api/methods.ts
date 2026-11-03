@@ -36,14 +36,18 @@ export class Methods {
      *
      * A parameter or return type that is or contains a type parameter (`T`, `vector<T>`, `0x1::option::Option<T>`, a
      * struct over `T`) is converted with each type parameter replaced by its type argument: `identity<T>(x: T): T`
-     * called with the type argument `u64` takes a `bigint` and returns a `bigint`.
+     * called with the type argument `u64` takes a `bigint` and returns a `bigint`. An `0x1::object::Object<…>` argument
+     * is given as its address; inside a `vector` or an `Option` it is sent as `{ inner: <address> }`, the form the
+     * node reads there.
      *
      * A node before `supra_node_v12.0.0` reads every type parameter as `address`. A generic view whose type parameter
-     * occurs in a parameter or return type (outside `0x1::object::Object<…>`) with a type argument other than
-     * `address`, `signer` or `0x1::object::Object<…>` therefore needs a node from `supra_node_v12.0.0`. For such a
-     * call the client reads `GET /rpc/v3/version` once and keeps the answer; on a node that reports no `release` the
-     * call throws `SupraError` before the view request is sent. Calls with only those address-like type arguments make
-     * no version request and work on both.
+     * occurs in a parameter or return type (outside `0x1::object::Object<…>`) therefore needs a node from
+     * `supra_node_v12.0.0` unless its type argument is `address` or `signer`, or is `0x1::object::Object<…>` and the
+     * type parameter is the whole parameter or return type. For such a call the client reads `GET /rpc/v3/version`
+     * and keeps a `release` once the node reports one; on a node that reports none the call throws `SupraError` before
+     * the view request is sent, and the next such call reads the version again. Behind a load balancer whose nodes run
+     * different releases, as during an upgrade, the node that answers the version request need not be the node that
+     * answers the view. Calls with only address-like type arguments make no version request and work on both.
      * @template T - The type of the MoveValue array to be returned.
      * @param args.function - The id of the function to query, `address::module::function`.
      * @param args.typeArguments - An array of type arguments for the function, as type tags or strings. A string must be
@@ -51,8 +55,8 @@ export class Methods {
      * @param args.functionArguments - An array of arguments for the function.
      * @param args.abi - The ABI of the module, to skip the request that reads it.
      * @returns A Promise that resolves to an array of MoveValue objects.
-     * @throws {SupraError} If a type argument other than `address`, `signer` or `0x1::object::Object<…>` is given for a
-     *   type parameter of a parameter or return type, and the node is older than `supra_node_v12.0.0`.
+     * @throws {SupraError} If a type argument that needs a node from `supra_node_v12.0.0` (see above) is given and the
+     *   node reports no `release`.
      * @example
      * ```typescript
      * import { Network, SupraClient, TypeTagParser } from "supra-ts-sdk";
@@ -81,7 +85,9 @@ export class Methods {
 
     /**
      * Queries a Move view function without type conversion or parsing: the arguments are sent as given and the
-     * results are returned as the node's JSON, where `u64`, `u128` and `u256` values are strings.
+     * results are returned as the node's JSON, where `u64`, `u128` and `u256` values are strings. It does not check the
+     * node's release: a node before `supra_node_v12.0.0` reads an argument of a type parameter as an `address` whatever
+     * the type argument.
      * @template T - The type of the array to be returned.
      * @param args.function - The id of the function to query, `address::module::function`.
      * @param args.typeArguments - An array of type argument strings for the function.

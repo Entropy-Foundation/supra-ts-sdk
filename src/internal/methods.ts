@@ -16,7 +16,7 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
  * @remarks This is for fully typed and parsed data.
  * Abi type conversion and parsing is handled internally. A call with a type argument that a node before
  * `supra_node_v12.0.0` reads as an `address` (`typeArgumentReadAsAddress`) first checks that the node reports a
- * `release` (`nodeReportsReleaseInternal`, one `GET /rpc/v3/version` per client).
+ * `release` (`nodeReportsReleaseInternal`: `GET /rpc/v3/version`, read again until the node reports one).
  * @throws {SupraError} If such a call is made to a node that reports no `release`; no view request is sent.
  */
 export async function viewInternal<T extends Array<MoveValue>>(

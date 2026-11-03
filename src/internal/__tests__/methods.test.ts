@@ -159,6 +159,16 @@ describe("viewInternal of a generic view function on a v12 node", () => {
             expect(returned).toEqual(["0xa"]);
         });
 
+        it("sends an Object inside vector<T> and Option<T> as { inner } and returns its address", async () => {
+            const vector = await callView("echo_vector", [METADATA], [["0xa", ADDRESS]], [[{ inner: "0xa" }]]);
+            expect(sentArguments(vector.body)).toEqual([[{ inner: "0xa" }, { inner: ADDRESS }]]);
+            expect(vector.returned).toEqual([["0xa"]]);
+            const option = await callView("echo_option", [METADATA], ["0xa"], [{ vec: [{ inner: "0xa" }] }]);
+            expect(sentArguments(option.body)).toEqual([{ vec: [{ inner: "0xa" }] }]);
+            expect(option.returned).toEqual(["0xa"]);
+            expect(versionReads()).toBe(1);
+        });
+
         it("substitutes a struct type argument into Object<T>", async () => {
             const { body, returned } = await callView(
                 "object",
@@ -253,6 +263,18 @@ describe("the node version read of a generic view function", () => {
         expect(versionReads()).toBe(2);
     });
 
+    it("is made again after a node without a release, until the node reports one", async () => {
+        mockGet.mockResolvedValue({ data: V11_VERSION, headers: new Headers() } as never);
+        await expect(callView("echo", ["u64"], [1n], [])).rejects.toThrow("needs a node from supra_node_v12.0.0");
+        await expect(callView("echo", ["u64"], [1n], [])).rejects.toThrow("needs a node from supra_node_v12.0.0");
+        expect(versionReads()).toBe(2);
+
+        mockGet.mockResolvedValue({ data: V12_VERSION, headers: new Headers() } as never);
+        expect((await callView("echo", ["u64"], [1n], ["1"])).returned).toEqual([1n]);
+        expect((await callView("echo", ["u64"], [2n], ["2"])).returned).toEqual([2n]);
+        expect(versionReads()).toBe(3);
+    });
+
     it("is not kept when it fails", async () => {
         mockGet.mockRejectedValueOnce(new SupraError("connection refused"));
         await expect(callView("echo", ["u64"], [1n], ["1"])).rejects.toThrow("connection refused");
@@ -276,6 +298,8 @@ describe("viewInternal of a generic view function on a node before v12", () => {
         ["echo_vector", "u256", [1n]],
         ["echo_option", "u256", 1n],
         ["boxed", "u64", 7n],
+        ["echo_vector", METADATA, ["0xa"]],
+        ["echo_option", METADATA, "0xa"],
     ])("refuses %s<%s> before the view request", async (name, typeArgument, value) => {
         const call = callView(name, [typeArgument], [value], []);
         await expect(call).rejects.toThrow(SupraError);

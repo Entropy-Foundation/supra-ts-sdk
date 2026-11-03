@@ -753,11 +753,13 @@ async function readGeneric(supra: SupraClient, identity: MoveFunctionId) {
 Code that converted such results itself (`BigInt(result)`, `result.inner`) uses the result as returned. An argument is
 checked against the substituted type before the request, so `"300"` for `T = u8` throws where 1.2.0 sent it.
 
-A v11 node (Mainnet, Testnet) reads every type parameter as `address`. With the type arguments `address`, `signer` and
-`0x1::object::Object<…>` a generic view returns what it returned in 1.2.0, and the SDK makes no extra request. With any
-other type argument for a type parameter that occurs in a parameter or return type outside `Object<…>`, the client
-reads `GET /rpc/v3/version` once and, on a node that reports no `release` (older than `supra_node_v12.0.0`), throws
-`SupraError` before the view request. In 1.2.0 the v11 node refused such a request itself, or, for a value whose
+A v11 node (Mainnet, Testnet) reads every type parameter as `address`. With the type arguments `address` and `signer`,
+and `0x1::object::Object<…>` for a type parameter that is the whole parameter or return type, a generic view returns
+what it returned in 1.2.0 from a v11 node, and the SDK makes no extra request. With any other type argument for a type
+parameter that occurs in a parameter or return type outside `Object<…>` (including `Object<…>` inside a `vector` or an
+`Option`), the client reads `GET /rpc/v3/version` and, on a node that reports no `release` (older than
+`supra_node_v12.0.0`), throws `SupraError` before the view request; it reads the version again on the next such call
+until the node reports a `release`. In 1.2.0 the v11 node refused such a request itself, or, for a value whose
 encoding is 32 bytes (a `u256`, for example), read its bytes as the type argument and answered with an
 address-formatted string. Code that called such a view on a v11 node handles `SupraError`, or calls it on a v12 node.
 

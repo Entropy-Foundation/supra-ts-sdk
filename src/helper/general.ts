@@ -129,11 +129,18 @@ const OBJECT_TYPE_PREFIX = "0x1::object::Object<";
 
 /**
  * Whether a node before `supra_node_v12.0.0`, which reads every type parameter as `address`, reads a value of this
- * type argument correctly: `address`, `signer` and `0x1::object::Object<…>`, which is laid out as an address.
+ * type argument as a node from `supra_node_v12.0.0` does: `address` and `signer` anywhere, and
+ * `0x1::object::Object<…>` where the type parameter is a whole parameter or return type. Inside a `vector`, an
+ * `Option` or a struct a v12 node reads an `Object` as `{ inner: <address> }` and an earlier node as an address.
  * @param typeArgument - A type argument in the form `typeTagToString` writes.
+ * @param wholeType - Whether the type parameter is a whole parameter or return type.
  */
-export function isAddressLikeTypeArgument(typeArgument: string): boolean {
-    return typeArgument === "address" || typeArgument === "signer" || typeArgument.startsWith(OBJECT_TYPE_PREFIX);
+export function isAddressLikeTypeArgument(typeArgument: string, wholeType = true): boolean {
+    return (
+        typeArgument === "address" ||
+        typeArgument === "signer" ||
+        (wholeType && typeArgument.startsWith(OBJECT_TYPE_PREFIX))
+    );
 }
 
 /** `type` without its `0x1::object::Object<…>` types, which every node reads as an address whatever they contain. */
@@ -152,10 +159,10 @@ function withoutObjectTypes(type: string): string {
 }
 
 /**
- * The first type argument of a call that a node before `supra_node_v12.0.0` reads wrongly: one that is not
- * address-like (`isAddressLikeTypeArgument`) and whose type parameter occurs in a parameter or return type outside
- * `0x1::object::Object<…>`. Such a node reads the value of that type parameter as an `address`. `undefined` when there
- * is none, so that the call is read the same way by every node.
+ * The first type argument of a call that a node before `supra_node_v12.0.0` reads differently from a v12 node: one
+ * whose type parameter occurs in a parameter or return type outside `0x1::object::Object<…>` and that is not
+ * address-like there (`isAddressLikeTypeArgument`). Such a node reads the value of that type parameter as an
+ * `address`. `undefined` when there is none, so that the call is read the same way by every node.
  * @param types - The parameter and return types of the function's ABI.
  * @param typeArguments - The type arguments of the call, in the form `typeTagToString` writes.
  */
@@ -164,9 +171,11 @@ export function typeArgumentReadAsAddress(
     typeArguments: readonly string[],
 ): string | undefined {
     for (const type of types) {
-        for (const match of withoutObjectTypes(type).matchAll(TYPE_PARAMETER)) {
+        const outsideObjects = withoutObjectTypes(type);
+        for (const match of outsideObjects.matchAll(TYPE_PARAMETER)) {
             const typeArgument = typeArguments[Number(match[2])];
-            if (typeArgument !== undefined && !isAddressLikeTypeArgument(typeArgument)) {
+            const wholeType = outsideObjects.trim() === `T${match[2]}`;
+            if (typeArgument !== undefined && !isAddressLikeTypeArgument(typeArgument, wholeType)) {
                 return typeArgument;
             }
         }
@@ -220,9 +229,17 @@ export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefi
 }
 
 /**
- * Converts a Move value to a JSON parsable value
+ * Converts a Move value to a JSON parsable value.
+ *
+ * A `0x1::object::Object<…>` is given as its address. As a parameter type the node reads it as an address; inside a
+ * `vector` or an `Option` it reads it as the struct `{ inner: <address> }`, so it is sent in that form there.
+ * @param nested - Whether `type` is inside a `vector` or an `Option` of the parameter type.
  */
-export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryFunctionArgumentTypes): unknown {
+export function convertArgsValueToJSONParsable(
+    type: string,
+    value: SimpleEntryFunctionArgumentTypes,
+    nested = false,
+): unknown {
     const optionInner = extractOptionInner(type);
 
     // ----------------------------
@@ -235,7 +252,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
         if (optionInner === "u8") {
             return { vec: isNone ? "" : uint8ArrayToHexString(Uint8Array.of(Number(integerArgument("u8", value)))) };
         }
-        return { vec: isNone ? [] : [convertArgsValueToJSONParsable(optionInner, value)] };
+        return { vec: isNone ? [] : [convertArgsValueToJSONParsable(optionInner, value, true)] };
     }
 
     if (value === null || value === undefined) {
@@ -260,7 +277,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
         if (!Array.isArray(value)) {
             throw new Error(`Expected array for type '${type}'`);
         }
-        return value.map((v) => convertArgsValueToJSONParsable(vectorInner, v));
+        return value.map((v) => convertArgsValueToJSONParsable(vectorInner, v, true));
     }
 
     // ----------------------------
@@ -269,7 +286,11 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     if (intTypes.includes(type)) return Number(integerArgument(type, value));
     if (bigIntTypes.includes(type)) return integerArgument(type, value).toString();
     if (type === "bool") return boolArgument(value);
-    if (type === "address" || isObjectType(type)) return addressArgument(value, type);
+    if (type === "address") return addressArgument(value, type);
+    if (isObjectType(type)) {
+        const address = addressArgument(value, type);
+        return nested ? { inner: address } : address;
+    }
 
     // ----------------------------
     // 6️⃣ Fixed-point structs: the node reads { value: "<raw integer>" }
