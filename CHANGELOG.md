@@ -315,6 +315,8 @@ so a 2.x minor release can change them; a minor release removes the tags after t
 
 ### Changed
 
+- **Breaking:** the package requires Node.js 20 or later (`engines.node` is `>=20`); 1.2.0 declared `>=18`. Node.js 18
+  reached end of life in April 2025, and the CI test matrix no longer includes it.
 - The package includes a `NOTICE` file, and files with portions derived from `@aptos-labs/ts-sdk` carry an
   Apache-2.0 notice.
 - **Breaking:** a view function that returns `0x1::fixed_point32::FixedPoint32` or `0x1::fixed_point64::FixedPoint64`,

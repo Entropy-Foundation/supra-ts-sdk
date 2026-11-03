@@ -115,7 +115,7 @@ Two behaviours that are not symbols follow the same rule: [generic-view conversi
 
 ## Requirements
 
-- Node.js ≥ 18
+- Node.js ≥ 20
 - TypeScript ≥ 4.9 (5.x strongly recommended)
 
 

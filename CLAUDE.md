@@ -75,7 +75,7 @@ Move `u8/u16/u32` → `number`, `u64/u128/u256` → `bigint`, `vector<T>` → `T
 
 ### HTTP Client
 
-All RPC calls go through `src/client/get.ts` and `src/client/post.ts` using native `fetch` (Node 18+). Base URL pattern: `${rpcUrl}/rpc/v3`. Request timeout via `AbortSignal.timeout()` (default 30s, configurable via `NetworkConfig.timeout`). Custom `SupraAPIError` thrown for non-2xx status, includes `major_status` parsed from error body.
+All RPC calls go through `src/client/get.ts` and `src/client/post.ts` using native `fetch` (Node 20+). Base URL pattern: `${rpcUrl}/rpc/v3`. Request timeout via `AbortSignal.timeout()` (default 30s, configurable via `NetworkConfig.timeout`). Custom `SupraAPIError` thrown for non-2xx status, includes `major_status` parsed from error body.
 
 ## Build
 
