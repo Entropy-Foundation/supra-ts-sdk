@@ -17,7 +17,7 @@
  * built SDK: run `pnpm build` first. Details are in `scripts/fixtures/README.md`.
  */
 import { spawnSync } from "node:child_process";
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -740,11 +740,7 @@ async function sdkSignedFixture(node: Node, runId: string, kind: "multi_agent" |
 }
 
 /** Entry function transactions that the SDK signs and submits, recorded with `--sdk-signed-only`. */
-const SDK_ENTRY_KINDS = [
-    "module_publish",
-    "multisig_create_transaction",
-    "multisig_create_transaction_with_hash",
-] as const;
+const SDK_ENTRY_KINDS = ["module_publish", "multisig_create_transaction", "multisig_create_transaction_with_hash"] as const;
 type SdkEntryKind = (typeof SDK_ENTRY_KINDS)[number];
 
 /** Max gas of the publish transaction, which needs more than `MAX_GAS`. */
@@ -942,9 +938,9 @@ async function sdkEntryFunctionFixture(node: Node, runId: string, kind: SdkEntry
 
 /**
  * Automation registrations with version 2 of the registration parameters, which the node CLI does not build, recorded
- * with `--sdk-signed-only`: a user task with a priority, and a user task whose priority the registry assigns.
+ * with `--sdk-signed-only`: a user task, whose priority the registry assigns.
  */
-const SDK_AUTOMATION_KINDS = ["automation_registration_v2_priority", "automation_registration_v2_no_priority"] as const;
+const SDK_AUTOMATION_KINDS = ["automation_registration_v2_no_priority"] as const;
 type SdkAutomationKind = (typeof SDK_AUTOMATION_KINDS)[number];
 
 /**
@@ -973,9 +969,7 @@ async function sdkAutomationFixture(node: Node, runId: string, kind: SdkAutomati
             expirationTimestampSecs: String(Math.floor(Date.now() / 1000) + 60 * 60),
             auxData: [],
             taskType: "User",
-            // A random priority from 2^32 to 2^32 + 2^47; the node's JSON number holds it exactly.
-            priority:
-                kind === "automation_registration_v2_priority" ? String(2n ** 32n + BigInt(randomInt(2 ** 47))) : null,
+            priority: null,
         },
     };
     const rawTxn = buildRawTransaction(node, raw);
@@ -990,10 +984,7 @@ async function sdkAutomationFixture(node: Node, runId: string, kind: SdkAutomati
 
     return {
         name: kind,
-        description:
-            kind === "automation_registration_v2_priority"
-                ? "The registration of a user automation task with version 2 parameters and a priority."
-                : "The registration of a user automation task with version 2 parameters and no priority.",
+        description: "The registration of a user automation task with version 2 parameters and no priority.",
         authenticator: "ed25519",
         chainId: node.chainId,
         signers: [signer],
@@ -1251,10 +1242,7 @@ async function main(): Promise<void> {
     for (const kind of SDK_ENTRY_KINDS.filter(selected)) {
         fixtures.push(await sdkEntryFunctionFixture(primary, runId, kind));
     }
-    // Nodes refuse a user task that carries a priority, so the priority case is recorded only when `--case` names it.
-    const selectedAutomation = (name: string) =>
-        values.case === undefined ? name !== "automation_registration_v2_priority" : values.case.includes(name);
-    for (const kind of SDK_AUTOMATION_KINDS.filter(selectedAutomation)) {
+    for (const kind of SDK_AUTOMATION_KINDS.filter(selected)) {
         fixtures.push(await sdkAutomationFixture(primary, runId, kind));
     }
 

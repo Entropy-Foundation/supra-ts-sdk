@@ -133,6 +133,22 @@ describeE2E("automation tasks", () => {
         );
     }
 
+    test("a registration of a user task with a priority, or with a priority and no task type, is refused before building", async () => {
+        const owner = await createFundedAccount(ctx);
+        const priority = freshPriority();
+
+        // The registry aborts a user task that carries a priority; the builder throws before anything is submitted.
+        for (const version2 of [
+            { automationTaskType: "User" as const, automationPriority: priority },
+            { automationPriority: priority },
+        ]) {
+            const refused = await register(owner, version2).catch((error: unknown) => error);
+            expect(refused).toBeInstanceOf(RangeError);
+        }
+        const info = await ctx.supra.getAccountInfo({ accountAddress: owner.address() });
+        expect(info.sequence_number).toBe(0n);
+    });
+
     test("a version 2 registration without a priority commits under the derived hash and gets the task's index as its priority", async () => {
         const owner = await createFundedAccount(ctx);
         const { response, derived, committed } = await register(owner, { automationTaskType: "User" });

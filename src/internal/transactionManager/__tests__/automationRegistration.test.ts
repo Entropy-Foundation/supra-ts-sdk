@@ -73,9 +73,13 @@ describe("the BCS of an automation registration", () => {
     });
 
     test.each<[string, { automationTaskType?: AutomationTaskType; automationPriority?: bigint }, string]>([
-        ["a user task with a priority", { automationTaskType: "User", automationPriority: 7n }, "00" + "01" + u64(7n)],
         ["a user task without a priority", { automationTaskType: "User" }, "00" + "00"],
-        ["a priority alone, as a user task", { automationPriority: 0n }, "00" + "01" + u64(0n)],
+        ["a system task without a priority", { automationTaskType: "System" }, "01" + "00"],
+        [
+            "a system task with priority 0",
+            { automationTaskType: "System", automationPriority: 0n },
+            "01" + "01" + u64(0n),
+        ],
         [
             "a system task with the largest priority",
             { automationTaskType: "System", automationPriority: 2n ** 64n - 1n },
@@ -91,19 +95,27 @@ describe("the BCS of an automation registration", () => {
 
     test.each<[string, { automationTaskType?: AutomationTaskType; automationPriority?: bigint }]>([
         ["a task type that is not User or System", { automationTaskType: "user" as AutomationTaskType }],
-        ["a negative priority", { automationPriority: -1n }],
-        ["a priority above 2^64 - 1", { automationPriority: 2n ** 64n }],
-        ["a priority that is a number", { automationPriority: 7 as unknown as bigint }],
+        ["a negative priority", { automationTaskType: "System", automationPriority: -1n }],
+        ["a priority above 2^64 - 1", { automationTaskType: "System", automationPriority: 2n ** 64n }],
+        ["a priority that is a number", { automationTaskType: "System", automationPriority: 7 as unknown as bigint }],
     ])("throws a RangeError before building for %s", (_name, extra) => {
         expect(() => registration(extra)).toThrow(RangeError);
+    });
+
+    test.each<[string, { automationTaskType?: AutomationTaskType; automationPriority?: bigint }]>([
+        ["a user task with a priority", { automationTaskType: "User", automationPriority: 7n }],
+        ["a priority with no task type", { automationPriority: 7n }],
+        ["a priority of 0 with no task type", { automationPriority: 0n }],
+    ])("throws a RangeError naming the task type before building for %s", (_name, extra) => {
+        expect(() => registration(extra)).toThrow(RangeError);
+        expect(() => registration(extra)).toThrow(/only with automationTaskType "System"/);
     });
 });
 
 describe("deserializeRawTransaction", () => {
     test.each<[string, { automationTaskType?: AutomationTaskType; automationPriority?: bigint }]>([
         ["version 1", {}],
-        ["version 2 with a priority", { automationTaskType: "User", automationPriority: 7n }],
-        ["version 2 without a priority", { automationTaskType: "User" }],
+        ["version 2 of a user task", { automationTaskType: "User" }],
         ["version 2 of a system task", { automationTaskType: "System", automationPriority: 1n }],
     ])("reads %s and serializes back to the same bytes", (_name, extra) => {
         const bytes = registration(extra).toBytes();
@@ -155,12 +167,12 @@ describe("deserializeRawTransaction", () => {
         ],
         [
             "a task type variant other than 0 and 1",
-            (bytes) => bytes.replace(COMMON_FIELDS + "0001", COMMON_FIELDS + "0201"),
+            (bytes) => bytes.replace(COMMON_FIELDS + "0101", COMMON_FIELDS + "0201"),
             /Unknown variant index for AutomationTaskType: 2/,
         ],
         [
             "an option tag other than 0 and 1",
-            (bytes) => bytes.replace(COMMON_FIELDS + "0001", COMMON_FIELDS + "0002"),
+            (bytes) => bytes.replace(COMMON_FIELDS + "0101", COMMON_FIELDS + "0102"),
             /Invalid tag for Option<u64>: 2/,
         ],
         [
@@ -169,7 +181,7 @@ describe("deserializeRawTransaction", () => {
             /Unknown variant index for TransactionPayload: 9/,
         ],
     ])("throws for %s", (_name, corrupt, message) => {
-        const bytes = hex(registration({ automationTaskType: "User", automationPriority: 7n }).toBytes());
+        const bytes = hex(registration({ automationTaskType: "System", automationPriority: 7n }).toBytes());
         const corrupted = corrupt(bytes);
         expect(corrupted).not.toBe(bytes);
         expect(() => deserializeRawTransaction(new Uint8Array(Buffer.from(corrupted, "hex")))).toThrow(message);
@@ -218,8 +230,10 @@ describe("the JSON of an automation registration", () => {
 
     test("writes the priority as an exact JSON number", () => {
         const json = stringifyWithBigInt(
-            getTransactionPayloadJSONInternal(registration({ automationPriority: 2n ** 64n - 1n }).payload),
+            getTransactionPayloadJSONInternal(
+                registration({ automationTaskType: "System", automationPriority: 2n ** 64n - 1n }).payload,
+            ),
         );
-        expect(json).toContain('"task_type":"User","priority_value":18446744073709551615}');
+        expect(json).toContain('"task_type":"System","priority_value":18446744073709551615}');
     });
 });

@@ -139,6 +139,8 @@ try {
 const nodeChainId = (await checked.getChainId()).value; // getChainId() is async: the node's chain ID
 ```
 
+`await supra.getNodeVersion()` reads `GET /rpc/v3/version` and returns `{ version, release?, branch, commit_hash, build_time, build_env }`. `release` (for example `supra_node_v12.0.0.rc7`) is absent before `supra_node_v12.0.0`, so it is `undefined` for a v11 node.
+
 `verifyChainId: false` turns the check off for offline signing: the client signs with its configured chain ID and sends no request to do so.
 
 ```typescript
@@ -345,7 +347,7 @@ await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: account
 
 ## Automation Tasks
 
-An automation task is registered with `transaction.build.automationRegistrationRawTxnObject`, a builder that makes no request (pass `gasUnitPrice`, and `maxGas` for a sender with less than 20 SUPRA). Passing `automationTaskType` (`"User"` or `"System"`) or `automationPriority` (a `u64` `bigint`) makes it a version 2 registration; without them it is version 1. v11.7.0 and v12 nodes accept both. Without a priority the registry uses the task's index as its priority. A `"System"` task can be registered only by an account the Supra framework has authorised (others abort with `EUNAUTHORIZED_SYSTEM_ACCOUNT`). `automationGasPriceCap` must not be below the node's minimum gas unit price, and `automationAuxData` must be `[]`.
+An automation task is registered with `transaction.build.automationRegistrationRawTxnObject`, a builder that makes no request (pass `gasUnitPrice`, and `maxGas` for a sender with less than 20 SUPRA). Passing `automationTaskType` (`"User"` or `"System"`) or `automationPriority` (a `u64` `bigint`) makes it a version 2 registration; without them it is version 1. v11.7.0 and v12 nodes accept both. Without a priority the registry uses the task's index as its priority. `automationPriority` is for system tasks only: a user task that carries one aborts (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when it is given with `"User"` or with no task type. A `"System"` task can be registered only by an account the Supra framework has authorised (others abort with `EUNAUTHORIZED_SYSTEM_ACCOUNT`). `automationGasPriceCap` must be at least the node's minimum gas unit price (`supra.getMinGasUnitPrice()`); a lower cap is refused at validation (submit: `SupraAPIError`, 400 `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND`; simulation: `SupraSimulationFailedError`), and the builder does not check it. `automationAuxData` must be `[]`.
 
 The registration's `0x1::automation_registry::AutomationTaskMetaData` event carries the `task_index`. `supra.automation.cancelAutomationTask` (`cancel_task`) and `supra.automation.stopAutomationTasks` (`stop_tasks`) take it, submit through the client's sequence-number counter like the transfers, and estimate their max gas. Both abort for a task of another account and while the registry moves to the next automation cycle (`ECYCLE_TRANSITION_IN_PROGRESS`).
 
@@ -363,7 +365,6 @@ const registration = supra.transaction.build.automationRegistrationRawTxnObject(
     automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
     automationAuxData: [],
     automationTaskType: "User",
-    automationPriority: 10n,
     optionalTransactionPayloadArgs: { gasUnitPrice },
 });
 const registered = await registration.submitTransaction({
@@ -697,13 +698,25 @@ await supra.coin.transferSupraCoin({
 
 ## Sponsored Transactions
 
+A sender with no `Account` resource (`isAccountExists` is `false`) uses sequence number 0; do not read it with
+`getAccountInfo`, which throws for an absent account. The simulation succeeds. A node from `supra_node_v12.0.0` (Devnet)
+admits the submission, and the sender's sequence number is 1 afterwards; a v11.7.x node (Mainnet, Testnet) refuses it
+with HTTP 400 ("Failed to read the AccountResource"). `rawTxnObject` reads nothing from the node, so the caller passes
+the number. The fee payer pays the gas, but a new sender holds no SUPRA, so its payload must not spend from the sender's
+balance (a transfer from it aborts); `create_account` below spends nothing.
+
 ```typescript
+const accountAddress = account.address();
+const senderSequenceNumber = (await supra.account.isAccountExists({ accountAddress }))
+    ? (await supra.account.getAccountInfo({ accountAddress })).sequence_number
+    : 0n;
+
 const sponsoredTxn = supra.transaction.build.rawTxnObject({
-    senderAddress: account.address(),
-    senderSequenceNumber: 0n,   // the account's next sequence number
-    function: "0x1::supra_account::transfer",
+    senderAddress: accountAddress,
+    senderSequenceNumber,   // 0n for a sender with no account, else the account's next sequence number
+    function: "0x1::supra_account::create_account",
     functionTypeArgs: [],
-    functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],
+    functionArgs: [new SupraAccount().address().toUint8Array()],
     optionalTransactionPayloadArgs: { gasUnitPrice: await supra.getEstimatedGasUnitPrice() },
 });
 
@@ -838,7 +851,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`. Errors t
 | Class | Raised when |
 |---|---|
 | `SupraAPIError` | the node answers with an error status (`status`, `statusText`, `url`, `data`, `major_status`, `sub_status`) |
-| `SupraNotFoundError`, `SupraGoneError`, `SupraRateLimitError`, `SupraServiceUnavailableError` (extend `SupraAPIError`) | HTTP 404, 410 (pruned data), 429 (`retryAfterSeconds`), 503 |
+| `SupraNotFoundError`, `SupraGoneError`, `SupraRateLimitError`, `SupraServiceUnavailableError` (extend `SupraAPIError`) | HTTP 404, 410 (pruned data; `SupraGoneError.oldestBlock` is the oldest block the node holds, restart reads from it), 429 (`retryAfterSeconds`), 503 |
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | a submission's sequence number is beyond the numbers the node queues for the account (`sequenceNumber`) |
 | `SupraTimeoutError`, `SupraNetworkError` | a request times out, or fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet answers `"TryLater"`, or answers unexpectedly |

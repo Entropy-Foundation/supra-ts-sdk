@@ -180,6 +180,23 @@ describe("createSupraAPIError", () => {
         expect((error as SupraRateLimitError).retryAfterSeconds).toBeUndefined();
     });
 
+    it("takes oldestBlock of a 410 from the x-supra-oldest-block header", () => {
+        const error = createSupraAPIError({ ...base, status: 410 }, null, "18446744073709551615");
+        expect(error).toBeInstanceOf(SupraGoneError);
+        expect((error as SupraGoneError).oldestBlock).toBe(18446744073709551615n);
+        expect(error.toJSON()).toMatchObject({ oldestBlock: "18446744073709551615", status: 410 });
+    });
+
+    it("leaves oldestBlock undefined for a 410 without the header", () => {
+        const error = createSupraAPIError({ ...base, status: 410 });
+        expect((error as SupraGoneError).oldestBlock).toBeUndefined();
+    });
+
+    it.each(["", "abc", "-5", "1.5", "0x10", " 7", "1e3"])("ignores the malformed header %j", (header) => {
+        const error = createSupraAPIError({ ...base, status: 410 }, null, header);
+        expect((error as SupraGoneError).oldestBlock).toBeUndefined();
+    });
+
     it("includes retryAfterSeconds in the JSON of a rate limit error", () => {
         const error = createSupraAPIError({ ...base, status: 429, data: { retry_after_seconds: 3 } });
         expect(error.toJSON()).toMatchObject({ retryAfterSeconds: 3, status: 429 });

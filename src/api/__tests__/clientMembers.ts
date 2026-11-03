@@ -21,6 +21,7 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     validateChainId: true,
     getChainId: true,
     resetSequenceNumber: true,
+    getNodeVersion: true,
     getGasPrice: true,
     getMinGasUnitPrice: true,
     getEstimatedGasUnitPrice: true,
