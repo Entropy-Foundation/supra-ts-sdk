@@ -114,6 +114,8 @@ export class MockNode {
     readonly gasUnitPrices: bigint[] = [];
     /** `max_transaction_time_to_live_seconds` of `GET /transactions/parameters`. */
     maxTimeToLive = 600;
+    /** The number of the next reads of `GET /transactions/parameters` answered with HTTP 503. */
+    failParameterReads = 0;
 
     private seed: number;
     private readonly latencyMs: [number, number];
@@ -265,6 +267,10 @@ export class MockNode {
         }
         if (method === "GET" && path === "/transactions/parameters") {
             this.count("parameters");
+            if (this.failParameterReads > 0) {
+                this.failParameterReads -= 1;
+                return this.respond({ status: 503, body: { message: "Service Unavailable" } });
+            }
             return this.respond({
                 status: 200,
                 body: { max_transaction_time_to_live_seconds: this.maxTimeToLive },

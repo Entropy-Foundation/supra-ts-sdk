@@ -137,9 +137,11 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   client uses the new value. A failed read throws its error and is not kept: there is no fallback to 600. Signing
   throws a `RangeError` before signing when a transaction's expiration time, whoever set it, is more than the node's
   maximum after the later of the client's clock and the chain time estimated from the client's reads of the latest
-  block; with `verifyChainId: false` signing sends no request and does not check it. The builders that send no request
-  (`rawTxnObject` and the like) use the maximum the client has read, else `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600).
-  `ASSUMED_MAX_TX_EXPIRATION_DURATION` replaces `MAX_TX_EXPIRATION_DURATION`, which is no longer exported.
+  block, allowing `TX_EXPIRATION_MARGIN_SECS` (5) seconds of slack because that estimate can trail the node's clock;
+  with `verifyChainId: false` signing sends no request and does not check it. The builders that send no request
+  (`rawTxnObject` and the like) use the maximum the client has read, else `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600),
+  and throw a `RangeError` when `txExpirySecs` is more than it. The messages of these `RangeError`s name the maximum
+  and say whether it was read from the node or assumed; for an assumed one they name `getTransactionParameters()`.
 - **`OptionalTransactionPayloadArgs.sequenceNumber`** sets the sequence number of a transaction built by
   `coin.transferSupraCoin`, `coin.transferCoin`, `fungibleAsset.transferSupraFungibleAsset`,
   `fungibleAsset.transferFungibleAsset`, `fungibleAsset.migrateCoinToFungibleStore`, `transaction.publishPackage`,

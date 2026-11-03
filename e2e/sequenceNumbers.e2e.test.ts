@@ -183,8 +183,7 @@ describeE2E("sequence numbers", () => {
         const after = Math.floor(Date.now() / 1_000);
 
         const raw = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${response.hash}`);
-        const expiration =
-            Number(raw.body.header?.expiration_timestamp.microseconds_since_unix_epoch ?? 0) / 1_000_000;
+        const expiration = Number(raw.body.header?.expiration_timestamp.microseconds_since_unix_epoch ?? 0) / 1_000_000;
         expect(expiration).toBeGreaterThanOrEqual(before + 60);
         expect(expiration).toBeLessThanOrEqual(after + 60);
     });

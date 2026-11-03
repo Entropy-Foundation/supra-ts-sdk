@@ -30,6 +30,7 @@ import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../..
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateUnmappedTxnInternal } from "./txnSimulate";
+import { getMaxTxExpirySecsInternal } from "../txExpiry";
 import {
     mapCallGasUnitPriceRefusalInternal,
     mapGasUnitPriceRefusalInternal,
@@ -390,6 +391,14 @@ export async function buildAndSubmitInternal(
     // no-op catch keeps a rejection from being reported as unhandled before it is awaited.
     const priceRead = withResolvedGasUnitPriceInternal(callOptions, config);
     priceRead.catch(() => undefined);
+    // The node's maximum time to live is read once per client; the read starts here too, is shared with the build and
+    // the signature, and is awaited inside the lock. It is skipped when nothing needs it: the call sets the
+    // expiration time and signing does not check it.
+    const expiryRead =
+        callOptions?.txExpiryTime === undefined || config.verifyChainId !== false
+            ? getMaxTxExpirySecsInternal(config)
+            : undefined;
+    expiryRead?.catch(() => undefined);
     // A refusal for a gas unit price below the node's minimum is mapped after the lock is released, as the read of the
     // node's minimum is not made under it.
     return withSequenceNumberInternal(
@@ -397,6 +406,7 @@ export async function buildAndSubmitInternal(
         config,
         async (senderSequenceNumber, reservation) => {
             const optionalTransactionPayloadArgs = await priceRead;
+            await expiryRead;
             const rawTxn = await buildWithResolvedMaxGasInternal(
                 {
                     senderAddress,

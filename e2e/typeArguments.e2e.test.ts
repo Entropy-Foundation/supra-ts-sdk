@@ -71,10 +71,7 @@ describeE2E("type arguments and script arguments", () => {
             senderSequenceNumber: await nextSequenceNumber(publisher),
             function: "0x1::code::publish_package_txn" as MoveFunctionId,
             functionTypeArgs: [],
-            functionArgs: [
-                BCS.bcsSerializeBytes(new HexString(compiled.metadata).toUint8Array()),
-                code.getBytes(),
-            ],
+            functionArgs: [BCS.bcsSerializeBytes(new HexString(compiled.metadata).toUint8Array()), code.getBytes()],
             optionalTransactionPayloadArgs: gas,
         });
         const published = await publish.submitTransaction({

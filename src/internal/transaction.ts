@@ -211,8 +211,11 @@ export async function signTransactionInternal(
     },
     config: NetworkConfig,
 ): Promise<HexString | TxnBuilderTypes.AccountAuthenticatorEd25519> {
+    // The reads of the node's chain ID and maximum time to live run together; a chain ID mismatch is reported first.
+    const expiryCheck = checkExpiryBeforeSigningInternal(args.rawTxn, config);
+    expiryCheck.catch(() => undefined);
     await checkChainIdBeforeSigningInternal(args.rawTxn, config);
-    await checkExpiryBeforeSigningInternal(args.rawTxn, config);
+    await expiryCheck;
 
     let signatureBuffer = args.senderAccount.signBuffer(
         getTransactionSignatureMessageInternal({ rawTxn: args.rawTxn }),

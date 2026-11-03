@@ -80,13 +80,35 @@ function defaultExpirySecs(config: NetworkConfig, maxSecs: number): number {
     return Math.max(1, Math.min(requested, maxSecs - TX_EXPIRATION_MARGIN_SECS));
 }
 
+/** Names the node's maximum in an error message and where the client has it from. */
+function maximumDescription(maxSecs: number, assumed: boolean): string {
+    return assumed
+        ? `the assumed maximum of ${maxSecs} seconds (the node's max_transaction_time_to_live_seconds has not been ` +
+              `read; getTransactionParameters() reads it from GET /rpc/v3/transactions/parameters)`
+        : `the node's maximum of ${maxSecs} seconds (max_transaction_time_to_live_seconds, read from ` +
+              `GET /rpc/v3/transactions/parameters)`;
+}
+
+/** @throws {RangeError} If `SupraConfig.txExpirySecs` is more than `maxSecs`. */
+function assertTxExpirySecsWithinMax(config: NetworkConfig, maxSecs: number, assumed: boolean): void {
+    if (config.txExpirySecs !== undefined && config.txExpirySecs > maxSecs) {
+        throw new RangeError(
+            `txExpirySecs is ${config.txExpirySecs}, more than ${maximumDescription(maxSecs, assumed)}`,
+        );
+    }
+}
+
 /**
  * The expiration time of a transaction built without `txExpiryTime` by a builder that makes no request: the client's
  * clock in whole seconds plus {@link defaultExpirySecs}, with `maxSecs` the node's maximum when this client has read it
  * and `ASSUMED_MAX_TX_EXPIRATION_DURATION` otherwise.
+ * @throws {RangeError} If `SupraConfig.txExpirySecs` is more than `maxSecs`; the message names the maximum and says
+ * whether it was read or assumed.
  */
 export function defaultTxExpiryTime(config: NetworkConfig): bigint {
-    const maxSecs = knownMaxTxExpirySecs(config) ?? ASSUMED_MAX_TX_EXPIRATION_DURATION;
+    const known = knownMaxTxExpirySecs(config);
+    const maxSecs = known ?? ASSUMED_MAX_TX_EXPIRATION_DURATION;
+    assertTxExpirySecsWithinMax(config, maxSecs, known === undefined);
     return BigInt(nowSeconds() + defaultExpirySecs(config, maxSecs));
 }
 
@@ -97,37 +119,41 @@ export function defaultTxExpiryTime(config: NetworkConfig): bigint {
  */
 export async function resolveDefaultTxExpiryTimeInternal(config: NetworkConfig): Promise<bigint> {
     const maxSecs = await getMaxTxExpirySecsInternal(config);
-    if (config.txExpirySecs !== undefined && config.txExpirySecs > maxSecs) {
-        throw new RangeError(
-            `txExpirySecs is ${config.txExpirySecs}, more than the ${maxSecs} seconds that the node accepts ` +
-                `(max_transaction_time_to_live_seconds)`,
-        );
-    }
+    assertTxExpirySecsWithinMax(config, maxSecs, false);
     return BigInt(nowSeconds() + defaultExpirySecs(config, maxSecs));
 }
 
 /**
- * Throws when `expirationTime` (seconds since the Unix epoch) is more than `maxSecs` after the later of the client's
- * clock and the chain time the client estimates from its reads of the latest block (the node's clock is not read, and
- * the later of the two never refuses a time that a node with either clock accepts), in whole seconds.
- * @throws {RangeError} If the node would refuse the expiration time as too far in the future.
+ * Throws when `expirationTime` (seconds since the Unix epoch) is more than `maxSecs` plus `TX_EXPIRATION_MARGIN_SECS`
+ * after the later of the client's clock and the chain time the client estimates from its reads of the latest block, in
+ * whole seconds. The node's clock is not read: before any block has been read the estimate is the client's clock, and
+ * afterwards it trails the node by the age of the latest block, so the margin keeps the SDK from refusing an expiration
+ * time that the node accepts. The node remains the final check.
+ * @throws {RangeError} If the node would refuse the expiration time as too far in the future; the message names the
+ * maximum and says whether it was read or assumed.
  */
-export function assertTxExpiryWithinMax(expirationTime: bigint | number, maxSecs: number, config: NetworkConfig): void {
+export function assertTxExpiryWithinMax(
+    expirationTime: bigint | number,
+    maxSecs: number,
+    config: NetworkConfig,
+    assumed = false,
+): void {
     const wall = BigInt(nowSeconds());
     const chain = chainClockOf(config).estimatedNowSeconds();
     const now = wall > chain ? wall : chain;
     const expiry = BigInt(expirationTime);
-    if (expiry > now + BigInt(maxSecs)) {
+    if (expiry > now + BigInt(maxSecs) + BigInt(TX_EXPIRATION_MARGIN_SECS)) {
         throw new RangeError(
             `The expiration time ${String(expiry)} is ${String(expiry - now)} seconds after the current time, ` +
-                `more than the ${maxSecs} seconds that the node accepts (max_transaction_time_to_live_seconds)`,
+                `more than ${maximumDescription(maxSecs, assumed)}`,
         );
     }
 }
 
 /**
- * Checks, before a transaction is signed, that its expiration time is within the node's maximum. Does nothing with
- * `verifyChainId: false`, so that signing without it sends no request.
+ * Checks, before a transaction is signed, that its expiration time is within the node's maximum (see
+ * {@link assertTxExpiryWithinMax}). Does nothing with `verifyChainId: false`, so that signing without it sends no
+ * request.
  * @throws {RangeError} If the expiration time is more than the node's maximum after the current time.
  */
 export async function checkExpiryBeforeSigningInternal(

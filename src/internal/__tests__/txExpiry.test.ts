@@ -35,6 +35,8 @@ const COIN_ABI = {
 interface StubNode {
     /** The answers of `GET /transactions/parameters`, one per request; the last one repeats. */
     parameters: Array<{ status: number; body: unknown }>;
+    /** The timestamp of the latest block, in milliseconds since the Unix epoch. */
+    blockMs: number;
 }
 
 let node: StubNode;
@@ -47,7 +49,7 @@ function maximum(seconds: number): { status: number; body: unknown } {
 
 beforeEach(() => {
     jest.spyOn(Date, "now").mockReturnValue(NOW_SECONDS * 1_000);
-    node = { parameters: [maximum(600)] };
+    node = { parameters: [maximum(600)], blockMs: NOW_SECONDS * 1_000 };
     paths = [];
     global.fetch = jest.fn((input: string | URL | Request) => {
         const path = new URL(String(input)).pathname.replace(/^\/rpc\/v3/, "");
@@ -59,6 +61,19 @@ beforeEach(() => {
         }
         if (path === "/transactions/chain_id") {
             return answer(255);
+        }
+        if (path === "/block") {
+            return answer({
+                header: {
+                    author: "0x00",
+                    hash: "0x00",
+                    height: 1,
+                    parent: "0x00",
+                    timestamp: { microseconds_since_unix_epoch: node.blockMs * 1_000, utc_date_time: "" },
+                    view: { epoch_id: { chain_id: 255, epoch: 1 }, round: 1 },
+                },
+                execution_statistics: null,
+            });
         }
         return answer({ message: `unexpected ${path}` }, 500);
     }) as typeof fetch;
@@ -99,6 +114,18 @@ function expiringIn(supra: SupraClient, secs: number) {
         functionTypeArgs: [],
         functionArgs: [],
         optionalTransactionPayloadArgs: { ...GAS, txExpiryTime: BigInt(NOW_SECONDS + secs) },
+    });
+}
+
+/** A transaction built without a request and without `txExpiryTime`. */
+function offlineBuild(supra: SupraClient) {
+    return supra.transaction.build.rawTxnObject({
+        senderAddress: new SupraAccount().address(),
+        senderSequenceNumber: 0n,
+        function: "0x1::supra_account::transfer",
+        functionTypeArgs: [],
+        functionArgs: [],
+        optionalTransactionPayloadArgs: GAS,
     });
 }
 
@@ -156,12 +183,40 @@ describe("an expiration time above the node's maximum", () => {
         const signBuffer = jest.spyOn(sender, "signBuffer");
 
         const error: unknown = await supra.transaction
-            .signTransaction({ senderAccount: sender, rawTxn: expiringIn(supra, 301) })
+            .signTransaction({ senderAccount: sender, rawTxn: expiringIn(supra, 306) })
             .catch((caught: unknown) => caught);
 
         expect(error).toBeInstanceOf(RangeError);
-        expect((error as RangeError).message).toContain("300");
+        expect((error as RangeError).message).toContain("the node's maximum of 300 seconds");
+        expect((error as RangeError).message).toContain("read from GET /rpc/v3/transactions/parameters");
         expect(signBuffer).not.toHaveBeenCalled();
+    });
+
+    it("is allowed 5 s of slack beyond the node's maximum, so that a time set from the node's clock is not refused", async () => {
+        node.parameters = [maximum(300)];
+        const supra = client();
+
+        await expect(
+            supra.transaction.signTransaction({ senderAccount: new SupraAccount(), rawTxn: expiringIn(supra, 305) }),
+        ).resolves.toBeDefined();
+        await expect(
+            supra.transaction.signTransaction({ senderAccount: new SupraAccount(), rawTxn: expiringIn(supra, 306) }),
+        ).rejects.toThrow(RangeError);
+    });
+
+    it("is measured from the chain time the client has read when that is ahead of its clock", async () => {
+        node.parameters = [maximum(300)];
+        const supra = client();
+        // The node's latest block is 100 s ahead of the client's clock.
+        node.blockMs = (NOW_SECONDS + 100) * 1_000;
+        await supra.getLatestBlock();
+
+        await expect(
+            supra.transaction.signTransaction({ senderAccount: new SupraAccount(), rawTxn: expiringIn(supra, 400) }),
+        ).resolves.toBeDefined();
+        await expect(
+            supra.transaction.signTransaction({ senderAccount: new SupraAccount(), rawTxn: expiringIn(supra, 420) }),
+        ).rejects.toThrow(RangeError);
     });
 
     it("is signed when it is within the node's maximum, which can be above 600 s", async () => {
@@ -173,7 +228,7 @@ describe("an expiration time above the node's maximum", () => {
             supra.transaction.signTransaction({ senderAccount: sender, rawTxn: expiringIn(supra, 1_200) }),
         ).resolves.toBeDefined();
         await expect(
-            supra.transaction.signTransaction({ senderAccount: sender, rawTxn: expiringIn(supra, 1_201) }),
+            supra.transaction.signTransaction({ senderAccount: sender, rawTxn: expiringIn(supra, 1_206) }),
         ).rejects.toThrow(RangeError);
     });
 
@@ -181,7 +236,7 @@ describe("an expiration time above the node's maximum", () => {
         const supra = client();
 
         await expect(
-            supra.transaction.signTransaction({ senderAccount: new SupraAccount(), rawTxn: expiringIn(supra, 601) }),
+            supra.transaction.signTransaction({ senderAccount: new SupraAccount(), rawTxn: expiringIn(supra, 606) }),
         ).rejects.toThrow(RangeError);
     });
 
@@ -283,18 +338,33 @@ describe("builders that send no request", () => {
 
     it("use the maximum the client has read", async () => {
         node.parameters = [maximum(300)];
-        const supra = client({ txExpirySecs: 600 });
+        const supra = client({ txExpirySecs: 300 });
         await supra.getTransactionParameters();
 
-        const rawTxn = supra.transaction.build.rawTxnObject({
-            senderAddress: new SupraAccount().address(),
-            senderSequenceNumber: 0n,
-            function: "0x1::supra_account::transfer",
-            functionTypeArgs: [],
-            functionArgs: [],
-            optionalTransactionPayloadArgs: GAS,
-        });
+        expect(offlineBuild(supra).expiration_timestamp_secs).toBe(BigInt(NOW_SECONDS + 295));
+    });
 
-        expect(rawTxn.expiration_timestamp_secs).toBe(BigInt(NOW_SECONDS + 295));
+    it("throw a RangeError for a txExpirySecs above the assumed maximum, naming getTransactionParameters()", () => {
+        const supra = client({ txExpirySecs: 601 });
+
+        expect(() => offlineBuild(supra)).toThrow(RangeError);
+        expect(() => offlineBuild(supra)).toThrow(/601.*assumed maximum of 600.*getTransactionParameters\(\)/);
+        expect(paths).toEqual([]);
+    });
+
+    it("throw a RangeError for a txExpirySecs above the maximum the client has read, saying it was read", async () => {
+        node.parameters = [maximum(300)];
+        const supra = client({ txExpirySecs: 400 });
+        await supra.getTransactionParameters();
+
+        expect(() => offlineBuild(supra)).toThrow(/400.*the node's maximum of 300 seconds.*read from/);
+    });
+
+    it("accept a txExpirySecs above 600 once the client has read a larger maximum", async () => {
+        node.parameters = [maximum(1_200)];
+        const supra = client({ txExpirySecs: 900 });
+        await supra.getTransactionParameters();
+
+        expect(offlineBuild(supra).expiration_timestamp_secs).toBe(BigInt(NOW_SECONDS + 900));
     });
 });

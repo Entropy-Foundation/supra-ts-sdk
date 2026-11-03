@@ -669,6 +669,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SignedTransaction`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      */
     signedTransaction(senderAccount: SupraAccount): Promise<TxnBuilderTypes.SignedTransaction> {
         return signedTransactionInternal(
@@ -686,6 +689,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SendTxnPayload`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      */
     sendTxnPayload(senderAccount: SupraAccount): Promise<SendTxnPayload> {
         return sendTxnPayloadInternal(
@@ -738,6 +744,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      * @throws `SupraGasUnitPriceBelowMinimumError` when the node refuses the submission or an enabled simulation
      * because the gas unit price is below its minimum (see `Submit`)
      * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
@@ -855,6 +864,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns A promise of the ed25519 signature in `HexString`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      */
     signTransaction(senderAccount: SupraAccount): Promise<HexString> {
         return signTransactionInternal(

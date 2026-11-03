@@ -572,12 +572,15 @@ less than that maximum after the client's clock, so that a node whose clock is u
 accepts `txExpirySecs: 600`. The node refuses a transaction whose expiration time is not after its clock or is more
 than its maximum after it, so a client whose clock is far from the node's has its transactions refused. The client
 reads the maximum once, with the first builder that sends requests or signature that needs it, and throws a failed
-read's error with no fallback to 600; a `txExpirySecs` or a `txExpiryTime` beyond it throws a `RangeError` before
-signing (the node answered such a transaction with a `SupraAPIError` in 1.2.0). Signing with `verifyChainId: false`
-sends no request and does not check the expiration time; the builders that send no request (`rawTxnObject` and the
-like) use the maximum the client has read, else 600 (`ASSUMED_MAX_TX_EXPIRATION_DURATION`). This applies to every builder, including those of `transaction.build`. For a transaction that is signed or
-submitted later (for example after a wallet's confirmation), set a longer window for the client or an absolute time
-for the transaction:
+read's error with no fallback to 600. A `txExpirySecs` beyond the maximum throws a `RangeError` when the transaction
+is built; `txExpirySecs` is new in 2.0.0. A `txExpiryTime` more than the maximum after the current time (plus 5 seconds
+of slack for the client's estimate of the node's clock) throws a `RangeError` before signing; in 1.2.0 the node
+answered such a transaction with a `SupraAPIError`. Signing with `verifyChainId: false` sends no request and does not
+check the expiration time. The builders that send no request (`rawTxnObject` and the like) use the maximum the client
+has read, else 600 (`ASSUMED_MAX_TX_EXPIRATION_DURATION`), and throw the same `RangeError` for a `txExpirySecs` above
+it; the messages say whether the maximum was read or assumed. This applies to every builder, including those of
+`transaction.build`. For a transaction that is signed or submitted later (for example after a wallet's confirmation),
+set a longer window for the client or an absolute time for the transaction:
 
 ```typescript
 import { Network, SupraClient } from "supra-ts-sdk";

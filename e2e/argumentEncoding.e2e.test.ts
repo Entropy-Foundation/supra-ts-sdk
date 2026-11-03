@@ -19,7 +19,9 @@ const AMOUNT = 777n;
  * the account, so the address needs no key pair.
  */
 function addressWithLeadingZeros(leadingZeros: number): string {
-    const tail = randomBytes(32).toString("hex").slice(leadingZeros + 1);
+    const tail = randomBytes(32)
+        .toString("hex")
+        .slice(leadingZeros + 1);
     return `0x${"0".repeat(leadingZeros)}a${tail}`;
 }
 
@@ -201,7 +203,10 @@ describeE2E("argument encoding", () => {
 
         test.each(["", "0x"])("%j as an Object<T> or address argument throws before any request", async (empty) => {
             const abi = (
-                await ctx.supra.account.getAccountModule({ accountAddress: "0x1", moduleName: "primary_fungible_store" })
+                await ctx.supra.account.getAccountModule({
+                    accountAddress: "0x1",
+                    moduleName: "primary_fungible_store",
+                })
             ).abi!;
             const receiver = createUnfundedAccount().address().toString();
             const fetchSpy = jest.spyOn(globalThis, "fetch");

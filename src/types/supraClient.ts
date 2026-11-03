@@ -65,9 +65,13 @@ export interface RetryConfig {
  * the chain time it estimates from its reads of the latest block; with
  * `verifyChainId: false` signing sends no request and does not check it. The builders that send no request
  * (`transaction.build.rawTxnObject` and the like) use the maximum the client has read, else
- * `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600). The node refuses a transaction whose expiration time is not after its
- * clock, or more than its maximum after it, so a client whose clock is far from the node's has its transactions
- * refused.
+ * `ASSUMED_MAX_TX_EXPIRATION_DURATION` (600), and throw a `RangeError` when `txExpirySecs` is more than it. Every
+ * `RangeError` of these checks names the maximum and says whether it was read from
+ * `GET /rpc/v3/transactions/parameters` or assumed because it had not been read; for an assumed one it names
+ * `getTransactionParameters()` as the way to read it first. The signing check allows `TX_EXPIRATION_MARGIN_SECS` (5)
+ * seconds beyond the maximum, because the client's estimate of the node's clock can trail it; the node refuses what it
+ * does not accept. The node refuses a transaction whose expiration time is not after its clock, or more than its
+ * maximum after it, so a client whose clock is far from the node's has its transactions refused.
  *
  * `timeoutMs` sets the timeout of each request (default 30000 ms; an integer up to 2147483647); a request that exceeds it throws
  * `SupraTimeoutError`, and a submission request that exceeds it makes the submit helper throw

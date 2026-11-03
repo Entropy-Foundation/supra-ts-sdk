@@ -465,7 +465,14 @@ describe("chain ID check before signing", () => {
             .catch((caught: unknown) => caught);
 
         expect(error).toMatchObject({ configuredChainId: 6, nodeChainId: NODE_CHAIN_ID });
-        expect(requests).toEqual([{ method: "GET", path: "/transactions/chain_id" }]);
+        // The read of the node's maximum time to live runs together with the chain ID read.
+        expect(requests).toHaveLength(2);
+        expect(requests).toEqual(
+            expect.arrayContaining([
+                { method: "GET", path: "/transactions/chain_id" },
+                { method: "GET", path: "/transactions/parameters" },
+            ]),
+        );
     });
 
     it("signs offline for a predefined network with verifyChainId false", async () => {
