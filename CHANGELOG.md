@@ -158,7 +158,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `SettlementData`, `SettlementApplierSummary`, `SettlementCreditSummary` and `AppliedInboundSettlement`), and
   `"settlement"` in `TransactionQueryType`. A settlement item has no `header`, `payload` or `authenticator`.
 - `AutomationTransactionResponse.predicate` (`AutomationPredicateInfo`), the `Remove` variant of
-  `AutomationRecordAction`, `EvmTransactionOutput` in `TransactionOutput`, and the v12 fields and
+  `AutomationRecordAction` (its `kind` is `"Error"`, `"ConfigUpdate"` or `"PreExecutionLimit"`),
+  `EvmTransactionOutput` in `TransactionOutput`, and the v12 fields and
   `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
 - `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
