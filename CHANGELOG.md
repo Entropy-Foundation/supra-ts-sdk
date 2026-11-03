@@ -221,6 +221,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   optionalTransactionArgs? })`** submits `0x1::automation_registry::stop_tasks`, for the user automation tasks of the
   sender. Like the transfers, they take the sequence number from the client's counter and estimate the max gas. The
   `Automation` class is also mixed into the client (`supra.cancelAutomationTask`, `supra.stopAutomationTasks`).
+- **Sponsored transaction from a sender without an account (documentation).** A sender for which `isAccountExists` is
+  `false` uses sequence number 0 in `rawTxnObject`; `getAccountInfo` throws for it. A node from `supra_node_v12.0.0`
+  admits the submission and the sender's sequence number is 1 afterwards; a v11.7.x node refuses it with HTTP 400. The
+  `submitSponsorTransaction` example, the README and the agent skill show the flow.
 
 ### Changed
 

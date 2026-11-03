@@ -287,6 +287,14 @@ export class Submit {
      * carries the hash derived before the submission.
      * @throws {RangeError} Before submitting, when the fee payer address or a secondary signer address is not 1 to 64
      * hex digits after an optional `0x` or `0X`.
+     *
+     * A sender that has no `Account` resource sends its first transaction with sequence number 0. Check with
+     * `supra.account.isAccountExists`, which returns `false` for it on every node, and do not read the number with
+     * `getAccountInfo`, which throws for an absent account. The simulation with that number succeeds. A node from
+     * `supra_node_v12.0.0` (Devnet) admits the submission and the transaction creates the account, so the sender's
+     * sequence number is 1 afterwards. A v11.7.x node (Mainnet, Testnet) refuses the submission with HTTP 400,
+     * "Transaction validation failed: Failed to read the AccountResource". `rawTxnObject` reads nothing from the
+     * node, so the number is the caller's.
      * @example
      * ```typescript
      * import { BCS, Network, SupraAccount, SupraClient, TxnBuilderTypes } from "supra-ts-sdk";
@@ -297,9 +305,15 @@ export class Submit {
      *
      * async function runExample() {
      *
+     *   // 0 for a sender with no account, else the account's sequence number
+     *   const accountAddress = account.address();
+     *   const senderSequenceNumber = (await supra.account.isAccountExists({ accountAddress }))
+     *       ? (await supra.account.getAccountInfo({ accountAddress })).sequence_number
+     *       : 0n;
+     *
      *   const supraCoinTransferSponsoredRawTransaction = supra.transaction.build.rawTxnObject({
-     *       senderAddress: account.address(),
-     *       senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
+     *       senderAddress: accountAddress,
+     *       senderSequenceNumber,
      *       function: "0x1::supra_account::transfer",
      *       functionTypeArgs: [],
      *       functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(10000n)],

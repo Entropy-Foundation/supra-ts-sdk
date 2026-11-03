@@ -396,6 +396,24 @@ try {
 }
 ```
 
+### Sponsored transaction from a sender without an account
+
+`rawTxnObject` and the sponsor submission take the sender's sequence number from the caller. A sender with no `Account`
+resource (`isAccountExists` is `false`) uses sequence number 0 and is not read with `getAccountInfo`, which throws for
+an absent account (`SupraNotFoundError` on v12, a `SupraAPIError` with status 400 on v11):
+
+```ts
+const accountAddress = sender.address();
+const senderSequenceNumber = (await supra.account.isAccountExists({ accountAddress }))
+  ? (await supra.account.getAccountInfo({ accountAddress })).sequence_number
+  : 0n;
+```
+
+The simulation with that number succeeds on every node. A node from `supra_node_v12.0.0` (Devnet) admits the
+submission, the transaction creates the account, and the sender's sequence number is 1 afterwards. A v11.7.x node
+(Mainnet, Testnet) refuses the submission with HTTP 400, "Transaction validation failed: Failed to read the
+AccountResource".
+
 ### Sequence numbers
 
 A transaction carries the sender's sequence number, and the node executes a transaction only when its number is the

@@ -795,7 +795,8 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     }
 
     /**
-     * Submit the sponsor transaction
+     * Submit the sponsor transaction. A sender with no `Account` resource uses sequence number 0, which a v12 node
+     * admits and a v11.7.x node refuses with HTTP 400 (see `Submit.submitSponsorTransaction`).
      * @param args.feePayerAddress - Fee payer address
      * @param args.secondarySignersAccountAddress - Secondary signers address
      * @param args.senderAuthenticator - Sender authenticator
