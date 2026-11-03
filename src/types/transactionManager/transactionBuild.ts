@@ -129,10 +129,7 @@ export interface RawTxnJSON {
 }
 
 export type TransactionPayloadJSON =
-    | EntryFunctionPayloadJSON
-    | ScriptPayloadJSON
-    | AutomationRegistrationPayloadJSON
-    | MultisigPayloadJSON;
+    EntryFunctionPayloadJSON | ScriptPayloadJSON | AutomationRegistrationPayloadJSON | MultisigPayloadJSON;
 
 export interface EntryFunctionPayloadJSON {
     EntryFunction: EntryFunctionJSON;

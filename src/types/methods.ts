@@ -49,8 +49,7 @@ export interface ViewBatchError {
  * @beta
  */
 export type ViewBatchEntry<T extends Array<MoveValue> = Array<MoveValue>> =
-    | { result: T; error?: undefined }
-    | { error: ViewBatchError; result?: undefined };
+    { result: T; error?: undefined } | { error: ViewBatchError; result?: undefined };
 
 /**
  * The response of `viewBatch`.

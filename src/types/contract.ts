@@ -128,9 +128,9 @@ export type Args<
 
 // Dynamic type that maps all `is_view` functions to callable functions
 export type ViewFunctionsFromABI<CONTRACT extends DeepReadonly<MoveModule>> = {
-    [FUNCTION in CONTRACT["exposed_functions"][number] as FUNCTION["is_view"] extends true
-        ? FUNCTION["name"]
-        : never]: (
+    [
+        FUNCTION in CONTRACT["exposed_functions"][number] as FUNCTION["is_view"] extends true ? FUNCTION["name"] : never
+    ]: (
         args: Args<{
             functionArguments: FUNCTION["params"];
             typeArguments: ConvertGenerics<FUNCTION["generic_type_params"]>;
@@ -154,9 +154,11 @@ export type EntryArgs<
 };
 
 export type EntryFunctionsFromABI<CONTRACT extends DeepReadonly<MoveModule>> = {
-    [FUNCTION in CONTRACT["exposed_functions"][number] as FUNCTION["is_entry"] extends true
-        ? FUNCTION["name"]
-        : never]: (
+    [
+        FUNCTION in CONTRACT["exposed_functions"][number] as FUNCTION["is_entry"] extends true
+            ? FUNCTION["name"]
+            : never
+    ]: (
         args: EntryArgs<{
             functionArguments: FUNCTION["params"];
             typeArguments: ConvertGenerics<FUNCTION["generic_type_params"]>;
@@ -178,7 +180,8 @@ export type ContractsFromABI<CONTRACTS extends DeepReadonly<MoveModule[]>> = {
 };
 
 export type DeepReadonly<T> = Readonly<{
-    [K in keyof T]: T[K] extends number | string | symbol // Is it a primitive? Then make it readonly
+    [K in keyof T]: T[K] extends
+        number | string | symbol // Is it a primitive? Then make it readonly
         ? Readonly<T[K]>
         : // Is it an array of items? Then make the array readonly and the item as well
           T[K] extends Array<infer A>

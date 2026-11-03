@@ -210,20 +210,13 @@ export type AccountSignature = Ed25519Signature | MultiEd25519Signature;
  * The union of all transaction authenticators.
  */
 export type Authenticator =
-    | MoveTransactionAuthenticator
-    | OracleAuthenticator
-    | DkgAuthenticator
-    | AutomationAuthenticator;
+    MoveTransactionAuthenticator | OracleAuthenticator | DkgAuthenticator | AutomationAuthenticator;
 
 /**
  * The union of all move authenticators
  */
 export type MoveInnerAuthenticator =
-    | Ed25519Signature
-    | MultiEd25519Signature
-    | MultiAgentSignature
-    | FeePayerSignature
-    | SingleSenderSignature;
+    Ed25519Signature | MultiEd25519Signature | MultiAgentSignature | FeePayerSignature | SingleSenderSignature;
 
 /**
  * The authenticator for a move transaction
