@@ -33,6 +33,13 @@ export class Methods {
      * Queries a Move view function. The arguments are encoded and the results converted to TypeScript values by the
      * function's ABI, which the method reads from the node unless `args.abi` is given (`u64`, `u128` and `u256`
      * results are `bigint`).
+     *
+     * A parameter or return type that is or contains a type parameter (`T`, `vector<T>`, `0x1::option::Option<T>`, a
+     * struct over `T`) is converted with each type parameter replaced by its type argument: `identity<T>(x: T): T`
+     * called with the type argument `u64` takes a `bigint` and returns a `bigint`. Generic views with type arguments
+     * other than `address` need a node from `supra_node_v12.0.0`. An earlier node reads every type parameter as
+     * `address`: it refuses other type arguments or answers with the value read as an address, which is returned as
+     * the node sent it. `address` type arguments, and `0x1::object::Object<…>`, work on both.
      * @template T - The type of the MoveValue array to be returned.
      * @param args.function - The id of the function to query, `address::module::function`.
      * @param args.typeArguments - An array of type arguments for the function, as type tags or strings. A string must be

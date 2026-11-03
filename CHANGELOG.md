@@ -230,6 +230,15 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   also inside `vector` and `Option`, returns `{ value: bigint }` where it returned `{ value: string }` (the node's
   JSON). The typed contract proxy types these results with the new `MoveResultToTS`; `ReturnTypes` uses it, and
   `MoveToTS` no longer maps them to the struct name string.
+- **Breaking:** `methods.view` and the contract proxy convert a view argument or result whose type is a type parameter
+  of the function, or contains one (`vector<T>`, `0x1::option::Option<T>`, a struct over `T`), as the type with each
+  type parameter replaced by the call's type argument, as a node from `supra_node_v12.0.0` reads it. They sent and
+  returned such values as given and as the node's JSON. On a v12 node, `identity<T>(x: T): T` with the type argument
+  `u64` takes a `bigint` (sent as a JSON number and refused by the node in 1.2.0) and returns a `bigint` where it
+  returned a string, and with `0x1::object::Object<…>` returns the address where it returned `{ inner }`. A v11 node
+  reads every type parameter as `address`; there, results that 1.2.0 returned are unchanged, and a value the node
+  answers as an address for another type argument is returned as the node sent it. Type arguments other than
+  `address` need a node from `supra_node_v12.0.0`.
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
   an error status, which is thrown as `SupraAPIError`.

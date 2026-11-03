@@ -12,6 +12,8 @@ import {
     extractVectorInner,
     isMoveStruct,
     fixedPointRawType,
+    substituteTypeParameters,
+    typeArgumentTypeStrings,
 } from "../general";
 import { HexString, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import { parseTypeArgument, typeTagToString } from "../typeTag";
@@ -712,5 +714,124 @@ describe("fixed-point structs", () => {
         });
         expect(convertValueToReturnTypedValue(`0x1::option::Option<${FP64}>`, { vec: [] })).toBeNull();
         expect(() => convertValueToReturnTypedValue(FP32, "123")).toThrow("Expected an object with a value field");
+    });
+});
+
+describe("substituteTypeParameters", () => {
+    it.each([
+        ["T0", ["u64"], "u64"],
+        ["vector<T0>", ["address"], "vector<address>"],
+        ["0x1::option::Option<T0>", ["u128"], "0x1::option::Option<u128>"],
+        [
+            "0x1::object::Object<T0>",
+            ["0x1::fungible_asset::Metadata"],
+            "0x1::object::Object<0x1::fungible_asset::Metadata>",
+        ],
+        ["0xabc::m::Pair<T1, T0>", ["u8", "bool"], "0xabc::m::Pair<bool, u8>"],
+        ["vector<0x1::option::Option<T1>>", ["bool", "vector<u64>"], "vector<0x1::option::Option<vector<u64>>>"],
+        ["vector<T10>", [...Array<string>(10).fill("u8"), "u64"], "vector<u64>"],
+        ["&T0", ["u64"], "&u64"],
+    ])("replaces the type parameters of %s", (type, typeArguments, expected) => {
+        expect(substituteTypeParameters(type, typeArguments)).toBe(expected);
+    });
+
+    it("keeps names that are not type parameters", () => {
+        expect(substituteTypeParameters("0xabc::T0::T1", ["u8", "u16"])).toBe("0xabc::T0::T1");
+        expect(substituteTypeParameters("0xabc::m::T0<T0>", ["u8"])).toBe("0xabc::m::T0<u8>");
+        expect(substituteTypeParameters("0xabc::m::XT0<T01x>", ["u8"])).toBe("0xabc::m::XT0<T01x>");
+        expect(substituteTypeParameters("u64", ["u8"])).toBe("u64");
+    });
+
+    it("keeps a type parameter that has no type argument", () => {
+        expect(substituteTypeParameters("vector<T1>", ["u8"])).toBe("vector<T1>");
+        expect(substituteTypeParameters("T0", [])).toBe("T0");
+    });
+});
+
+describe("typeArgumentTypeStrings", () => {
+    it("writes strings and TypeTags in one form", () => {
+        expect(
+            typeArgumentTypeStrings([
+                "u64",
+                new TxnBuilderTypes.TypeTagVector(new TxnBuilderTypes.TypeTagBool()),
+                "0x0001::object::Object<0x1::fungible_asset::Metadata>",
+                "0xABC::m::S",
+            ]),
+        ).toEqual([
+            "u64",
+            "vector<bool>",
+            "0x1::object::Object<0x1::fungible_asset::Metadata>",
+            "0x0000000000000000000000000000000000000000000000000000000000000abc::m::S",
+        ]);
+        expect(typeArgumentTypeStrings(undefined)).toEqual([]);
+    });
+
+    it("refuses a string that is not a type argument", () => {
+        expect(() => typeArgumentTypeStrings(["T0"])).toThrow();
+    });
+});
+
+describe("generic view arguments and results", () => {
+    const echo = createMockFunction({
+        name: "echo",
+        generic_type_params: [{ constraints: [] }],
+        params: ["T0"],
+        return: ["T0"],
+    });
+    const fnId = "0x1::m::echo" as const;
+
+    it("converts an argument as the type argument of its type parameter", () => {
+        expect(
+            convertPayloadArgsToJSONParsable(echo, { function: fnId, typeArguments: ["u64"], functionArguments: [5n] }),
+        ).toEqual(["5"]);
+        expect(
+            convertPayloadArgsToJSONParsable(echo, { function: fnId, typeArguments: ["u8"], functionArguments: [5n] }),
+        ).toEqual([5]);
+        expect(
+            convertPayloadArgsToJSONParsable(echo, {
+                function: fnId,
+                typeArguments: ["bool"],
+                functionArguments: ["true"],
+            }),
+        ).toEqual([true]);
+    });
+
+    it("leaves an argument of a call without type arguments as given", () => {
+        expect(convertPayloadArgsToJSONParsable(echo, { function: fnId, functionArguments: [5n] })).toEqual([5n]);
+    });
+
+    it("converts a result as the type argument of its type parameter", () => {
+        expect(convertValueToAbiReturnTypedValue(["T0"], ["5"], ["u64"])).toEqual([5n]);
+        expect(convertValueToAbiReturnTypedValue(["T0"], [5], ["u16"])).toEqual([5]);
+        expect(convertValueToAbiReturnTypedValue(["vector<T0>", "u64"], [["1"], "2"], ["u128"])).toEqual([[1n], 2n]);
+    });
+
+    it("returns the result of a type parameter as the node sent it without type arguments", () => {
+        expect(convertValueToAbiReturnTypedValue(["T0"], ["5"])).toEqual(["5"]);
+    });
+
+    it("returns a result that does not have the JSON form of the type argument as before", () => {
+        expect(convertValueToAbiReturnTypedValue(["T0"], ["0xff"], ["u256"])).toEqual(["0xff"]);
+        expect(convertValueToAbiReturnTypedValue(["T0"], ["0x1"], ["bool"])).toEqual(["0x1"]);
+        expect(convertValueToAbiReturnTypedValue(["T0"], ["0x1"], ["0x1::option::Option<u64>"])).toEqual(["0x1"]);
+        expect(convertValueToAbiReturnTypedValue(["T0"], [["0x1"]], ["vector<u8>"])).toEqual([["0x1"]]);
+        expect(
+            convertValueToAbiReturnTypedValue(["T0"], [{ value: "0x1" }], ["0x1::fixed_point32::FixedPoint32"]),
+        ).toEqual([{ value: "0x1" }]);
+    });
+
+    it("sends the type arguments and their Move type strings from generateViewFunctionPayload", async () => {
+        const abi: MoveModule = { address: "0x1", name: "m", friends: [], exposed_functions: [echo], structs: [] };
+        const payload = await generateViewFunctionPayload(
+            { function: fnId, typeArguments: [new TxnBuilderTypes.TypeTagU64()], functionArguments: [12345n], abi },
+            {} as NetworkConfig,
+        );
+        expect(payload).toEqual({
+            function: fnId,
+            typeArguments: ["u64"],
+            functionArguments: ["12345"],
+            returnType: ["T0"],
+            typeArgumentTypes: ["u64"],
+        });
     });
 });

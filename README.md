@@ -691,6 +691,25 @@ const [rate] = await supra.methods.view<[{ value: bigint }]>({
 console.log(rate.value); // 6442450944n
 ```
 
+### Generic view functions
+
+`methods.view` and the contract proxy convert a parameter or return type that is a type parameter, or contains one
+(`vector<T>`, `0x1::option::Option<T>`, `0x1::object::Object<T>`, a struct over `T`), as the type with each type
+parameter replaced by its type argument. For `#[view] public fun identity<T: copy + drop>(x: T): T`:
+
+```ts
+const [value] = await supra.methods.view<[bigint]>({
+    function: `${moduleAddress}::m::identity`,
+    typeArguments: ["u64"],
+    functionArguments: [12345n],
+});
+console.log(value); // 12345n
+```
+
+Type arguments other than `address` need a node from `supra_node_v12.0.0` (Devnet). A v11 node reads every type
+parameter as `address`: it refuses other type arguments, or reads the argument as an address and answers with an
+address, which the SDK returns as the node sent it. `address` type arguments and `0x1::object::Object<…>` work on both.
+
 ### Automation tasks
 
 The node runs the entry function of an automation task as automated transactions of the task's owner, from the

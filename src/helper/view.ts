@@ -3,10 +3,17 @@ import type { InputViewFunctionData } from "../types/methods";
 
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { getFunctionABI } from "./abi";
-import { convertPayloadArgsToJSONParsable, convertPayloadTypeArgsToJSONParsable, getFunctionParts } from "./general";
+import {
+    convertPayloadArgsToJSONParsable,
+    convertPayloadTypeArgsToJSONParsable,
+    getFunctionParts,
+    typeArgumentTypeStrings,
+} from "./general";
 
 /**
- * Generate a payload for a view function
+ * Generate a payload for a view function. The arguments are converted as their parameter types with the type
+ * parameters replaced by the type arguments. `typeArgumentTypes` holds the type arguments as Move type strings, to
+ * convert the results the same way (`convertValueToAbiReturnTypedValue`).
  */
 export async function generateViewFunctionPayload(args: InputViewFunctionData, config: NetworkConfig) {
     let { moduleAddress, moduleName, functionName } = getFunctionParts(args.function);
@@ -28,5 +35,6 @@ export async function generateViewFunctionPayload(args: InputViewFunctionData, c
         typeArguments: parsableTypeArguments ?? [],
         functionArguments: parsableArguments,
         returnType: funcABI.return,
+        typeArgumentTypes: typeArgumentTypeStrings(args.typeArguments),
     };
 }

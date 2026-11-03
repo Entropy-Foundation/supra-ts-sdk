@@ -19,7 +19,10 @@ export async function viewInternal<T extends Array<MoveValue>>(
     config: NetworkConfig,
 ): Promise<T> {
     // Generate payload for view
-    let { functionArguments, typeArguments, returnType } = await generateViewFunctionPayload(args, config);
+    let { functionArguments, typeArguments, returnType, typeArgumentTypes } = await generateViewFunctionPayload(
+        args,
+        config,
+    );
 
     let rawResponse = await post<InputViewFunctionData, { result: T }>(
         {
@@ -34,7 +37,7 @@ export async function viewInternal<T extends Array<MoveValue>>(
     ).then((res) => res.result);
 
     // Convert response into a typed value
-    return convertValueToAbiReturnTypedValue(returnType, rawResponse) as T;
+    return convertValueToAbiReturnTypedValue(returnType, rawResponse, typeArgumentTypes) as T;
 }
 
 /**

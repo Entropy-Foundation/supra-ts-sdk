@@ -720,6 +720,39 @@ In the typed contract proxy, `ReturnTypes` uses the new `MoveResultToTS` type, w
 mapped them to the struct name as a string literal type. Code that uses `MoveToTS` for a result type uses
 `MoveResultToTS`.
 
+### Arguments and results of a type parameter are converted as the type argument
+
+A view argument or result whose type is a type parameter of the function (`T`), or contains one (`vector<T>`,
+`0x1::option::Option<T>`, a struct over `T`), is converted as the type with each type parameter replaced by the call's
+type argument. In 1.2.0 such an argument was sent as given and such a result was the node's JSON. A node from
+`supra_node_v12.0.0` reads these types the same way; on a v12 node (Devnet) the results change type:
+
+```typescript
+import type { MoveFunctionId, SupraClient } from "supra-ts-sdk";
+
+// identity<T: copy + drop>(x: T): T
+async function readGeneric(supra: SupraClient, identity: MoveFunctionId) {
+    // 1.2.0: the argument 12345n was sent as a JSON number, which the node refuses; "12345" returned ["12345"]
+    // 2.0.0: [12345n]
+    const [amount] = await supra.methods.view<[bigint]>({
+        function: identity,
+        typeArguments: ["u64"],
+        functionArguments: [12345n],
+    });
+    // 1.2.0: [{ inner: "0xa" }]
+    // 2.0.0: ["0xa"]
+    const [metadata] = await supra.methods.view<[string]>({
+        function: identity,
+        typeArguments: ["0x1::object::Object<0x1::fungible_asset::Metadata>"],
+        functionArguments: ["0xa"],
+    });
+    return { amount, metadata };
+}
+```
+
+Code that converted such results itself (`BigInt(result)`, `result.inner`) uses the result as returned. A v11 node
+(Mainnet, Testnet) reads every type parameter as `address`; the results that 1.2.0 returned from it are unchanged.
+
 ## Responses and pagination
 
 ### The end of a feed is `cursor === undefined`

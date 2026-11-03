@@ -434,6 +434,11 @@ When **return types** come back from `view()`:
 | `vector<T>` | `T[]` |
 | `Option<T>` | `T \| null` |
 
+A parameter or return type that is a type parameter of the function, or contains one (`vector<T>`, `Option<T>`, a
+struct over `T`), is converted as its type argument: `identity<T>(x: T): T` called with `typeArguments: ["u64"]` takes
+and returns a `bigint`. Type arguments other than `address` need a node from `supra_node_v12.0.0` (Devnet); a v11 node
+reads every type parameter as `address`, and its answer is returned as the node sent it.
+
 ---
 
 ## Contract ABI Proxy (Type-Safe Contract Interaction)
