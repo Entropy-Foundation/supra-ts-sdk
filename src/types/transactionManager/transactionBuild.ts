@@ -94,8 +94,11 @@ export interface OptionalTransactionPayloadArgs {
      * helpers and the entry functions of `Contract.fromABI`). When it is set,
      * the helper uses it as given and does not wait for the other calls of the account; the client's counter records
      * the submitted transaction like its own and does not hand out its number while the transaction can commit. When
-     * it is absent, the helper takes the next number of the client's counter. The builders of `transaction.build`
-     * take `senderSequenceNumber` and ignore this field.
+     * it is absent, the helper takes the next number of the client's counter, and the call does not deduplicate: a
+     * repeated call, including one from a restarted process that builds the same transaction again, submits a new
+     * transaction, with the next number when the node already holds the same transaction. With this field set, a call
+     * that builds the same transaction as a pending one is handled as a submission of that transaction (see `Submit`).
+     * The builders of `transaction.build` take `senderSequenceNumber` and ignore this field.
      */
     sequenceNumber?: bigint | number;
 }

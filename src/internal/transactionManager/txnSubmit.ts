@@ -1,13 +1,21 @@
 import { HexString, TxnBuilderTypes, type SupraAccount } from "supra-l1-sdk-core";
+import { get } from "../../client/get";
 import { post } from "../../client/post";
 import { addressToBytes, standardizeAddress } from "../../helper/account";
 import { isSequenceNumberTooNew, MAX_TOO_NEW_CHECKS, resolveSequenceNumberTooNewInternal } from "./behindPending";
-import type { CommittedTransactionResponse, WaitForTransactionOptions } from "../../types/transaction";
-import { SupraAPIError } from "../../errors/apiError";
+import {
+    TransactionStatus,
+    type CommittedTransactionResponse,
+    type TransactionResponse,
+    type WaitForTransactionOptions,
+} from "../../types/transaction";
+import { SupraAPIError, SupraNotFoundError } from "../../errors/apiError";
+import { SupraError } from "../../errors/supraError";
 import { SupraSubmissionOutcomeUnknownError, SupraTransactionTimeoutError } from "../../errors/transactionError";
 import { ed25519TransactionAuthenticator, transactionHashOf, withTransactionHash } from "./txnHash";
 import {
     bindReservation,
+    pooledSubmissionOf,
     reservationOf,
     sequenceNumberTrackerOf,
     settleFailedSubmissionInternal,
@@ -26,7 +34,11 @@ import type {
     SubmitTransactionResponse,
 } from "../../types/transactionManager/transactionSubmit";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import { DEFAULT_ENABLE_SIMULATION, DEFAULT_WAIT_FOR_TX_COMPLETION } from "../../utils/constants";
+import {
+    DEFAULT_ENABLE_SIMULATION,
+    DEFAULT_REQUEST_TIMEOUT_MS,
+    DEFAULT_WAIT_FOR_TX_COMPLETION,
+} from "../../utils/constants";
 import { getTransactionByHashInternal, validateWaitTimeoutMs, waitForTransactionInternal } from "../transaction";
 import { uint8ArrayToHexString } from "../../helper/general";
 import { simulateUnmappedTxnInternal } from "./txnSimulate";
@@ -145,12 +157,16 @@ async function simulateBeforeSubmission(
  * waits for `hash` as after an accepted submission: a final status is returned or thrown as
  * `waitForTransactionInternal` does, and a wait that ends without one (`SupraTransactionTimeoutError`) throws
  * `SupraSubmissionOutcomeUnknownError` with that error as `waitError`.
+ *
+ * After a v11.7 refusal of a copy of a transaction that the node's pool holds (`cause`), `read` is the read of `hash`
+ * that followed it: the status it returned, or its error.
  */
 async function unknownSubmissionOutcomeInternal(
     args: {
         rawTxn: RawTxnJSON;
         hash: string;
         cause: unknown;
+        read?: { status: string | undefined; error: SupraError | undefined } | undefined;
         waitOptions: WaitForTransactionOptions | undefined;
     },
     config: NetworkConfig,
@@ -163,6 +179,8 @@ async function unknownSubmissionOutcomeInternal(
             expirationTimestampSecs: BigInt(args.rawTxn.expiration_timestamp_secs),
             cause: args.cause,
             waitError,
+            readStatus: args.read?.status,
+            readError: args.read?.error,
         });
     if (args.waitOptions === undefined) {
         throw unknown();
@@ -268,16 +286,64 @@ async function submitUnmappedTxnInternal(
             // The node accepted the transaction with a 2xx status, and its body is not JSON.
             answer = undefined;
         } else {
-            const settled = settleFailedSubmissionInternal({ rawTxn, reservation, hash: derivedHash }, error, config);
-            if (!settled.mayHaveAccepted) {
-                // A refusal, including one for a price below the node's minimum: the number is handed out again.
-                throw settled.error;
+            // Whether the refusal is the node's for this transaction, which it already holds from an earlier
+            // submission of the same signed transaction.
+            const pooled = await pooledSubmissionOutcomeInternal(error, derivedHash, config);
+            if (pooled.kind !== "refused" && reservation === undefined) {
+                // The caller signed or numbered the transaction (its number did not come from the counter), and this
+                // is a submission of it again. Its number is recorded as taken.
+                if (pooled.kind === "unknown") {
+                    // A v11.7 node holds it in its pool, or the read failed. The node did not forward this submission,
+                    // and the earlier one may not have reached a validator, so the outcome is unknown.
+                    tracker.record(
+                        rawTxn.sender,
+                        rawTxn.sequence_number,
+                        rawTxn.expiration_timestamp_secs,
+                        derivedHash,
+                    );
+                    return await unknownSubmissionOutcomeInternal(
+                        {
+                            rawTxn,
+                            hash: derivedHash,
+                            cause: error,
+                            read: { status: pooled.readStatus, error: pooled.readError },
+                            waitOptions: wait ? waitOptions : undefined,
+                        },
+                        config,
+                    );
+                }
+                // A v12 node forwarded it again, or it has committed: the submission is handled as accepted, with the
+                // derived hash, and the record below keeps its number.
+                answer = derivedHash;
+            } else {
+                if (pooled.kind !== "refused") {
+                    // The number came from the counter, so the transaction the node holds was submitted by another
+                    // call (of another client, or of this client before `resetSequenceNumber`) that built the same
+                    // transaction. Its number is recorded as taken, and the refusal is settled below as a stale
+                    // number, so the helper sends its own transaction once more with the next number.
+                    tracker.record(
+                        rawTxn.sender,
+                        rawTxn.sequence_number,
+                        rawTxn.expiration_timestamp_secs,
+                        derivedHash,
+                    );
+                }
+                const settled = settleFailedSubmissionInternal(
+                    { rawTxn, reservation, hash: derivedHash },
+                    error,
+                    config,
+                );
+                if (!settled.mayHaveAccepted) {
+                    // A refusal, including one for a price below the node's minimum: the number is handed out again,
+                    // unless it was recorded above.
+                    throw settled.error;
+                }
+                // The node may have accepted the transaction, which is recorded with the derived hash.
+                return await unknownSubmissionOutcomeInternal(
+                    { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
+                    config,
+                );
             }
-            // The node may have accepted the transaction, which is recorded with the derived hash.
-            return await unknownSubmissionOutcomeInternal(
-                { rawTxn, hash: derivedHash, cause: settled.error, waitOptions: wait ? waitOptions : undefined },
-                config,
-            );
         }
     }
     // The node accepted the transaction. Its answer is the transaction's hash; an answer that is not a hash (an empty
@@ -309,6 +375,90 @@ async function submitUnmappedTxnInternal(
 function isUnreadableAcceptance(error: unknown): boolean {
     return error instanceof SupraAPIError && error.status >= 200 && error.status < 300;
 }
+
+/**
+ * The longest wait, in milliseconds, for the read of the transaction that follows a v11.7 `Already scheduled` refusal
+ * naming the submitted transaction (`pooledSubmissionOutcomeInternal`), or the client's request timeout when that is
+ * shorter. The read is made once, without the client's retries, because a helper call holds the account's lock
+ * during it.
+ */
+export const POOLED_TRANSACTION_READ_TIMEOUT_MS = 5_000;
+
+/**
+ * What the error of a submission request shows about the submitted transaction, whose hash is `hash`, when it is the
+ * node's refusal of a transaction that its pool already holds (`pooledSubmissionOf`):
+ *
+ * - `"accepted"`: the v12 refusal that names `hash` (`transaction <hash> is already pending`). A v12 node gives it
+ *   after it has forwarded the transaction again, so the transaction is pending.
+ * - The v11.7 refusal that names `hash` (`Already scheduled digest=<hash>, ...`). The node gives it also when its pool
+ *   holds another transaction with the same sequence number at a gas unit price at least the submitted one's, and does
+ *   not forward the submission, so the transaction is read by hash from the node, once, within
+ *   `POOLED_TRANSACTION_READ_TIMEOUT_MS`:
+ *   - `"accepted"` when the read returns `Success` or `Fail`: the transaction has committed.
+ *   - `"unknown"` when the read returns another status than those and `Invalid` (`Pending` from the node's pool, whose
+ *     earlier forward of it may have failed), with that status as `readStatus`, or the read fails other than with a
+ *     404 (a timeout, a connection failure, a 429 or a 5xx), with its error as `readError`: the transaction may
+ *     commit.
+ *   - `"refused"` when the read returns `Invalid` or a 404: the node's pool holds another transaction. A 404 is taken
+ *     to come from the node that refused the submission; several RPC nodes behind one URL can answer 404 for a
+ *     transaction another of them holds.
+ * - `"refused"`: any other error.
+ */
+async function pooledSubmissionOutcomeInternal(
+    error: unknown,
+    hash: string,
+    config: NetworkConfig,
+): Promise<PooledSubmissionOutcome> {
+    const pooled = pooledSubmissionOf(error, hash);
+    if (pooled === "transaction") {
+        return { kind: "accepted" };
+    }
+    if (pooled === undefined) {
+        return { kind: "refused" };
+    }
+    const transactionHash = standardizeAddress(hash);
+    let status: TransactionStatus;
+    try {
+        status = (
+            await get<TransactionResponse>(
+                {
+                    path: `/transactions/${transactionHash}`,
+                    query: { exclude_uncommitted: false },
+                    retryable: false,
+                },
+                {
+                    ...config,
+                    timeout: Math.min(config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS, POOLED_TRANSACTION_READ_TIMEOUT_MS),
+                },
+            )
+        ).data.status;
+    } catch (readError) {
+        if (readError instanceof SupraNotFoundError) {
+            return { kind: "refused" };
+        }
+        return {
+            kind: "unknown",
+            readStatus: undefined,
+            readError:
+                readError instanceof SupraError
+                    ? readError
+                    : new SupraError(`The read of transaction ${transactionHash} failed`, { cause: readError }),
+        };
+    }
+    sequenceNumberTrackerOf(config).observeTransaction(transactionHash, status);
+    if (status === TransactionStatus.Success || status === TransactionStatus.Fail) {
+        return { kind: "accepted" };
+    }
+    if (status === TransactionStatus.Invalid) {
+        return { kind: "refused" };
+    }
+    return { kind: "unknown", readStatus: status, readError: undefined };
+}
+
+/** What `pooledSubmissionOutcomeInternal` shows about a submission; `unknown` carries the read's status or error. */
+type PooledSubmissionOutcome =
+    | { readonly kind: "accepted" | "refused" }
+    | { readonly kind: "unknown"; readonly readStatus: string | undefined; readonly readError: SupraError | undefined };
 
 /** Whether the node's answer to a submission is a transaction hash: `0x` followed by 64 hex digits. */
 function isTransactionHash(answer: unknown): answer is string {

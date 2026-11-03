@@ -302,7 +302,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraGasUnitPriceBelowMinimumError` | the node refuses a submission or a simulation because the gas unit price is below its minimum | `gasUnitPrice`, `minimumGasUnitPrice`, `major_status`, `cause` (the `SupraAPIError` or `SupraSimulationFailedError`) |
 | `SupraTimeoutError` | a request exceeds the timeout (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `cause` |
-| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503: the node may have accepted the transaction | `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause` |
+| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503: the node may have accepted the transaction; also after a v11.7 `Already scheduled` refusal of a copy whose read does not settle the outcome (see [Transaction outcomes](#transaction-outcomes)) | `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause`, `readStatus`, `readError` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
 | `SupraChainIdMismatchError` | before signing, the configured chain ID or the transaction's chain ID is not the node's | `configuredChainId`, `nodeChainId`, `transactionChainId` |
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` | `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
@@ -402,6 +402,26 @@ transfers, `publishPackage`, the automation task helpers, the multisig helpers a
   status or 503 did not accept the transaction; that is thrown as `SupraAPIError`, or as
   `SupraGasUnitPriceBelowMinimumError` for a gas unit price below the node's minimum. A 2xx answer whose body is not a
   transaction hash is an accepted submission, and the derived hash is used in place of the body.
+- A 400 that says the node's pool already holds the submitted transaction, for example when the same signed
+  transaction is submitted twice, is handled as follows when the transaction's sequence number is the caller's (the
+  `transaction.submit` methods, the submit methods of a built transaction, and helper calls with `sequenceNumber`).
+  The transaction commits at most once.
+  - A v12 node names the transaction (`transaction <hash> is already pending`) after it has forwarded it again: the
+    submission is handled as accepted with the derived hash, and the call waits for it or reads it back as above.
+  - A v11.7 node answers `Already scheduled digest=<hash>, ...`, also when its pool holds another transaction with the
+    same sequence number at a gas unit price at least this one's, and does not forward the submission. The SDK reads
+    the transaction by hash once, within 5 seconds and without retries. `Success` or `Fail`: handled as accepted.
+    `Pending` (the node's pool holds it, and its earlier forward may have failed), another non-final status, or a
+    failed read other than a 404: handled as an unknown outcome, with the refusal as `cause` of
+    `SupraSubmissionOutcomeUnknownError` and the read's status as `readStatus` or its error as `readError` (or a wait
+    for the hash with `enableWaitForTransaction: true`). Sending the same signed transaction to the same v11.7 node
+    again does not reach a validator while the node's pool holds it. A 404 or
+    `Invalid`: the refusal is thrown as `SupraAPIError`. The 404 is taken to come from the node that refused the
+    submission; several RPC nodes behind one URL can answer 404 for a transaction another of them holds.
+
+  A helper call whose number comes from the client's counter does not deduplicate: a repeated call, including one
+  from a restarted process that builds the same transaction again, submits a new transaction. When the node already
+  holds the same transaction, its number stays taken and the helper sends its transaction with the next number.
 
 ```ts
 import {
@@ -499,7 +519,9 @@ the entry functions of `Contract.fromABI` take the number from a counter that th
 - When the node refuses a number as stale (`SEQUENCE_NUMBER_TOO_OLD`, `SEQUENCE_NUMBER_TOO_NEW`, a number below the
   account's, or a number that already has a pending transaction, for example one sent by another client), the helper
   sends the transaction once more with the next number. A second refusal is thrown. A transaction with an explicit
-  number is not retried.
+  number is not retried. When the refusal shows that the pending transaction is the one the helper built (another
+  call, for example of another client, built the same transaction with the same number), that number stays taken and
+  the helper sends its transaction once more with the next number (see [Transaction outcomes](#transaction-outcomes)).
 - When the node refuses a number because its queue for the account is full, `SupraAccountQueueFullError` is thrown and
   the transaction is not sent again.
 - After a submission whose outcome is unknown and that the node did not in fact accept, later transactions wait in the

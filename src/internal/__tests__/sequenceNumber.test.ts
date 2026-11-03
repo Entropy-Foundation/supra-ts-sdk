@@ -12,6 +12,7 @@ import {
     bindReservation,
     isAccountQueueFullRefusal,
     isStaleSequenceNumberError,
+    pooledSubmissionOf,
     reservationOf,
     sequenceNumberTrackerOf,
     settleUnsubmittedSequenceNumberInternal,
@@ -602,6 +603,46 @@ describe("refusals concerning the sequence number", () => {
 
         expect(isAccountQueueFullRefusal(error)).toBe(full);
         expect(isStaleSequenceNumberError(error)).toBe(!full);
+    });
+});
+
+describe("refusals of a transaction the node's pool holds", () => {
+    const OWN = "5e".repeat(32);
+    const OTHER = "6f".repeat(32);
+    const v12 = (hash: string) => `Transaction validation failed: transaction ${hash} is already pending`;
+    const v11 = (hash: string) =>
+        `Transaction validation failed: Already scheduled digest=${hash}, sender=0x1, sequence_number=7`;
+
+    it.each([
+        ["v12, as the node writes it", v12(OWN), "0x" + OWN, "transaction"],
+        ["v12, with 0x in the message", v12("0x" + OWN), "0x" + OWN, "transaction"],
+        ["v12, against an upper-case hash", v12(OWN), "0X" + OWN.toUpperCase(), "transaction"],
+        ["v12, against a hash without 0x", v12(OWN.toUpperCase()), OWN, "transaction"],
+        ["v11.7, as the node writes it", v11(OWN), "0x" + OWN, "sequenceNumber"],
+        ["v11.7, with 0x and upper case in the message", v11("0x" + OWN.toUpperCase()), "0x" + OWN, "sequenceNumber"],
+        ["v12, naming another hash", v12(OTHER), "0x" + OWN, undefined],
+        ["v11.7, naming another hash", v11(OTHER), "0x" + OWN, undefined],
+        ["v12, naming a prefix of the hash", v12(OWN.slice(0, 8)), "0x" + OWN, undefined],
+        [
+            "v12 refusal of another transaction with the number",
+            "Transaction validation failed: a transaction with sequence number 7 is already pending for this account at gas unit price 100; a replacement must offer a higher gas unit price than that, and this one offers 100",
+            "0x" + OWN,
+            undefined,
+        ],
+    ])("classifies the %s", (_name, message, hash, pooled) => {
+        const error = apiError(400, message);
+
+        expect(pooledSubmissionOf(error, hash)).toBe(pooled);
+        // The stale-number classification of the messages is unchanged; a submission checks pooledSubmissionOf first.
+        expect(isStaleSequenceNumberError(error)).toBe(true);
+    });
+
+    it("classifies only a status 400 without a Move VM status", () => {
+        expect(pooledSubmissionOf(apiError(500, v12(OWN)), OWN)).toBeUndefined();
+        expect(
+            pooledSubmissionOf(apiError(400, `${v12(OWN)}; Status Code: SEQUENCE_NUMBER_TOO_OLD`), OWN),
+        ).toBeUndefined();
+        expect(pooledSubmissionOf(new Error(v12(OWN)), OWN)).toBeUndefined();
     });
 });
 
