@@ -310,7 +310,7 @@ const page = await supra.transaction.getSettlements({
 const settlement = await supra.transaction.getSettlement({ settlementId: page.response[0]!.settlement_id });
 
 // Native SUPRA accounting across the two VMs, as of one height. Wei figures are decimal strings;
-// `escrow_shortfall_wei` is "0" while the mirror is fully backed. `*_quants` are JSON numbers, rounded above 2^53.
+// `escrow_shortfall_wei` is "0" while the mirror is fully backed. `*_quants` are `bigint` (`escrow_balance_quants` is `bigint | null`); so are the `amount` of a settlement's `pending` and stages, `burn_amount` of a settlement transaction and `execution_statistics.evm_base_fee_per_gas` of a block.
 const supply = await supra.fungibleAsset.getNativeSupply();
 ```
 

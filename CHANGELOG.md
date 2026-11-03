@@ -187,10 +187,13 @@ build_time, build_env }` (type `NodeVersionInfo`). `release` is the node release
   `SettlementTransactionResponse` variant of `CommittedTransactionResponse` and `TransactionResponse` (with
   `SettlementData`, `SettlementApplierSummary`, `SettlementCreditSummary` and `AppliedInboundSettlement`), and
   `"settlement"` in `TransactionQueryType`. A settlement item has no `header`, `payload` or `authenticator`.
+  `SettlementApplierSummary.burn_amount` (quants) is a `bigint`, exact above `Number.MAX_SAFE_INTEGER`, on every
+  read that returns transactions.
 - `AutomationTransactionResponse.predicate` (`AutomationPredicateInfo`), the `Remove` variant of
   `AutomationRecordAction` (its `kind` is `"Error"`, `"ConfigUpdate"` or `"PreExecutionLimit"`),
   `EvmTransactionOutput` in `TransactionOutput`, and the v12 fields and
   `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
+  `evm_base_fee_per_gas` is `bigint | null`, exact above `Number.MAX_SAFE_INTEGER`.
 - `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
 - **`account.getPrimaryStoreAddress({ accountAddress, metadataAddress? })`** returns the address of an account's
@@ -244,9 +247,15 @@ build_time, build_env }` (type `NodeVersionInfo`). `release` is the node release
     the last page, and `oldestBlock`. **`transaction.getSettlement({ settlementId })`** reads
     `GET /rpc/v4/transactions/settlements/{settlement_id}`: every stage of one crossing, its queue entry while it is
     pending, and the height the node had executed to (`Settlement`). A crossing recorded below the node's oldest
-    retained block throws `SupraGoneError`.
+    retained block throws `SupraGoneError`. `amount` of `PendingSettlement` and `SettlementStageEntry` (quants) is a
+    `bigint`.
   - **`fungibleAsset.getNativeSupply()`** reads `GET /rpc/v4/supply/native`: native SUPRA on SupraEVM, the value in
     flight between the two VMs, and the SupraMVM escrow backing it, as of one height (`NativeSupply`).
+    `burn_owed_quants` and `escrow_settled_quants` are `bigint` and `escrow_balance_quants` is `bigint | null`; the wei
+    figures are decimal strings.
+  - A `u64` that the node sends as a JSON number and that can exceed `Number.MAX_SAFE_INTEGER` is read exactly, from
+    the number form and from the decimal string form that a later node release sends: the fields above and
+    `evm_base_fee_per_gas`. Other numbers in a response are parsed as before.
 - **`SupraConfig.timeoutMs`** sets the request timeout (default 30000 ms; an integer up to 2147483647) for predefined
   networks and custom configurations.
 - **`SupraConfig.retry`** (`{ attempts, maxDelayMs }`, `maxDelayMs` up to 2147483647) turns on retries of GET

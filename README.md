@@ -324,8 +324,10 @@ for (const settlement of page.response) {
 ```
 
 `getNativeSupply` returns the accounting of native SUPRA across the two VMs as of one height: wei figures are decimal
-strings, and `escrow_shortfall_wei` is `"0"` while the mirror is fully backed. The `*_quants` figures are JSON numbers and
-are rounded above `Number.MAX_SAFE_INTEGER`.
+strings, and `escrow_shortfall_wei` is `"0"` while the mirror is fully backed. The `*_quants` figures are `bigint`, exact
+above `Number.MAX_SAFE_INTEGER` (`escrow_balance_quants` is `null` when the node could not read the escrow). The `amount`
+of a settlement's `pending` entry and stages, the `burn_amount` of a settlement transaction and the
+`evm_base_fee_per_gas` of a block's `execution_statistics` are `bigint` as well.
 
 ## Chain ID
 
