@@ -71,7 +71,9 @@ export function convertPayloadTypeArgsToMoveType(
 }
 
 /**
- * Converts arguments to JSON parsable
+ * Converts the arguments of a view request to the node's JSON, each as its parameter type with the type parameters
+ * replaced by the request's type arguments (`substituteTypeParameters`).
+ * @throws Error if an argument does not convert at its substituted type
  */
 export function convertPayloadArgsToJSONParsable(functionAbi: MoveFunction, args: InputViewFunctionData) {
     // Convert return values
@@ -83,10 +85,113 @@ export function convertPayloadArgsToJSONParsable(functionAbi: MoveFunction, args
         );
     }
 
-    // Multiple return
+    const typeArguments = typeArgumentTypeStrings(args.typeArguments);
     return functionAbi.params.map((typeStr, idx) => {
-        return convertArgsValueToJSONParsable(typeStr, args.functionArguments![idx]);
+        return convertArgsValueToJSONParsable(
+            substituteTypeParameters(typeStr, typeArguments),
+            args.functionArguments![idx],
+        );
     });
+}
+
+/**
+ * A type parameter of a function's ABI, `T` followed by its index, where it stands as a type in a type string: not
+ * part of a longer name and not a module or struct name next to `::`. The first group is the character before it (or
+ * the empty start of the string), the second its index. Written without a lookbehind, which Safari before 16.4 does
+ * not parse.
+ */
+const TYPE_PARAMETER = /(^|[^\w:])T(\d+)(?![\w:])/g;
+
+/**
+ * `type`, a parameter or return type of a function's ABI, with each type parameter `T<n>` in it replaced by
+ * `typeArguments[n]`: the type itself, and type parameters inside `vector<…>`, `0x1::option::Option<…>`,
+ * `0x1::object::Object<…>` and the type arguments of any other struct, at any depth. A type parameter with no type
+ * argument at its index is kept. A node from `supra_node_v12.0.0` reads the parameter and return types of a view
+ * function this way; an earlier node reads each type parameter as `address`.
+ * @param type - The type, as the ABI writes it.
+ * @param typeArguments - The type arguments of the call, as Move type strings (see `typeArgumentTypeStrings`).
+ * @example
+ * substituteTypeParameters("T0", ["u64"]) // "u64"
+ * substituteTypeParameters("vector<0x1::option::Option<T1>>", ["bool", "u64"]) // "vector<0x1::option::Option<u64>>"
+ * substituteTypeParameters("0x1::object::Object<T0>", ["0x1::fungible_asset::Metadata"])
+ * // "0x1::object::Object<0x1::fungible_asset::Metadata>"
+ */
+export function substituteTypeParameters(type: string, typeArguments: readonly string[]): string {
+    return type.replace(
+        TYPE_PARAMETER,
+        (match: string, prefix: string, index: string) =>
+            `${prefix}${typeArguments[Number(index)] ?? match.slice(prefix.length)}`,
+    );
+}
+
+/** Object type prefix as the ABI and `typeTagToString` write it. */
+const OBJECT_TYPE_PREFIX = "0x1::object::Object<";
+
+/**
+ * Whether a node before `supra_node_v12.0.0`, which reads every type parameter as `address`, reads a value of this
+ * type argument as a node from `supra_node_v12.0.0` does: `address` and `signer` anywhere, and
+ * `0x1::object::Object<…>` where the type parameter is a whole parameter or return type. Inside a `vector`, an
+ * `Option` or a struct a v12 node reads an `Object` as `{ inner: <address> }` and an earlier node as an address.
+ * @param typeArgument - A type argument in the form `typeTagToString` writes.
+ * @param wholeType - Whether the type parameter is a whole parameter or return type.
+ */
+export function isAddressLikeTypeArgument(typeArgument: string, wholeType = true): boolean {
+    return (
+        typeArgument === "address" ||
+        typeArgument === "signer" ||
+        (wholeType && typeArgument.startsWith(OBJECT_TYPE_PREFIX))
+    );
+}
+
+/** `type` without its `0x1::object::Object<…>` types, which every node reads as an address whatever they contain. */
+function withoutObjectTypes(type: string): string {
+    let rest = type;
+    for (let start = rest.indexOf(OBJECT_TYPE_PREFIX); start >= 0; start = rest.indexOf(OBJECT_TYPE_PREFIX)) {
+        let depth = 0;
+        let end = start + OBJECT_TYPE_PREFIX.length - 1;
+        for (; end < rest.length; end++) {
+            if (rest[end] === "<") depth++;
+            if (rest[end] === ">" && --depth === 0) break;
+        }
+        rest = `${rest.slice(0, start)}address${rest.slice(end + 1)}`;
+    }
+    return rest;
+}
+
+/**
+ * The first type argument of a call that a node before `supra_node_v12.0.0` reads differently from a v12 node: one
+ * whose type parameter occurs in a parameter or return type outside `0x1::object::Object<…>` and that is not
+ * address-like there (`isAddressLikeTypeArgument`). Such a node reads the value of that type parameter as an
+ * `address`. `undefined` when there is none, so that the call is read the same way by every node.
+ * @param types - The parameter and return types of the function's ABI.
+ * @param typeArguments - The type arguments of the call, in the form `typeTagToString` writes.
+ */
+export function typeArgumentReadAsAddress(
+    types: readonly string[],
+    typeArguments: readonly string[],
+): string | undefined {
+    for (const type of types) {
+        const outsideObjects = withoutObjectTypes(type);
+        for (const match of outsideObjects.matchAll(TYPE_PARAMETER)) {
+            const typeArgument = typeArguments[Number(match[2])];
+            const wholeType = outsideObjects.trim() === `T${match[2]}`;
+            if (typeArgument !== undefined && !isAddressLikeTypeArgument(typeArgument, wholeType)) {
+                return typeArgument;
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * The type arguments of a view request as Move type strings in the form `typeTagToString` writes, for
+ * `substituteTypeParameters`. Strings are parsed with `parseTypeArgument`.
+ * @throws Error if a string is not a valid type argument
+ */
+export function typeArgumentTypeStrings(typeArguments: readonly TypeArgument[] | undefined): string[] {
+    return (typeArguments ?? []).map((typeArgument) =>
+        typeTagToString(convertTypeArgsValueToMoveTypeValue(typeArgument)),
+    );
 }
 
 /**
@@ -124,9 +229,17 @@ export function convertTypeArgsValueToMoveTypeValue(value: TypeArgument | undefi
 }
 
 /**
- * Converts a Move value to a JSON parsable value
+ * Converts a Move value to a JSON parsable value.
+ *
+ * A `0x1::object::Object<…>` is given as its address. As a parameter type the node reads it as an address; inside a
+ * `vector` or an `Option` it reads it as the struct `{ inner: <address> }`, so it is sent in that form there.
+ * @param nested - Whether `type` is inside a `vector` or an `Option` of the parameter type.
  */
-export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryFunctionArgumentTypes): unknown {
+export function convertArgsValueToJSONParsable(
+    type: string,
+    value: SimpleEntryFunctionArgumentTypes,
+    nested = false,
+): unknown {
     const optionInner = extractOptionInner(type);
 
     // ----------------------------
@@ -139,7 +252,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
         if (optionInner === "u8") {
             return { vec: isNone ? "" : uint8ArrayToHexString(Uint8Array.of(Number(integerArgument("u8", value)))) };
         }
-        return { vec: isNone ? [] : [convertArgsValueToJSONParsable(optionInner, value)] };
+        return { vec: isNone ? [] : [convertArgsValueToJSONParsable(optionInner, value, true)] };
     }
 
     if (value === null || value === undefined) {
@@ -164,7 +277,7 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
         if (!Array.isArray(value)) {
             throw new Error(`Expected array for type '${type}'`);
         }
-        return value.map((v) => convertArgsValueToJSONParsable(vectorInner, v));
+        return value.map((v) => convertArgsValueToJSONParsable(vectorInner, v, true));
     }
 
     // ----------------------------
@@ -173,7 +286,11 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
     if (intTypes.includes(type)) return Number(integerArgument(type, value));
     if (bigIntTypes.includes(type)) return integerArgument(type, value).toString();
     if (type === "bool") return boolArgument(value);
-    if (type === "address" || isObjectType(type)) return addressArgument(value, type);
+    if (type === "address") return addressArgument(value, type);
+    if (isObjectType(type)) {
+        const address = addressArgument(value, type);
+        return nested ? { inner: address } : address;
+    }
 
     // ----------------------------
     // 6️⃣ Fixed-point structs: the node reads { value: "<raw integer>" }
@@ -194,14 +311,28 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
 }
 
 /**
- * Convert a Move value to a TS value
+ * Converts the results of a view function to TypeScript values, each as its return type with the type parameters
+ * replaced by the call's type arguments.
+ *
+ * A node from `supra_node_v12.0.0` answers a result of a type parameter as its type argument. An earlier node answers
+ * it as an `address`, which is the same JSON for the address-like type arguments (`isAddressLikeTypeArgument`); a call
+ * with any other type argument is refused before it reaches such a node (see `viewInternal`).
+ * @param returnType - The return types of the function's ABI.
+ * @param response - The results, as the node sent them.
+ * @param typeArguments - The type arguments of the call, as Move type strings (see `typeArgumentTypeStrings`).
  */
-export function convertValueToAbiReturnTypedValue(returnType: string[], response: unknown[]) {
+export function convertValueToAbiReturnTypedValue(
+    returnType: string[],
+    response: unknown[],
+    typeArguments: readonly string[] = [],
+) {
     // Convert return values
     if (!returnType || returnType.length === 0) return [];
 
     // Multiple return
-    return returnType.map((typeStr, idx) => convertValueToReturnTypedValue(typeStr, response[idx]));
+    return returnType.map((typeStr, idx) =>
+        convertValueToReturnTypedValue(substituteTypeParameters(typeStr, typeArguments), response[idx]),
+    );
 }
 
 /**
@@ -212,9 +343,9 @@ export function convertValueToReturnTypedValue(type: string, value: unknown): un
     const bigIntTypes = ["u64", "u128", "u256", "i64", "i128", "i256"];
 
     // --------------------
-    // 0️⃣ Object
+    // 0️⃣ Object: `{ inner }` from a node, or an address where a type parameter was answered as one
     // --------------------
-    if (type.startsWith("0x1::object::Object")) {
+    if (type.startsWith(OBJECT_TYPE_PREFIX)) {
         if (typeof value == "object" && value !== null && "inner" in value) {
             return (value as { inner: unknown }).inner;
         }

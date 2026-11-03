@@ -22,5 +22,7 @@ same package, home, named address and output directory options; the script is
 
 The package depends on `MoveStdlib` (for `std::option` and `std::fixed_point32`) and `AptosStdlib` (for
 `fixed_point64`), git dependencies on the public repository, so the first build needs
-network access to fetch them. `sdk_e2e::tagged` holds the functions with a type parameter, the functions that take
-several signers, a `vector<u8>`, an `Option` or fixed-point numbers, and the views that return what they received.
+network access to fetch them. `sdk_e2e::tagged` holds the functions with a type parameter, the views whose parameter
+and return types are type parameters (`identity`, `identity_vector`, `identity_option`, `boxed`, `swap`), the
+functions that take several signers, a `vector<u8>`, an `Option` or fixed-point numbers, and the views that return
+what they received.

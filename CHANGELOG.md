@@ -281,6 +281,24 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   also inside `vector` and `Option`, returns `{ value: bigint }` where it returned `{ value: string }` (the node's
   JSON). The typed contract proxy types these results with the new `MoveResultToTS`; `ReturnTypes` uses it, and
   `MoveToTS` no longer maps them to the struct name string.
+- **Breaking:** `methods.view` and the contract proxy convert a view argument or result whose type is a type parameter
+  of the function, or contains one (`vector<T>`, `0x1::option::Option<T>`, a struct over `T`), as the type with each
+  type parameter replaced by the call's type argument, as a node from `supra_node_v12.0.0` reads it. They sent and
+  returned such values as given and as the node's JSON. On a v12 node, `identity<T>(x: T): T` with the type argument
+  `u64` takes a `bigint` (sent as a JSON number and refused by the node in 1.2.0) and returns a `bigint` where it
+  returned a string, and with `0x1::object::Object<…>` returns the address where it returned `{ inner }`. Arguments
+  are checked against the substituted type before the request: `"18446744073709551616"` for `u64`, `"300"` for `u8`
+  and `"1"` for `bool` throw, where 1.2.0 sent them.
+- **Breaking:** a generic view whose type parameter occurs in a parameter or return type (outside
+  `0x1::object::Object<…>`) throws `SupraError` before the view request on a node older than `supra_node_v12.0.0`,
+  which reads every type parameter as `address`, unless its type argument is `address` or `signer`, or is
+  `0x1::object::Object<…>` and the type parameter is the whole parameter or return type. To tell, the client reads
+  `GET /rpc/v3/version` and keeps a `release` once the node reports one; after a node without one it reads again on the
+  next such call. Behind a load balancer whose nodes run different releases, the node that answers the version request
+  need not be the node that answers the view. Calls with only address-like type arguments make no version request and
+  behave as in 1.2.0 on a v11 node. In 1.2.0 such a call reached a v11 node, which refused it, or, for a value whose
+  encoding is 32 bytes (a `u256`, for example), read the value's bytes as the type argument and answered with an
+  address-formatted string. `methods.viewRaw` makes no such check.
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
   an error status, which is thrown as `SupraAPIError`.
@@ -520,6 +538,9 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 
 ### Fixed
 
+- A view argument of type `0x1::object::Object<…>` inside a `vector` or an `Option` (for example
+  `vector<Object<Metadata>>`) is sent as `{ inner: <address> }`, the form the node reads there. It was sent as the
+  address, which the node refused. A top-level `Object<…>` argument is still sent as the address.
 - `transaction.build.multisigRawTxnObject` builds the execution of a proposal whose payload is stored on chain
   (`create_transaction`) when `function`, `functionTypeArgs` and `functionArgs` are left out. The payload JSON of the
   submission carries no `transaction_payload` then; it threw `Multisig payload is missing`. The derived transaction
