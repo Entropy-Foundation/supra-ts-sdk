@@ -5,6 +5,7 @@ import {
     SupraSimulationFailedError,
     SupraTransactionFailedError,
     TransactionStatus,
+    TransactionType,
     standardizeAddress,
 } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
@@ -148,18 +149,35 @@ describeE2E("automation tasks", () => {
         expect(info.sequence_number).toBe(0n);
     });
 
-    test("a version 2 registration without a priority gets the task's index as its priority", async () => {
+    test("a version 2 registration without a priority commits under the derived hash and gets the task's index as its priority", async () => {
         const owner = await createFundedAccount(ctx);
         const { response, derived, committed } = await register(owner, { automationTaskType: "User" });
 
         expect(response.status).toBe(TransactionStatus.Success);
+        expect(response.hash.toLowerCase()).toBe(derived);
         expect(committed.hash.toLowerCase()).toBe(derived);
         const task = taskOf(committed);
         await removeTasks(owner, [task]);
         const payload = committed.payload as RegistrationPayloadJson;
+        expect(payload.Move.type).toBe("automation_registration_payload");
         expect(payload.Move.V2?.task_type).toBe("user");
         expect(payload.Move.V2?.task_priority).toBeNull();
+        // The registry stores the task type (1, a user task) and the task's index as its priority in the auxiliary data.
+        // The node renders an address without its leading zeros.
+        expect(standardizeAddress(task.owner)).toBe(owner.address().toString());
         expect(task.aux_data).toEqual(["0x01", u64Hex(BigInt(task.task_index))]);
+
+        // The SDK's response types describe the node's answer.
+        const read = await ctx.supra.getTransactionByHash({ transactionHash: derived });
+        if (read === null || read.txn_type !== TransactionType.User || !("Move" in read.payload)) {
+            throw new Error("The registration is not a user transaction with a Move payload");
+        }
+        const move = read.payload.Move;
+        if (move.type !== "automation_registration_payload" || move.V2 === undefined) {
+            throw new Error("The registration payload is not version 2");
+        }
+        expect(move.V2.task_type).toBe("user");
+        expect(move.V2.task_priority).toBeNull();
     });
 
     test("a registration without a task type or a priority commits with version 1 parameters", async () => {

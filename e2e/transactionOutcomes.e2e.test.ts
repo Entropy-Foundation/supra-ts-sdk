@@ -9,6 +9,7 @@ import {
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
+import { insufficientBalanceAbort, supraLayoutOf } from "./helpers/layout";
 import { rawGet, type RawTransaction } from "./helpers/raw";
 import { explicitGas } from "./helpers/transfers";
 
@@ -91,9 +92,10 @@ describeE2E("transaction outcomes", () => {
         const failed = error as SupraTransactionFailedError;
         expect(failed.hash).toMatch(/^0x[0-9a-f]{64}$/);
         expect(failed.status).toBe(TransactionStatus.Fail);
-        expect(failed.vm_status).toContain("Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)");
+        const abort = insufficientBalanceAbort(await supraLayoutOf(ctx, sender.address().toString()));
+        expect(failed.vm_status).toContain(`Move abort in ${abort.message}`);
         expect(failed.major_status).toBe(MoveVmError.ABORTED);
-        expect(failed.sub_status).toBe(0x10006);
+        expect(failed.sub_status).toBe(abort.code);
         expect(failed.transaction.hash).toBe(failed.hash);
         // A failed transaction is committed: the node reports it and the sequence number advanced.
         const committed = await rawGet<RawTransaction>(ctx, `/rpc/v3/transactions/${failed.hash}`);
