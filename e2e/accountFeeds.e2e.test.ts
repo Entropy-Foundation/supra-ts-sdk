@@ -2,8 +2,8 @@ import type { PaginatedResponse, SupraAccount } from "../src/index";
 import { SupraNotFoundError, SupraRouteUnsupportedError } from "../src/index";
 import { createFundedAccount, createMigratedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E, nodeGeneration } from "./helpers/describe";
-import { getE2EContext, type E2EContext } from "./helpers/env";
-import { rawGet, rawPost, type RawTransaction } from "./helpers/raw";
+import { DEFAULT_FAUCET_PATH, getE2EContext, type E2EContext } from "./helpers/env";
+import { rawGet, rawPost, rawWaitForCommit, type RawTransaction } from "./helpers/raw";
 import { sendSupra } from "./helpers/transfers";
 
 /** Upper bound on the pages a loop may request before the test treats the feed as endless. */
@@ -14,13 +14,14 @@ const SUPRA_FA = "0xa";
 /** Reads a feed to its end, passing each returned cursor back unchanged. */
 async function readFeed<T>(
     fetchPage: (cursor: string | undefined) => Promise<PaginatedResponse<T[]>>,
+    maxPages = MAX_PAGES,
 ): Promise<{ items: T[]; requests: number }> {
     const items: T[] = [];
     let requests = 0;
     let cursor: string | undefined;
     do {
-        if (requests >= MAX_PAGES) {
-            throw new Error(`The feed did not end within ${MAX_PAGES} pages`);
+        if (requests >= maxPages) {
+            throw new Error(`The feed did not end within ${maxPages} pages`);
         }
         const page = await fetchPage(cursor);
         requests++;
@@ -146,6 +147,83 @@ describeE2E("account fa_transactions and history feeds", () => {
                 ctx.supra.account.getAccountFaTransactions({ storeAddress: store, options: { start } }),
             );
             expect(items).toEqual([]);
+        });
+    });
+
+    describe("the feeds of the faucet account, which is funded at genesis", () => {
+        let faucetAccount: string;
+        let faucetStore: string;
+
+        /**
+         * Reads a feed ascending with plain requests, 100 rows at a time and without a type filter, to its end:
+         * an empty page, or a page without the cursor header.
+         */
+        async function rawFeed(path: string): Promise<Array<{ hash: string; txn_type: string }>> {
+            const rows: Array<{ hash: string; txn_type: string }> = [];
+            let start: string | undefined;
+            for (let page = 0; page < MAX_PAGES; page++) {
+                const query = `count=100&ascending=true${start === undefined ? "" : `&start=${start}`}`;
+                const response = await rawGet<Array<{ hash: string; txn_type: string }>>(ctx, `${path}?${query}`);
+                expect(response.status).toBe(200);
+                rows.push(...response.body);
+                const cursor = response.headers.get("x-supra-cursor");
+                if (response.body.length === 0 || cursor === null || cursor === "") {
+                    return rows;
+                }
+                start = cursor;
+            }
+            throw new Error(`The raw feed ${path} did not end within ${MAX_PAGES} pages`);
+        }
+
+        beforeAll(async () => {
+            // The faucet sends the funds, so it is the sender of the transaction that funds a fresh account.
+            const template = process.env["SUPRA_E2E_FAUCET_PATH"] ?? DEFAULT_FAUCET_PATH;
+            const response = await rawGet<{ Accepted: string }>(
+                ctx,
+                template.replace("{address}", createUnfundedAccount().address().toString()),
+            );
+            expect(response.status).toBe(200);
+            const funding = await rawWaitForCommit(ctx, response.body.Accepted);
+            const sender = funding.header?.sender.Move;
+            if (sender === undefined) {
+                throw new Error(`The faucet transaction ${funding.hash} has no sender`);
+            }
+            faucetAccount = sender;
+            faucetStore = await rawPrimarySupraStore(ctx, faucetAccount);
+        });
+
+        test("reads each feed ascending with count 1 and type user to its end, as the untyped feed lists the user rows", async () => {
+            const feeds = [
+                {
+                    path: () => `/rpc/v3/accounts/${faucetAccount}/coin_transactions`,
+                    read: (start: string | undefined) =>
+                        ctx.supra.account.getAccountCoinTransactions({
+                            accountAddress: faucetAccount,
+                            options: { count: 1, ascending: true, type: "user", start },
+                        }),
+                },
+                {
+                    path: () => `/rpc/v3/accounts/${faucetStore}/fa_transactions`,
+                    read: (start: string | undefined) =>
+                        ctx.supra.account.getAccountFaTransactions({
+                            storeAddress: faucetStore,
+                            options: { count: 1, ascending: true, type: "user", start },
+                        }),
+                },
+            ];
+
+            let nonEmpty = 0;
+            for (const feed of feeds) {
+                const expected = (await rawFeed(feed.path())).filter((txn) => txn.txn_type === "user");
+                const { items } = await readFeed(feed.read, 5_000);
+                const hashes = items.map((txn) => txn.hash);
+
+                expect(new Set(hashes).size).toBe(hashes.length);
+                expect(hashes).toEqual(expected.map((txn) => txn.hash));
+                nonEmpty += hashes.length > 0 ? 1 : 0;
+            }
+            // SUPRA is a coin on v11 and a fungible asset on v12, so one of the two feeds lists the faucet's transfers.
+            expect(nonEmpty).toBeGreaterThanOrEqual(1);
         });
     });
 

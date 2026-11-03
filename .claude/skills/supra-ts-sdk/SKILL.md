@@ -999,7 +999,7 @@ try {
 
 ## Pagination Pattern
 
-All paginated methods return `PaginatedResponse<T>`: `{ response, cursor }`. Pass `cursor` back unchanged (as `start`, or `cursor` for `getAccountAutoTransactions`) until it is `undefined`. A page can be empty and still carry a cursor, so stop only on `undefined`. `getAccountHistory` ends the feed only on an absent cursor; the cursor `"0"` does not end it.
+All paginated methods return `PaginatedResponse<T>`: `{ response, cursor }`. Pass `cursor` back unchanged (as `start`, or `cursor` for `getAccountAutoTransactions`) until it is `undefined`. A page can be empty and still carry a cursor, so stop only on `undefined`. `getAccountHistory` ends the feed only on an absent cursor; the cursor `"0"` does not end it. `getAccountCoinTransactions` and `getAccountFaTransactions` end the feed on an empty page with `"0"`, except for the first request of an ascending read with a `type` filter and no `start`, whose empty page with `"0"` returns `cursor` `"0"` (the node's first row can have the cursor 0); keep passing the cursor back.
 
 ```typescript
 // Fetch all pages

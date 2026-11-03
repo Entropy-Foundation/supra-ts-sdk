@@ -57,7 +57,9 @@ export type AccountAddressInput = string | HexString;
  *
  * - `cursor` is `undefined` exactly when the feed has no further items. The SDK reads the end of the feed the same
  *   way from every node version: v12 nodes omit the `x-supra-cursor` header, and v11 nodes send an empty header,
- *   `"0"` or the request's own cursor on an empty page.
+ *   `"0"` or the request's own cursor on an empty page. For `getAccountCoinTransactions` and
+ *   `getAccountFaTransactions`, an ascending read with a `type` filter and no `start` that returns an empty page
+ *   with `"0"` continues with `"0"`, because the node's first row can have the cursor 0.
  * - A page can be empty and still carry a cursor, for example when a `type` filter excluded every transaction
  *   the node read for the page. Continue from the cursor; only `undefined` ends the feed.
  * - The last page that lists items usually carries a cursor, and the request that continues from it returns an
