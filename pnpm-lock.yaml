@@ -34,8 +34,8 @@ importers:
         specifier: ^0.13.0
         version: 0.13.0
       supra-l1-sdk-core:
-        specifier: ^2.0.1
-        version: 2.0.1
+        specifier: ^2.0.2
+        version: 2.0.2
     devDependencies:
       '@arethetypeswrong/cli':
         specifier: ^0.18.5
@@ -2177,8 +2177,8 @@ packages:
     resolution: {integrity: sha512-zFObLMyZeEwzAoKCyu1B91U79K2t7ApXuQfo8OuxwXLDgcKxuwM+YvcbIhm6QWqz7mHUH1TVytR1PwVVjEuMig==}
     engines: {node: '>=14.18'}
 
-  supra-l1-sdk-core@2.0.1:
-    resolution: {integrity: sha512-WSqgQna8Na0TS66HqLhqCTNdQXDKkpN1cEep8XM0Xma2FXiMJ2IzHIenzgvrFxnW89+G6izkWI3tlYjjsNuhjA==}
+  supra-l1-sdk-core@2.0.2:
+    resolution: {integrity: sha512-aHn8ngYtkeQ9waDBkCsaeV8OvFZf3e9+7wcjioEbaq3z++oltwni60sjHBTLkArmd4py25LKPN6Mrc9gHHcCGw==}
     engines: {node: '>=11.0.0'}
 
   synckit@0.11.13:
@@ -4648,7 +4648,7 @@ snapshots:
       has-flag: 4.0.0
       supports-color: 7.2.0
 
-  supra-l1-sdk-core@2.0.1:
+  supra-l1-sdk-core@2.0.2:
     dependencies:
       '@noble/hashes': 1.3.3
       '@scure/bip39': 1.2.1

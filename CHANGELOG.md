@@ -687,6 +687,11 @@ optionalTransactionArgs? })`** submits `0x1::automation_registry::stop_tasks`, f
 
 ### Security
 
+- `supra-l1-sdk-core` is raised to `^2.0.2`. `SupraAccount`, which this package re-exports, no longer includes key
+  material in `JSON.stringify` output or in Node.js `util.inspect` and `console.log` output: `JSON.stringify` returns
+  `{ address, publicKeyHex }`, and `signingKey` is a non-enumerable property. `toPrivateKeyObject()` exports the
+  key. `SupraAccount.fromDerivePath` throws `Invalid mnemonic` for a mnemonic that fails BIP-39 checksum or English
+  wordlist validation.
 - Patched the dev-only transitive dependencies `handlebars` (4.7.10; GHSA-xw65-4hp5-5hc7, GHSA-8r5x-fm3f-whwj,
   GHSA-p8wg-vrv2-v86f), `brace-expansion` (1.1.21, 2.1.7 and 5.0.12; GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895,
   GHSA-q2hr-2g5m-vwhr, GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p), `browserslist` (4.28.7; GHSA-c83g-rgw3-j3cx,
