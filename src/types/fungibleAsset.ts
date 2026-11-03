@@ -9,6 +9,9 @@ export interface FungibleAssetMetadata {
 /**
  * The cross-VM crossings that are recorded and not yet applied. A crossing is debited on one side before it is
  * credited on the other, so a queue that is never empty is normal; an oldest entry that keeps getting older is not.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface InFlightSettlements {
     /** How many crossings are queued. */
@@ -25,6 +28,9 @@ export interface InFlightSettlements {
  * Native SUPRA on SupraEVM and the SupraMVM escrow that backs it, as of one height on one node. Wei figures are
  * decimal strings. The `*_quants` figures are JSON numbers: a value above `Number.MAX_SAFE_INTEGER` (about 90 million
  * SUPRA) is rounded when the response is parsed.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface NativeSupply {
     /** The height the node had executed to when it answered; every counter is as of this height. */

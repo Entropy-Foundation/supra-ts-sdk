@@ -123,6 +123,8 @@ export class Methods {
      * `supra_node_v12.0.0`; Mainnet and Testnet nodes of `supra_node_v11.7.x` answer HTTP 404, which is thrown as
      * `SupraRouteUnsupportedError`.
      *
+     * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+     *
      * Each element takes the arguments of {@link Methods.view}: the SDK reads the ABI of each module once for the
      * whole batch (unless the element has `abi`), encodes the arguments and converts the results to TypeScript
      * values (`u64`, `u128` and `u256` results are `bigint`). All elements run against one snapshot of the node's
@@ -135,6 +137,7 @@ export class Methods {
      * request is sent, unless the caller passes `abi`; so does an element whose arguments do not match its ABI, as
      * `view` does. The ABI reads happen before the route is called, so on a v11.7.x node they run before the 404 is
      * answered.
+     * @beta
      * @template T - The type of the array each successful element returns.
      * @param args.requests - The view functions, as for {@link Methods.view}. The node accepts 1 to 20 by default
      * (`rest_limits.view_batch.max_view_functions`, set by the operator) and answers HTTP 400 outside its range.

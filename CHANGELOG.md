@@ -14,6 +14,14 @@ run on Devnet. [`compatibility.json`](./compatibility.json) lists the node relea
 Entries marked **Breaking:** change behaviour or types that code written for 1.2.0 can depend on;
 [MIGRATION.md](./MIGRATION.md) describes what to change for each of them.
 
+Symbols that wrap the node API added in `supra_node_v12.0.0` are tagged `@beta`: `getAccountHistory`, `viewBatch`,
+`getTransactionsByHashes`, `simulate.withStateChanges`, `getSettlements`, `getSettlement`, `getNativeSupply`, the
+settlement transaction response types, the `Remove` variant of `AutomationRecordAction`, `NodeVersionInfo.release`, and
+the types only they use. Generic-view conversion with type arguments other than `address` and sponsoring a sender with
+no account follow the same rule. These are exempt from semantic versioning until `supra_node_v12.0.0` reaches Testnet,
+so a 2.x minor release can change them; a minor release removes the tags after that. See the README section
+"Stability".
+
 ### Added
 
 - **`Network.DEVNET`** — `new SupraClient({ network: Network.DEVNET })` connects to

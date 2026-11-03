@@ -427,6 +427,9 @@ export class Account {
      * Queries the transaction history of an account: every finalized transaction that concerns the account, once
      * each, with the categories it matched for the account. It lists the transfers of SUPRA held in primary
      * fungible stores (the `fa` category), which `getAccountCoinTransactions` does not.
+     *
+     * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+     * @beta
      * @template {CommittedTransactionResponse} T - The type of the transaction to be returned.
      * @param args.accountAddress - The address of the account to query.
      * @param args.options.categories - Return only transactions that matched at least one of these categories:

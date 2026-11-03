@@ -32,6 +32,9 @@ export type InputViewRawFunctionData = {
  * Why one view function of a batch produced no result: the HTTP status and the message that `POST /rpc/v4/view`
  * answers with for the same request against the same state. A function that is not executed because the batch's
  * gas budget is spent has status `400`.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface ViewBatchError {
     status: number;
@@ -41,6 +44,9 @@ export interface ViewBatchError {
 /**
  * The outcome of one view function of a batch: `result` holds the function's return values converted to TypeScript
  * values, or `error` says why the function produced none. Exactly one of the two is present.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export type ViewBatchEntry<T extends Array<MoveValue> = Array<MoveValue>> =
     | { result: T; error?: undefined }
@@ -48,6 +54,9 @@ export type ViewBatchEntry<T extends Array<MoveValue> = Array<MoveValue>> =
 
 /**
  * The response of `viewBatch`.
+ *
+ * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+ * @beta
  */
 export interface ViewBatchResponse<T extends Array<MoveValue> = Array<MoveValue>> {
     /**

@@ -151,6 +151,9 @@ export interface NodeVersionInfo {
      * The node release the binary was built from, as its release tag: for example `supra_node_v12.0.0.rc7`, or
      * `unreleased` for a build from a commit that is not a release. Absent when the node is older than
      * `supra_node_v12.0.0`.
+     *
+     * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
+     * @beta
      */
     release?: string;
     /** Git branch of the build. Empty when the build was made from a tag or the branch was not recorded. */
