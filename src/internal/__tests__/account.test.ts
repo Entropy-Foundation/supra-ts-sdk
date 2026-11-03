@@ -201,6 +201,7 @@ describe("internal/account", () => {
                 {
                     path: `/accounts/${fullAddress}/transactions`,
                     query: { count: 20, start: "s", ascending: true },
+                    u64Fields: ["[*].data.burn_amount"],
                 },
                 testConfig,
             );

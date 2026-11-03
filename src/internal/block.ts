@@ -1,3 +1,4 @@
+import { U64_FIELDS } from "../client/exactU64";
 import { get } from "../client/get";
 import type { FinalizedBlockHeader } from "../types/block";
 import type { TransactionQueryType } from "../types/transaction";
@@ -12,6 +13,7 @@ export async function getLatestBlockInternal(config: NetworkConfig): Promise<Fin
     const block = await get<FinalizedBlockHeader>(
         {
             path: `/block`,
+            u64Fields: U64_FIELDS.block,
         },
         config,
     ).then((res) => res.data);
@@ -33,6 +35,7 @@ export async function getBlockByHeightInternal(
                 with_finalized_transactions: args.options?.withFinalizedTransactions,
                 type: args.options?.type,
             },
+            u64Fields: U64_FIELDS.blockWithTransactions,
         },
         config,
     ).then((res) => res.data);
@@ -45,6 +48,7 @@ export async function getBlockByHashInternal(
     return await get<FinalizedBlockHeader>(
         {
             path: `/block/${args.blockHash}`,
+            u64Fields: U64_FIELDS.block,
         },
         config,
     ).then((res) => res.data);

@@ -480,7 +480,7 @@ export interface SettlementApplierSummary {
     /** The block whose destroyed value the transaction retired from escrow. */
     burn_block_height: number;
     /** The value retired, in quants. */
-    burn_amount: number;
+    burn_amount: bigint;
 }
 
 /**
@@ -760,7 +760,7 @@ export interface SettlementStageEntry {
      */
     status?: number | null;
     /** The value this stage concerns, in quants. */
-    amount: number;
+    amount: bigint;
     sender?: SettlementParty | null;
     recipient?: SettlementParty | null;
     /** The record a returned credit's value was returned in, for a credit that was refunded. */
@@ -775,7 +775,7 @@ export interface PendingSettlement {
     sender: SettlementParty;
     recipient: SettlementParty;
     /** The value the crossing moves, in quants. */
-    amount: number;
+    amount: bigint;
     /** The block whose execution recorded it. */
     recorded_at_height: number;
 }

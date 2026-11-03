@@ -20,6 +20,16 @@ describeE2E("blocks", () => {
         expect(latest.header.hash).toMatch(/^0x[0-9a-f]{64}$/);
     });
 
+    test("evm_base_fee_per_gas is a bigint from v12 and absent before", async () => {
+        const stats = (await ctx.supra.block.getLatestBlock()).execution_statistics;
+        const fee = stats?.evm_base_fee_per_gas;
+        if (nodeGeneration() === "v11") {
+            expect(fee).toBeUndefined();
+        } else {
+            expect(typeof fee).toBe("bigint");
+        }
+    });
+
     test("getBlockByHeight returns the block that committed a transfer", async () => {
         const height = transfer.block_header?.height as number;
         const block = await ctx.supra.block.getBlockByHeight({ height });

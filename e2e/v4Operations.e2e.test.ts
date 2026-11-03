@@ -330,8 +330,9 @@ describeE2E("v4 operations", () => {
             for (const wei of [supply.evm_supply_wei, supply.in_flight_wei, supply.dust_wei, supply.claimed_wei]) {
                 expect(wei).toMatch(/^\d+$/);
             }
-            expect(typeof supply.burn_owed_quants).toBe("number");
-            expect(typeof supply.escrow_settled_quants).toBe("number");
+            expect(typeof supply.burn_owed_quants).toBe("bigint");
+            expect(typeof supply.escrow_settled_quants).toBe("bigint");
+            expect(typeof supply.escrow_balance_quants).toBe("bigint");
             expect(typeof supply.in_flight.count).toBe("number");
             expect(supply.in_flight.value_wei).toMatch(/^\d+$/);
             // A fully backed mirror has no shortfall.

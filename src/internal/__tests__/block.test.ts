@@ -34,7 +34,10 @@ describe("internal/block", () => {
         it("should call get with /block path", async () => {
             mockGet.mockResolvedValue({ data: mockBlockHeader });
             const result = await getLatestBlockInternal(testConfig);
-            expect(mockGet).toHaveBeenCalledWith({ path: "/block" }, testConfig);
+            expect(mockGet).toHaveBeenCalledWith(
+                { path: "/block", u64Fields: ["execution_statistics.evm_base_fee_per_gas"] },
+                testConfig,
+            );
             expect(result).toEqual(mockBlockHeader);
         });
     });
@@ -50,6 +53,7 @@ describe("internal/block", () => {
                 {
                     path: "/block/height/100",
                     query: { with_finalized_transactions: true, type: "user" },
+                    u64Fields: ["execution_statistics.evm_base_fee_per_gas", "transactions[*].data.burn_amount"],
                 },
                 testConfig,
             );
@@ -62,6 +66,7 @@ describe("internal/block", () => {
                 {
                     path: "/block/height/50",
                     query: { with_finalized_transactions: undefined, type: undefined },
+                    u64Fields: ["execution_statistics.evm_base_fee_per_gas", "transactions[*].data.burn_amount"],
                 },
                 testConfig,
             );
@@ -72,7 +77,10 @@ describe("internal/block", () => {
         it("should call get with correct path", async () => {
             mockGet.mockResolvedValue({ data: mockBlockHeader });
             await getBlockByHashInternal({ blockHash: "0xabc" }, testConfig);
-            expect(mockGet).toHaveBeenCalledWith({ path: "/block/0xabc" }, testConfig);
+            expect(mockGet).toHaveBeenCalledWith(
+                { path: "/block/0xabc", u64Fields: ["execution_statistics.evm_base_fee_per_gas"] },
+                testConfig,
+            );
         });
     });
 
