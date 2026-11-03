@@ -15,8 +15,8 @@ export interface ExecutedBlockStatistics {
     automation_record_count?: number | null;
     /** v12. */
     evm_automated_txn_gas_unit_price?: number | null;
-    /** v12. */
-    evm_base_fee_per_gas?: number | null;
+    /** v12. The EVM base fee in wei per gas, read exactly: the node's value can exceed `Number.MAX_SAFE_INTEGER`. */
+    evm_base_fee_per_gas?: bigint | null;
     /** v12. */
     block_total_evm_user_gas_used?: number | null;
     /** v12. */

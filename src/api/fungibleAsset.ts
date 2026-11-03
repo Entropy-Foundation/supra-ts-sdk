@@ -78,7 +78,7 @@ export class FungibleAsset {
      * @returns A Promise that resolves to the {@link NativeSupply}. `escrow_shortfall_wei` is the amount claimed
      * beyond what the escrow holds and is `"0"` whenever the mirror is fully backed; `escrow_balance_quants` and
      * `escrow_shortfall_wei` are `null` only when the node could not read the escrow. Wei figures are decimal strings.
-     * The `*_quants` figures are JSON numbers and are rounded above `Number.MAX_SAFE_INTEGER`.
+     * The `*_quants` figures are `bigint` and exact above `Number.MAX_SAFE_INTEGER`.
      * @throws {SupraRouteUnsupportedError} When the node does not serve the route.
      * @example
      * ```typescript

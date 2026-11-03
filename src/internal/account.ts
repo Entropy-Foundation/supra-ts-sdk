@@ -1,4 +1,5 @@
 import { getPage } from "../client/cursor";
+import { U64_FIELDS } from "../client/exactU64";
 import { get } from "../client/get";
 import { SupraAPIError, SupraNotFoundError, SupraRouteUnsupportedError } from "../errors/apiError";
 import { standardizeAddress } from "../helper/account";
@@ -172,6 +173,7 @@ export async function getAccountTransactionsInternal<T extends TransactionRespon
                 start: start === undefined || start === "" ? undefined : String(start),
                 ascending: args.options?.ascending,
             },
+            u64Fields: U64_FIELDS.transactionList,
         },
         config,
     );
@@ -200,6 +202,7 @@ export async function getAccountCoinTransactionsInternal<T extends TransactionRe
                 ascending: args.options?.ascending,
                 type: args.options?.type,
             },
+            u64Fields: U64_FIELDS.transactionList,
             cursorParam: "start",
             zeroMayBeCursor: true,
         },
@@ -233,6 +236,7 @@ export async function getAccountFaTransactionsInternal<T extends TransactionResp
                 ascending: args.options?.ascending,
                 type: args.options?.type,
             },
+            u64Fields: U64_FIELDS.transactionList,
             cursorParam: "start",
             zeroMayBeCursor: true,
         },
@@ -305,6 +309,7 @@ export async function getAccountHistoryInternal<T extends CommittedTransactionRe
                     ascending: args.options?.ascending,
                     start: start === undefined || start === "" ? undefined : start,
                 },
+                u64Fields: U64_FIELDS.accountHistory,
             },
             config,
         );
@@ -352,6 +357,7 @@ export async function getAccountAutoTransactionsInternal<T extends AutoTransacti
                 cursor: args.options?.cursor,
                 ascending: args.options?.ascending,
             },
+            u64Fields: U64_FIELDS.transactionList,
             cursorParam: "cursor",
         },
         config,

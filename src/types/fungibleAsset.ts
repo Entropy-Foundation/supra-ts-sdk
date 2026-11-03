@@ -26,8 +26,8 @@ export interface InFlightSettlements {
 
 /**
  * Native SUPRA on SupraEVM and the SupraMVM escrow that backs it, as of one height on one node. Wei figures are
- * decimal strings. The `*_quants` figures are JSON numbers: a value above `Number.MAX_SAFE_INTEGER` (about 90 million
- * SUPRA) is rounded when the response is parsed.
+ * decimal strings. The `*_quants` figures are `bigint`, read exactly even above `Number.MAX_SAFE_INTEGER` (about 90
+ * million SUPRA).
  *
  * Preview: wraps an API added in `supra_node_v12.0.0`, which may change until that release reaches Testnet.
  * @beta
@@ -42,16 +42,16 @@ export interface NativeSupply {
     /** The sub-quant remainder held back by the settlement path, in wei; less than one quant. */
     dust_wei: string;
     /** Quants destroyed on SupraEVM that SupraMVM has not yet retired from the escrow. */
-    burn_owed_quants: number;
+    burn_owed_quants: bigint;
     /** The total the node claims against the SupraMVM escrow, in wei. */
     claimed_wei: string;
     /** The quants the node's own bookkeeping says the escrow holds. */
-    escrow_settled_quants: number;
+    escrow_settled_quants: bigint;
     /**
      * The quants SupraMVM reports the escrow holding; `0` on a chain that never installed the settlement module.
      * `null` means the escrow could not be read, which says nothing about the backing.
      */
-    escrow_balance_quants?: number | null;
+    escrow_balance_quants?: bigint | null;
     /**
      * The wei claimed beyond what the escrow holds, `"0"` when every claim is backed. `null` when the escrow could not
      * be read.

@@ -5,6 +5,7 @@ import { parseTypeArgument } from "../helper/typeTag";
 import type { AccountAddressInput } from "../types/account";
 import type { FungibleAssetMetadata, NativeSupply } from "../types/fungibleAsset";
 import type { NetworkConfig } from "../utils/apiEndpoints";
+import { U64_FIELDS } from "../client/exactU64";
 import { get } from "../client/get";
 import { V4_RPC_VERSION, withV4RouteSupport } from "./routeSupport";
 import { SUPRA_COIN_TYPE, SUPRA_FRAMEWORK_ADDRESS, SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
@@ -16,7 +17,9 @@ import { buildAndSubmitEntryFunctionInternal } from "./transactionManager/txnSub
 /** Reads `GET /rpc/v4/supply/native`. A 404 is thrown as `SupraRouteUnsupportedError`. */
 export async function getNativeSupplyInternal(config: NetworkConfig): Promise<NativeSupply> {
     return withV4RouteSupport({ method: "getNativeSupply" }, () =>
-        get<NativeSupply>({ path: "/supply/native" }, config, V4_RPC_VERSION).then((res) => res.data),
+        get<NativeSupply>({ path: "/supply/native", u64Fields: U64_FIELDS.nativeSupply }, config, V4_RPC_VERSION).then(
+            (res) => res.data,
+        ),
     );
 }
 

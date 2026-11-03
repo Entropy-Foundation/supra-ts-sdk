@@ -1,6 +1,7 @@
 // Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
 // Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import { BCS, HexString, SupraAccount, TxnBuilderTypes, type AnyRawTransaction } from "supra-l1-sdk-core";
+import { U64_FIELDS } from "../client/exactU64";
 import { get } from "../client/get";
 import { post } from "../client/post";
 import { SupraError } from "../errors/supraError";
@@ -54,6 +55,7 @@ export async function getTransactionByHashInternal(
                 type: args.type,
                 exclude_uncommitted: args.exclude_uncommitted,
             },
+            u64Fields: U64_FIELDS.transaction,
         },
         config,
     ).then((res) => res.data);
@@ -94,6 +96,7 @@ export async function getTransactionsByHashesInternal(
             {
                 path: `/transactions/by_hashes${queryString === "" ? "" : `?${queryString}`}`,
                 data: { hashes: args.transactionHashes.map((hash) => standardizeAddress(hash)) },
+                u64Fields: U64_FIELDS.transactionsByHashes,
             },
             config,
             V4_RPC_VERSION,
@@ -114,9 +117,11 @@ export async function getSettlementInternal(
     config: NetworkConfig,
 ): Promise<Settlement> {
     return withV4RouteSupport({ method: "getSettlement", handlerNotFoundFor: args.settlementId }, () =>
-        get<Settlement>({ path: `/transactions/settlements/${args.settlementId}` }, config, V4_RPC_VERSION).then(
-            (res) => res.data,
-        ),
+        get<Settlement>(
+            { path: `/transactions/settlements/${args.settlementId}`, u64Fields: U64_FIELDS.settlement },
+            config,
+            V4_RPC_VERSION,
+        ).then((res) => res.data),
     );
 }
 
@@ -153,6 +158,7 @@ export async function getSettlementsInternal(
                     count: args.options?.count,
                     start: start === undefined || start === "" ? undefined : start,
                 },
+                u64Fields: U64_FIELDS.settlements,
             },
             config,
             V4_RPC_VERSION,

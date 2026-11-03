@@ -229,7 +229,7 @@ describeE2E("v4 operations", () => {
             expect(settlement.stages[0]).toMatchObject({
                 stage: "recorded",
                 transaction_hash: depositHash.replace(/^0x/, ""),
-                amount: 12_345,
+                amount: 12_345n,
             });
             expect(settlement.stages[0]?.recipient).toEqual({ domain: "evm", address: recipient });
 
@@ -252,6 +252,8 @@ describeE2E("v4 operations", () => {
                 (value) => value.stages.some((stage) => stage.stage === "credited_on_evm"),
             );
             expect(settled.settlement_id).toBe(settlement.settlement_id);
+            expect(settled.stages.every((stage) => typeof stage.amount === "bigint")).toBe(true);
+            expect(settled.stages.find((stage) => stage.stage === "credited_on_evm")?.amount).toBe(12_345n);
             expect(settled.stages.map((stage) => stage.stage)).toEqual(
                 expect.arrayContaining(["recorded", "credited_on_evm"]),
             );
@@ -330,8 +332,9 @@ describeE2E("v4 operations", () => {
             for (const wei of [supply.evm_supply_wei, supply.in_flight_wei, supply.dust_wei, supply.claimed_wei]) {
                 expect(wei).toMatch(/^\d+$/);
             }
-            expect(typeof supply.burn_owed_quants).toBe("number");
-            expect(typeof supply.escrow_settled_quants).toBe("number");
+            expect(typeof supply.burn_owed_quants).toBe("bigint");
+            expect(typeof supply.escrow_settled_quants).toBe("bigint");
+            expect(typeof supply.escrow_balance_quants).toBe("bigint");
             expect(typeof supply.in_flight.count).toBe("number");
             expect(supply.in_flight.value_wei).toMatch(/^\d+$/);
             // A fully backed mirror has no shortfall.

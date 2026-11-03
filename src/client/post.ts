@@ -35,7 +35,7 @@ export async function post<Req extends object, Res>(
         false,
     );
 
-    const data = await parseJsonResponse(response, url, config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
+    const data = await parseJsonResponse(response, url, config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS, args.u64Fields);
 
     if (response.ok) {
         return data as Res;

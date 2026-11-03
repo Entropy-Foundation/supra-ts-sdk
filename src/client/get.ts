@@ -14,6 +14,11 @@ export interface RequestParams {
      * effect on the node, such as the faucet's, is sent once.
      */
     retryable?: boolean;
+    /**
+     * The paths of the `u64` fields of the response that are read exactly and returned as `bigint` (see
+     * `U64_FIELDS`). Every other number is parsed as a JavaScript number.
+     */
+    u64Fields?: readonly string[];
 }
 
 /**
@@ -48,7 +53,12 @@ export async function get<Res>(
     );
 
     const cursor = response.headers.get("x-supra-cursor") ?? undefined;
-    const data = await parseJsonResponse(response, url.toString(), config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS);
+    const data = await parseJsonResponse(
+        response,
+        url.toString(),
+        config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS,
+        args.u64Fields,
+    );
 
     if (response.ok) {
         return {

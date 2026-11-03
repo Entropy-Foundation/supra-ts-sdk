@@ -324,8 +324,10 @@ for (const settlement of page.response) {
 ```
 
 `getNativeSupply` returns the accounting of native SUPRA across the two VMs as of one height: wei figures are decimal
-strings, and `escrow_shortfall_wei` is `"0"` while the mirror is fully backed. The `*_quants` figures are JSON numbers and
-are rounded above `Number.MAX_SAFE_INTEGER`.
+strings, and `escrow_shortfall_wei` is `"0"` while the mirror is fully backed. The `*_quants` figures are `bigint`, exact
+above `Number.MAX_SAFE_INTEGER` (`escrow_balance_quants` is `null` when the node could not read the escrow). The `amount`
+of a settlement's `pending` entry and stages, the `burn_amount` of a settlement transaction and the
+`evm_base_fee_per_gas` of a block's `execution_statistics` are `bigint` as well.
 
 ## Chain ID
 
@@ -852,8 +854,11 @@ calls above wait for their commit so that the sequence-number read and the execu
 ### `bigint` values
 
 Move `u64`, `u128` and `u256` values are `bigint` in several objects the SDK returns: built transactions, the
-`SendTxnPayload` of `transaction.build.sendTxnPayload`, `getAccountCoinBalance` and view results. `JSON.stringify` throws
-`TypeError: Do not know how to serialize a BigInt` for an object that holds one. `stringifyWithBigInt` writes them as
+`SendTxnPayload` of `transaction.build.sendTxnPayload`, `getAccountCoinBalance` and view results. So are the `u64`
+response fields that can exceed `Number.MAX_SAFE_INTEGER`: `execution_statistics.evm_base_fee_per_gas` of every block a
+v12 node returns, the `burn_amount` of a settlement transaction, settlement amounts and the `*_quants` figures of
+`getNativeSupply`. `JSON.stringify` throws `TypeError: Do not know how to serialize a BigInt` for an object that holds
+one. `stringifyWithBigInt` writes them as
 exact JSON numbers, the form the node accepts in a request body; to display or store such an object, convert them to
 strings:
 
