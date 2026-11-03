@@ -22,6 +22,10 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **`SupraFaucetUnavailableError`** — thrown by `fundAccountWithFaucet` when the node answers `"TryLater"` because no
   faucet account is free. **`SupraFaucetResponseError`** is thrown when the node answers with any other body that
   carries no transaction hash; the body is available as `data`.
+- **`supra.getNodeVersion()`** — reads `GET /rpc/v3/version` and returns `{ version, release?, branch, commit_hash,
+  build_time, build_env }` (type `NodeVersionInfo`). `release` is the node release tag, for example
+  `supra_node_v12.0.0.rc7`; it is absent from the response of a node older than `supra_node_v12.0.0`, so it is
+  `undefined` for a v11 node.
 - **`faucet.getFaucetTransaction({ transactionHash })`** — reads a faucet transaction
   (`GET /rpc/v3/wallet/faucet/transactions/{hash}`).
 - **Typed errors.** `SupraNotFoundError` (HTTP 404), `SupraGoneError` (410), `SupraRateLimitError` (429, with

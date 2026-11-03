@@ -1,6 +1,6 @@
 import { SupraClient, TransactionStatus } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
-import { describeE2E } from "./helpers/describe";
+import { describeE2E, nodeGeneration } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
 import { rawGet, rawSupraBalance } from "./helpers/raw";
 import { explicitGas } from "./helpers/transfers";
@@ -32,6 +32,19 @@ describeE2E("client", () => {
         expect(typeof min).toBe("bigint");
         expect(min).toBeGreaterThan(0n);
         expect(median).toBeGreaterThanOrEqual(min);
+    });
+
+    test("getNodeVersion returns the build information, with release on a v12 node only", async () => {
+        const info = await ctx.supra.getNodeVersion();
+        expect(info.version).toMatch(/\d+\.\d+/);
+        expect(typeof info.commit_hash).toBe("string");
+        expect(typeof info.build_time).toBe("string");
+        expect(typeof info.build_env).toBe("string");
+        if (nodeGeneration() === "v12") {
+            expect(info.release).toMatch(/^(supra_node_v12\.|unreleased$)/);
+        } else {
+            expect(info.release).toBeUndefined();
+        }
     });
 
     test("the node serves its version", async () => {

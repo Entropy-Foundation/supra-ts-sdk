@@ -139,6 +139,8 @@ try {
 const nodeChainId = (await checked.getChainId()).value; // getChainId() is async: the node's chain ID
 ```
 
+`await supra.getNodeVersion()` reads `GET /rpc/v3/version` and returns `{ version, release?, branch, commit_hash, build_time, build_env }`. `release` (for example `supra_node_v12.0.0.rc7`) is absent before `supra_node_v12.0.0`, so it is `undefined` for a v11 node.
+
 `verifyChainId: false` turns the check off for offline signing: the client signs with its configured chain ID and sends no request to do so.
 
 ```typescript

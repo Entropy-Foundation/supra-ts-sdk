@@ -157,6 +157,17 @@ console.log("Framework (0x1) account info:", accountData);
 // Expected fields: sequence_number, authentication_key, etc.
 ```
 
+### Reading the Node Version
+
+`getNodeVersion()` reads `GET /rpc/v3/version`. `release` is the node release tag; it is absent before
+`supra_node_v12.0.0`, so it is `undefined` for a v11 node.
+
+```ts
+const info = await supra.getNodeVersion();
+console.log(info.release); // "supra_node_v12.0.0.rc7" on a v12 node, undefined on a v11 node
+console.log(info.version, info.branch, info.commit_hash, info.build_time, info.build_env);
+```
+
 ### Reading a Feed Page by Page
 
 Paginated methods return `{ response, cursor }`. Pass `cursor` back unchanged until it is `undefined`. A page

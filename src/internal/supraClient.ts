@@ -1,7 +1,7 @@
 import { get } from "../client/get";
 import { parseChainId } from "../client/chainIdCache";
 import { SupraError } from "../errors/supraError";
-import type { GasPrice } from "../types/supraClient";
+import type { GasPrice, NodeVersionInfo } from "../types/supraClient";
 import type { NetworkConfig } from "../utils/apiEndpoints";
 
 export async function getGasPriceInternal(config: NetworkConfig): Promise<bigint> {
@@ -51,6 +51,15 @@ function priceField(data: unknown, field: keyof GasPrice): bigint {
         );
     }
     return BigInt(value);
+}
+
+/**
+ * Reads the node's build information with `GET /rpc/v3/version`. `release` is present from
+ * `supra_node_v12.0.0` and absent before it.
+ */
+export async function getNodeVersionInternal(config: NetworkConfig): Promise<NodeVersionInfo> {
+    const { data } = await get<NodeVersionInfo>({ path: `/version` }, config);
+    return data;
 }
 
 /**
