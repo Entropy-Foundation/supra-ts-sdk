@@ -730,12 +730,7 @@ export type SettlementRole = "sender" | "recipient";
  * @beta
  */
 export type SettlementStage =
-    | "recorded"
-    | "initiated_on_evm"
-    | "credited_on_evm"
-    | "applied_on_move"
-    | "skipped"
-    | "cleared";
+    "recorded" | "initiated_on_evm" | "credited_on_evm" | "applied_on_move" | "skipped" | "cleared";
 
 /**
  * One end of a cross-VM crossing.

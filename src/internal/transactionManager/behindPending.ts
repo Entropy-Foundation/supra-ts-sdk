@@ -11,8 +11,7 @@ import { readChainInternal, sequenceNumberTrackerOf, type SequenceNumberReservat
  *   be built and signed again with it.
  */
 export type SequenceNumberTooNewOutcome<T> =
-    | { kind: "simulated"; result: T }
-    | { kind: "moved"; sequenceNumber: bigint };
+    { kind: "simulated"; result: T } | { kind: "moved"; sequenceNumber: bigint };
 
 /** The number of times the chain is read for one simulation that reported `SEQUENCE_NUMBER_TOO_NEW`. */
 const ROUNDS = 2;
