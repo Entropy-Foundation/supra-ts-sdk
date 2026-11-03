@@ -228,6 +228,28 @@ const { response: txns } = await supra.account.getAccountTransactions({
     options: { count: 10, ascending: false },
 });
 
+// Get the account's history: every finalized transaction that concerns it, with the categories it matched
+// ("sent", "coin", "fa", "da"). Needs a node from supra_node_v12.0.0 (Devnet); a v11.7.x node answers 404, thrown as
+// SupraRouteUnsupportedError (a SupraNotFoundError). Automated transactions and automation records are not listed.
+// The feed ends only when `cursor` is undefined, even past an empty page or the cursor "0".
+const history = await supra.account.getAccountHistory({
+    accountAddress: account.address(),
+    options: { categories: ["sent", "fa"], count: 20, ascending: false },
+});
+for (const { categories, transaction } of history.response) {
+    console.log(transaction.hash, categories);
+}
+
+// Get the fungible asset transactions of ONE fungible store (all networks). It takes a store address, not an
+// account address (an account address returns an empty page). Derive the primary store of an account first
+// (SUPRA by default; pass metadataAddress for another asset). For everything that concerns an account use
+// getAccountHistory (nodes from supra_node_v12.0.0).
+const storeAddress: string = await supra.account.getPrimaryStoreAddress({ accountAddress: account.address() });
+const { response: faTxns } = await supra.account.getAccountFaTransactions({
+    storeAddress,
+    options: { count: 10 },
+});
+
 // Count the coin types the account holds (SUPRA counts once, in either form)
 const count: number = await supra.account.getAccountCoinsCount({
     accountAddress: account.address(),
@@ -905,7 +927,7 @@ try {
 
 ## Pagination Pattern
 
-All paginated methods return `PaginatedResponse<T>`: `{ response, cursor }`. Pass `cursor` back unchanged (as `start`, or `cursor` for `getAccountAutoTransactions`) until it is `undefined`. A page can be empty and still carry a cursor, so stop only on `undefined`.
+All paginated methods return `PaginatedResponse<T>`: `{ response, cursor }`. Pass `cursor` back unchanged (as `start`, or `cursor` for `getAccountAutoTransactions`) until it is `undefined`. A page can be empty and still carry a cursor, so stop only on `undefined`. `getAccountHistory` ends the feed only on an absent cursor; the cursor `"0"` does not end it.
 
 ```typescript
 // Fetch all pages

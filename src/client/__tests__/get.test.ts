@@ -59,6 +59,13 @@ describe("client/get", () => {
         expect(result.cursor).toBe("cursor_value");
     });
 
+    it("should return the response headers", async () => {
+        (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(200, {}, { "x-supra-oldest-block": "9" }));
+
+        const result = await get({ path: "/accounts/0x1" }, testConfig);
+        expect(result.headers?.get("x-supra-oldest-block")).toBe("9");
+    });
+
     it("should return undefined cursor when header is absent", async () => {
         (global.fetch as jest.Mock).mockResolvedValue(mockFetchResponse(200, {}));
 

@@ -1,14 +1,29 @@
 // Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
 // Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import type { NetworkConfig } from "../utils/apiEndpoints";
-import type { AccountAddressInput, AccountData, PaginatedResponse, SupraBalance } from "../types/account";
+import type {
+    AccountAddressInput,
+    AccountData,
+    AccountHistoryCategory,
+    AccountHistoryPage,
+    PaginatedResponse,
+    SupraBalance,
+} from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
-import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
+import type {
+    AutoTransactionResponse,
+    CommittedTransactionResponse,
+    TransactionQueryType,
+    TransactionResponse,
+} from "../types/transaction";
 import {
     getAccountAutoTransactionsInternal,
     getAccountCoinBalanceInternal,
     getAccountCoinsCountInternal,
     getAccountCoinTransactionsInternal,
+    getAccountFaTransactionsInternal,
+    getAccountHistoryInternal,
+    getPrimaryStoreAddressInternal,
     getAccountInfoInternal,
     getAccountModuleInternal,
     getAccountModulesInternal,
@@ -22,6 +37,7 @@ import { SUPRA_COIN_TYPE } from "../utils/constants";
 import {
     validateAddress,
     validateMoveIdentifier,
+    validateHistoryCategories,
     validatePaginationCount,
     validateStructId,
 } from "../helper/validation";
@@ -318,6 +334,156 @@ export class Account {
         validateAddress(args.accountAddress, "accountAddress");
         validatePaginationCount(args.options?.count);
         return getAccountCoinTransactionsInternal<T>(args, this.networkInformation);
+    }
+
+    /**
+     * Queries the fungible asset transactions of one fungible store: the finalized transactions that withdrew from or
+     * deposited to that store. The feed lists the movements of the store only; an account address returns an empty
+     * page. Derive an account's primary store with {@link Account.getPrimaryStoreAddress}. To list everything that
+     * concerns an account, use {@link Account.getAccountHistory} (nodes from `supra_node_v12.0.0`).
+     * @template {TransactionResponse} T - The type of the transaction to be returned.
+     * @param args.storeAddress - The address of the fungible store to query, for example the result of
+     * {@link Account.getPrimaryStoreAddress}. It is not the address of the account that owns the store.
+     * @param args.options.count - The number of transactions to return.
+     * @param args.options.start - The `cursor` of the previous page, exclusive. Omit it, or pass `undefined`, for the first page.
+     * @param args.options.ascending - Whether to return the transactions in ascending order.
+     * @param args.options.type - Return only transactions of this type. `"settlement"` requires a node from v12
+     * onwards; older nodes reject it with HTTP 400. A page filtered by type can be empty and still carry a cursor.
+     * @remarks
+     * - `options.count` defaults to 20 on the node; the SDK rejects a value outside 1 to 100.
+     * - Mainnet, Testnet and Devnet nodes serve this feed.
+     * @returns A Promise that resolves to the transactions of the store with an optional cursor. Items can be of
+     * any `txn_type`; narrow on `txn_type` before reading `header`, `payload` or `authenticator`. `cursor` is
+     * `undefined` when there are no more transactions; see {@link PaginatedResponse}.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: "0x1" });
+     *    const { response: faTransactions, cursor } = await supra.account.getAccountFaTransactions({ storeAddress });
+     *    console.log(faTransactions.length, cursor);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group Account
+     */
+    async getAccountFaTransactions<T extends TransactionResponse>(args: {
+        storeAddress: AccountAddressInput;
+        options?: {
+            count?: number;
+            start?: string | undefined;
+            ascending?: boolean;
+            type?: TransactionQueryType;
+        };
+    }): Promise<PaginatedResponse<T[]>> {
+        validateAddress(args.storeAddress, "storeAddress");
+        validatePaginationCount(args.options?.count);
+        return getAccountFaTransactionsInternal<T>(args, this.networkInformation);
+    }
+
+    /**
+     * Returns the address of the primary fungible store of an account for a fungible asset, by calling
+     * `0x1::primary_fungible_store::primary_store_address`. The address is computed from the owner and the metadata
+     * and does not show that the store exists. It is the `storeAddress` that {@link Account.getAccountFaTransactions}
+     * takes.
+     * @param args.accountAddress - The address of the account that owns the store.
+     * @param args.metadataAddress - The address of the fungible asset's metadata object. Default: SUPRA (`0xa`).
+     * @returns A Promise that resolves to the store address, as the node renders it.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: "0x1" });
+     *    console.log(storeAddress);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group Account
+     */
+    async getPrimaryStoreAddress(args: {
+        accountAddress: AccountAddressInput;
+        metadataAddress?: AccountAddressInput | undefined;
+    }): Promise<string> {
+        validateAddress(args.accountAddress, "accountAddress");
+        if (args.metadataAddress !== undefined) {
+            validateAddress(args.metadataAddress, "metadataAddress");
+        }
+        return getPrimaryStoreAddressInternal(args, this.networkInformation);
+    }
+
+    /**
+     * Queries the transaction history of an account: every finalized transaction that concerns the account, once
+     * each, with the categories it matched for the account. It lists the transfers of SUPRA held in primary
+     * fungible stores (the `fa` category), which `getAccountCoinTransactions` does not.
+     * @template {CommittedTransactionResponse} T - The type of the transaction to be returned.
+     * @param args.accountAddress - The address of the account to query.
+     * @param args.options.categories - Return only transactions that matched at least one of these categories:
+     * `"sent"` (the account sent it), `"coin"` (coins moved in or out of the account), `"fa"` (a fungible asset
+     * store the account owned moved), `"da"` (a digital asset or object event names the account). Default: all four.
+     * @param args.options.count - The number of entries to scan for, 1 to 100 (default 20 on the node).
+     * @param args.options.ascending - Whether to return the entries in ascending order. Default descending.
+     * @param args.options.start - The `cursor` of the previous page, exclusive. Omit it, or pass `undefined`, for the first page.
+     * @remarks
+     * - **Needs a node from `supra_node_v12.0.0`** (Devnet). Mainnet and Testnet nodes at v11.7.x answer HTTP 404
+     *   for the route, which this method throws as {@link SupraRouteUnsupportedError}, a {@link SupraNotFoundError}.
+     * - Automated transactions and automation records are not listed; read them with
+     *   {@link Account.getAccountAutoTransactions}.
+     * - The node applies `categories` while it scans the account's history, and reads at most 8 rows for each
+     *   entry requested, so a page can hold fewer entries than `count`, or none, before the history is exhausted.
+     *   The feed ends only when `cursor` is `undefined`, that is, when the response has no `x-supra-cursor` header.
+     *   An empty page that has a cursor, and the cursor `"0"`, do not end it.
+     * - A node that indexes blocks it held before it kept the history can lack the transactions of the blocks
+     *   below `indexedFrom`.
+     * @returns A Promise that resolves to the entries `{ categories, transaction }` with an optional `cursor`, the
+     * `indexedFrom` height (`x-supra-history-indexed-from`) and the `oldestBlock` height (`x-supra-oldest-block`)
+     * when the node sends them; see {@link AccountHistoryPage}.
+     * @throws {SupraRouteUnsupportedError} When the node is older than `supra_node_v12.0.0`.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.DEVNET });
+     *
+     * async function runExample() {
+     *    const accountAddress = "0x1";
+     *    let cursor: string | undefined;
+     *    do {
+     *        const page = await supra.account.getAccountHistory({
+     *            accountAddress,
+     *            options: { categories: ["sent", "fa"], count: 50, start: cursor },
+     *        });
+     *        for (const { categories, transaction } of page.response) {
+     *            console.log(transaction.hash, categories);
+     *        }
+     *        cursor = page.cursor;
+     *    } while (cursor !== undefined);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group Account
+     */
+    async getAccountHistory<T extends CommittedTransactionResponse>(args: {
+        accountAddress: AccountAddressInput;
+        options?: {
+            categories?: readonly AccountHistoryCategory[];
+            count?: number;
+            ascending?: boolean;
+            start?: string | undefined;
+        };
+    }): Promise<AccountHistoryPage<T>> {
+        validateAddress(args.accountAddress, "accountAddress");
+        validatePaginationCount(args.options?.count);
+        validateHistoryCategories(args.options?.categories);
+        return getAccountHistoryInternal<T>(args, this.networkInformation);
     }
 
     /**
