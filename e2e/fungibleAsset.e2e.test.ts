@@ -42,9 +42,9 @@ describeE2E("fungible asset", () => {
         expect(balance.total).toBe(await rawSupraBalance(ctx, address));
         expect(balance.coin).toBe(balance.total);
         expect(balance.fungibleAsset).toBe(0n);
-        await expect(ctx.supra.account.getAccountCoinBalance({ accountAddress: address, asset: SUPRA_FA })).resolves.toBe(
-            0n,
-        );
+        await expect(
+            ctx.supra.account.getAccountCoinBalance({ accountAddress: address, asset: SUPRA_FA }),
+        ).resolves.toBe(0n);
     });
 
     test("transferSupraFungibleAsset is refused before submission when the SUPRA is held as a coin", async () => {
@@ -52,7 +52,9 @@ describeE2E("fungible asset", () => {
         const address = sender.address().toString();
         const receiver = createUnfundedAccount().address().toString();
         const total = await rawSupraBalance(ctx, address);
-        const sequenceBefore = BigInt((await ctx.supra.account.getAccountInfo({ accountAddress: address })).sequence_number);
+        const sequenceBefore = BigInt(
+            (await ctx.supra.account.getAccountInfo({ accountAddress: address })).sequence_number,
+        );
 
         const failure = await ctx.supra.fungibleAsset
             .transferSupraFungibleAsset(await transferArgs(sender, receiver))
@@ -100,9 +102,9 @@ describeE2E("fungible asset", () => {
         expect(balance.total).toBe(balance.fungibleAsset);
         expect(balance.total).toBe(await rawSupraBalance(ctx, address));
         // The fungible asset balance read through 0xa and the coin balance read through the type agree.
-        await expect(ctx.supra.account.getAccountCoinBalance({ accountAddress: address, asset: SUPRA_FA })).resolves.toBe(
-            balance.total,
-        );
+        await expect(
+            ctx.supra.account.getAccountCoinBalance({ accountAddress: address, asset: SUPRA_FA }),
+        ).resolves.toBe(balance.total);
         await expect(ctx.supra.account.getAccountSupraCoinBalance({ accountAddress: address })).resolves.toBe(
             balance.total,
         );

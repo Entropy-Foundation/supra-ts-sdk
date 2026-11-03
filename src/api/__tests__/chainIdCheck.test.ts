@@ -94,6 +94,9 @@ function stubFetch(): void {
                 }),
             );
 
+        if (method === "GET" && path === "/transactions/parameters") {
+            return respond({ max_transaction_time_to_live_seconds: 600 });
+        }
         if (method === "GET" && path === "/transactions/chain_id") {
             const answer = node.chainIdAnswers.shift();
             return answer === undefined ? respond(NODE_CHAIN_ID) : respond(answer.body, answer.status);
@@ -462,7 +465,14 @@ describe("chain ID check before signing", () => {
             .catch((caught: unknown) => caught);
 
         expect(error).toMatchObject({ configuredChainId: 6, nodeChainId: NODE_CHAIN_ID });
-        expect(requests).toEqual([{ method: "GET", path: "/transactions/chain_id" }]);
+        // The read of the node's maximum time to live runs together with the chain ID read.
+        expect(requests).toHaveLength(2);
+        expect(requests).toEqual(
+            expect.arrayContaining([
+                { method: "GET", path: "/transactions/chain_id" },
+                { method: "GET", path: "/transactions/parameters" },
+            ]),
+        );
     });
 
     it("signs offline for a predefined network with verifyChainId false", async () => {

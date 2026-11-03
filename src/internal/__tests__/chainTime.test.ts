@@ -1,7 +1,7 @@
 import { SupraClient } from "../../api/supraClient";
 import {
     DEFAULT_TX_EXPIRATION_DURATION,
-    MAX_TX_EXPIRATION_DURATION,
+    ASSUMED_MAX_TX_EXPIRATION_DURATION,
     TX_EXPIRATION_MARGIN_SECS,
 } from "../../utils/constants";
 import { ChainClock, chainClockOf } from "../chainTime";
@@ -201,12 +201,16 @@ describe("the default expiration time of a built transaction", () => {
         expect(rawTxn(supra).expiration_timestamp_secs).toBe(1_000_300n);
     });
 
-    it(`is at most ${MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS} s after the client's clock`, () => {
+    it(`is at most ${ASSUMED_MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS} s after the client's clock when the node's maximum is not known`, () => {
         jest.spyOn(Date, "now").mockReturnValue(1_000_000_999);
-        const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, txExpirySecs: MAX_TX_EXPIRATION_DURATION });
+        const supra = new SupraClient({
+            rpcUrl: RPC_URL,
+            chainId: 255,
+            txExpirySecs: ASSUMED_MAX_TX_EXPIRATION_DURATION,
+        });
 
         expect(rawTxn(supra).expiration_timestamp_secs).toBe(
-            1_000_000n + BigInt(MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS),
+            1_000_000n + BigInt(ASSUMED_MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS),
         );
     });
 
@@ -216,11 +220,11 @@ describe("the default expiration time of a built transaction", () => {
         expect(rawTxn(supra, 42n).expiration_timestamp_secs).toBe(42n);
     });
 
-    it.each([0, -1, 1.5, MAX_TX_EXPIRATION_DURATION + 1, Number.NaN])("rejects txExpirySecs %s", (txExpirySecs) => {
+    it.each([0, -1, 1.5, Number.NaN])("rejects txExpirySecs %s", (txExpirySecs) => {
         expect(() => new SupraClient({ rpcUrl: RPC_URL, chainId: 255, txExpirySecs })).toThrow(RangeError);
     });
 
-    it.each([1, MAX_TX_EXPIRATION_DURATION])("accepts txExpirySecs %s", (txExpirySecs) => {
+    it.each([1, ASSUMED_MAX_TX_EXPIRATION_DURATION, 900])("accepts txExpirySecs %s", (txExpirySecs) => {
         expect(new SupraClient({ rpcUrl: RPC_URL, chainId: 255, txExpirySecs }).networkInformation.txExpirySecs).toBe(
             txExpirySecs,
         );

@@ -14,14 +14,8 @@ import {
     validateAutomationTaskType,
     validateU64,
 } from "./automationRegistration";
-import {
-    DEFAULT_MAX_GAS_UNITS,
-    DEFAULT_TX_EXPIRATION_DURATION,
-    MAX_TX_EXPIRATION_DURATION,
-    MILLISECONDS_PER_SECOND,
-    SUPRA_FRAMEWORK_ADDRESS,
-    TX_EXPIRATION_MARGIN_SECS,
-} from "../../utils/constants";
+import { DEFAULT_MAX_GAS_UNITS, SUPRA_FRAMEWORK_ADDRESS } from "../../utils/constants";
+import { defaultTxExpiryTime, resolveDefaultTxExpiryTimeInternal } from "../txExpiry";
 import type { AccountAddressInput } from "../../types/account";
 import { addressToBytes } from "../../helper/account";
 import type {
@@ -176,7 +170,14 @@ export async function buildWithResolvedMaxGasInternal(
 ): Promise<TxnBuilderTypes.RawTransaction> {
     // The gas unit price is resolved once; the max gas estimate and the transaction use that value. A call that took
     // the account's lock has resolved it already, so no request is made here.
-    const options = await withResolvedGasUnitPriceInternal(args.optionalTransactionPayloadArgs, config);
+    const priced = await withResolvedGasUnitPriceInternal(args.optionalTransactionPayloadArgs, config);
+    // Without `txExpiryTime` the expiration time is derived from the node's maximum time to live, read once per client
+    // and not replaced by a fallback when the read fails. It is fixed here so that the estimate and the transaction
+    // carry the same one. An expiry the call sets is checked against the node's maximum before signing.
+    const options =
+        priced.txExpiryTime === undefined
+            ? { ...priced, txExpiryTime: await resolveDefaultTxExpiryTimeInternal(config) }
+            : priced;
     const resolved = await resolveMaxGasInternal(
         {
             senderAddress: args.senderAddress,
@@ -209,27 +210,15 @@ export function withSequenceNumber(
     );
 }
 
-/** Returns `value` when it is an integer from 1 to `MAX_TX_EXPIRATION_DURATION`, and throws a `RangeError` otherwise. */
+/**
+ * Returns `value` when it is a positive integer, and throws a `RangeError` otherwise. The upper bound is the node's,
+ * which is read when a transaction is built or signed.
+ */
 export function validateTxExpirySecs(value: number): number {
-    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > MAX_TX_EXPIRATION_DURATION) {
-        throw new RangeError(
-            `txExpirySecs must be an integer from 1 to ${MAX_TX_EXPIRATION_DURATION}, got ${String(value)}`,
-        );
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+        throw new RangeError(`txExpirySecs must be a positive integer, got ${String(value)}`);
     }
     return value;
-}
-
-/**
- * The expiration time of a transaction built without `txExpiryTime`: `SupraConfig.txExpirySecs` (default
- * `DEFAULT_TX_EXPIRATION_DURATION`) seconds after the client's clock in whole seconds (rounded down), at most
- * `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS` seconds after it.
- */
-export function defaultTxExpiryTime(config: NetworkConfig): bigint {
-    const secs = Math.min(
-        config.txExpirySecs ?? DEFAULT_TX_EXPIRATION_DURATION,
-        MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS,
-    );
-    return BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + secs);
 }
 
 export function rawTxnObjectInnerInternal(
@@ -689,6 +678,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SignedTransaction`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      */
     signedTransaction(senderAccount: SupraAccount): Promise<TxnBuilderTypes.SignedTransaction> {
         return signedTransactionInternal(
@@ -706,6 +698,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SendTxnPayload`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      */
     sendTxnPayload(senderAccount: SupraAccount): Promise<SendTxnPayload> {
         return sendTxnPayloadInternal(
@@ -758,6 +753,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns `SubmitTransactionResponse`; `Submit` describes the statuses and errors of a submission
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      * @throws `SupraGasUnitPriceBelowMinimumError` when the node refuses the submission or an enabled simulation
      * because the gas unit price is below its minimum (see `Submit`)
      * @throws `SupraSubmissionOutcomeUnknownError` when the outcome of the submission request is unknown (see `Submit`)
@@ -876,6 +874,9 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
      * @returns A promise of the ed25519 signature in `HexString`
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      */
     signTransaction(senderAccount: SupraAccount): Promise<HexString> {
         return signTransactionInternal(

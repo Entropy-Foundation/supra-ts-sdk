@@ -59,6 +59,9 @@ export class Build {
      * @param args.functionArgs - Target function args
      * @param args.optionalTransactionPayloadArgs - Optional arguments for transaction payload
      * @returns Raw transaction object
+     * @throws `RangeError` when the call sets no `txExpiryTime` and `SupraConfig.txExpirySecs` is more than the node's
+     * maximum time to live, and the error of a failed read of that maximum (`getTransactionParameters()`); the maximum
+     * is read once per client and there is no fallback
      * @example
      * ```typescript
      * import { Network, SupraAccount, SupraClient } from "supra-ts-sdk";
@@ -492,6 +495,9 @@ export class Build {
      * ```
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      * @group Transaction
      */
     signedTransaction(args: {
@@ -549,6 +555,9 @@ export class Build {
      * ```
      * @throws `SupraChainIdMismatchError` before signing when the client's or the transaction's chain ID is not the
      * node's (see `SupraConfig.verifyChainId`)
+     * @throws `RangeError` before signing when the transaction's expiration time is more than the node's maximum time
+     * to live after the current time (the maximum is read once per client; see `getTransactionParameters()`), and the
+     * error of a failed read of that maximum
      * @group Transaction
      */
     sendTxnPayload(args: {

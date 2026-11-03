@@ -112,6 +112,8 @@ function stubFetch(): void {
             answer = json(HASH);
         } else if (method === "GET" && path === "/transactions/chain_id") {
             answer = json(255);
+        } else if (method === "GET" && path === "/transactions/parameters") {
+            answer = json({ max_transaction_time_to_live_seconds: 600 });
         } else if (method === "GET" && path === "/transactions/estimate_gas_price") {
             answer = node.gasPrice();
         } else if (method === "GET" && path.startsWith("/transactions/")) {
@@ -248,7 +250,8 @@ describe("gas settings", () => {
 
     describe.each(HELPERS)("%s", (_name, helper) => {
         it("submits the per-call maxGas, gasUnitPrice and txExpiryTime and does not modify the options", async () => {
-            const options = { maxGas: 5_000n, gasUnitPrice: 123_456n, txExpiryTime: 4_000_000_000n };
+            const txExpiryTime = BigInt(Math.floor(Date.now() / 1_000) + 300);
+            const options = { maxGas: 5_000n, gasUnitPrice: 123_456n, txExpiryTime };
             const before = { ...options };
 
             await helper(newClient({ maxGas: 9_999n, gasUnitPrice: 200_000n }), options);
@@ -256,7 +259,7 @@ describe("gas settings", () => {
             expect(submitted()).toMatchObject({
                 max_gas_amount: 5_000,
                 gas_unit_price: 123_456,
-                expiration_timestamp_secs: 4_000_000_000,
+                expiration_timestamp_secs: Number(txExpiryTime),
             });
             expect(options).toStrictEqual(before);
             expect(requests.filter((r) => r.path === "/transactions/simulate")).toHaveLength(0);
@@ -471,18 +474,32 @@ describe("gas settings", () => {
             expect(rawTxn.max_gas_amount).toBe(3_000n);
         });
 
-        it("makes no request when the estimate is turned off and the call sets the gas unit price", async () => {
-            const rawTxn = await build(newClient(), { estimateMaxGas: false, gasUnitPrice: PRICE });
+        it("makes no request when the estimate is turned off and the call sets the gas unit price and expiry", async () => {
+            const rawTxn = await build(newClient(), {
+                estimateMaxGas: false,
+                gasUnitPrice: PRICE,
+                txExpiryTime: 4_000_000_000n,
+            });
 
             expect(rawTxn.max_gas_amount).toBe(DEFAULT_MAX_GAS_UNITS);
             expect(requests).toHaveLength(0);
         });
 
-        it("reads only the gas unit price estimate when the estimate is turned off", async () => {
+        it("reads only the node's maximum time to live when the estimate is turned off and the call sets the price", async () => {
+            const rawTxn = await build(newClient(), { estimateMaxGas: false, gasUnitPrice: PRICE });
+
+            expect(rawTxn.max_gas_amount).toBe(DEFAULT_MAX_GAS_UNITS);
+            expect(requests.map((r) => r.path)).toStrictEqual(["/transactions/parameters"]);
+        });
+
+        it("reads only the gas unit price estimate and the node's maximum time to live when the estimate is turned off", async () => {
             const rawTxn = await build(newClient(), { estimateMaxGas: false });
 
             expect(rawTxn.max_gas_amount).toBe(DEFAULT_MAX_GAS_UNITS);
-            expect(requests.map((r) => r.path)).toStrictEqual(["/transactions/estimate_gas_price"]);
+            expect(requests.map((r) => r.path).sort()).toStrictEqual([
+                "/transactions/estimate_gas_price",
+                "/transactions/parameters",
+            ]);
         });
     });
 

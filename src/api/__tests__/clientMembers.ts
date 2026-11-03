@@ -23,6 +23,7 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     resetSequenceNumber: true,
     getNodeVersion: true,
     getGasPrice: true,
+    getTransactionParameters: true,
     getMinGasUnitPrice: true,
     getEstimatedGasUnitPrice: true,
     isAccountExists: true,

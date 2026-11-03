@@ -28,7 +28,7 @@ export interface NetworkConfig {
     waitTimeoutMs?: number;
     /**
      * Seconds from the client's clock to the expiration time of a transaction built without `txExpiryTime`, at most
-     * `MAX_TX_EXPIRATION_DURATION - TX_EXPIRATION_MARGIN_SECS`; default `DEFAULT_TX_EXPIRATION_DURATION`.
+     * the node's maximum time to live less `TX_EXPIRATION_MARGIN_SECS`; default `DEFAULT_TX_EXPIRATION_DURATION`.
      */
     txExpirySecs?: number;
     /**

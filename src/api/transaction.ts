@@ -230,6 +230,9 @@ export class Transaction {
      * @throws `SupraChainIdMismatchError` before signing when the client's chain ID or the chain ID of `rawTxn` is not
      * the node's. The node's chain ID is read before the first signature of the client; with `verifyChainId: false`
      * nothing is read or checked and no request is sent.
+     * @throws `RangeError` before signing when the expiration time of `rawTxn` is more than the node's maximum time to
+     * live after the current time (the maximum is read once per client; see `getTransactionParameters()`; not checked
+     * with `verifyChainId: false`), and the error of a failed read of that maximum
      * @example
      * ```typescript
      * import { BCS, Network, SupraAccount, SupraClient } from "supra-ts-sdk";

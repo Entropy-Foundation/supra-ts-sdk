@@ -565,13 +565,22 @@ expiration time.
 ## Transaction expiration time
 
 A transaction built without `txExpiryTime` expires 60 seconds (`DEFAULT_TX_EXPIRATION_DURATION`) after the client's
-clock in whole seconds; 1.2.0 used 300 seconds. `SupraConfig.txExpirySecs` sets another window, from 1 to 600 seconds;
-the expiration time is at most 595 seconds after the client's clock, so that a node whose clock is up to 5 seconds
-behind the client's accepts `txExpirySecs: 600`. The node refuses a transaction whose expiration time is not after its
-clock or is more than 600 seconds after it, so a client whose clock is far from the node's has its transactions
-refused. This applies to every builder, including those of `transaction.build`. For a transaction that is signed or
-submitted later (for example after a wallet's confirmation), set a longer window for the client or an absolute time
-for the transaction:
+clock in whole seconds; 1.2.0 used 300 seconds. `SupraConfig.txExpirySecs` sets another window, in whole seconds, up to
+the node's maximum time to live (`max_transaction_time_to_live_seconds` of `GET /rpc/v3/transactions/parameters`, which
+`getTransactionParameters()` returns; 600 on Mainnet, Testnet and Devnet); the expiration time is at most 5 seconds
+less than that maximum after the client's clock, so that a node whose clock is up to 5 seconds behind the client's
+accepts `txExpirySecs: 600`. The node refuses a transaction whose expiration time is not after its clock or is more
+than its maximum after it, so a client whose clock is far from the node's has its transactions refused. The client
+reads the maximum once, with the first builder that sends requests or signature that needs it, and throws a failed
+read's error with no fallback to 600. A `txExpirySecs` beyond the maximum throws a `RangeError` when the transaction
+is built; `txExpirySecs` is new in 2.0.0. A `txExpiryTime` more than the maximum after the current time (plus 5 seconds
+of slack for the client's estimate of the node's clock) throws a `RangeError` before signing; in 1.2.0 the node
+answered such a transaction with a `SupraAPIError`. Signing with `verifyChainId: false` sends no request and does not
+check the expiration time. The builders that send no request (`rawTxnObject` and the like) use the maximum the client
+has read, else 600 (`ASSUMED_MAX_TX_EXPIRATION_DURATION`), and throw the same `RangeError` for a `txExpirySecs` above
+it; the messages say whether the maximum was read or assumed. This applies to every builder, including those of
+`transaction.build`. For a transaction that is signed or submitted later (for example after a wallet's confirmation),
+set a longer window for the client or an absolute time for the transaction:
 
 ```typescript
 import { Network, SupraClient } from "supra-ts-sdk";

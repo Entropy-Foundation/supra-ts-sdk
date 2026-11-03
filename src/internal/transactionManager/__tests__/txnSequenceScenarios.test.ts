@@ -2,7 +2,7 @@ import { HexString, SupraAccount } from "supra-l1-sdk-core";
 import { SupraAccountQueueFullError, SupraAPIError } from "../../../errors/apiError";
 import { SupraSimulationFailedError, SupraSubmissionOutcomeUnknownError } from "../../../errors/transactionError";
 import { MockNode, u64Mark, type MockNodeOptions } from "./helpers/mockNode";
-import { MAX_TX_EXPIRATION_DURATION, TX_EXPIRATION_MARGIN_SECS } from "../../../utils/constants";
+import { ASSUMED_MAX_TX_EXPIRATION_DURATION, TX_EXPIRATION_MARGIN_SECS } from "../../../utils/constants";
 import { ClientClock, newClient, transfer, type TransferOptions } from "./helpers/transfers";
 
 /**
@@ -78,12 +78,14 @@ describe("request counts", () => {
         // Every call that sets no gas unit price reads the node's estimate once: the read starts before the call
         // requests the account's lock and is awaited inside it, before building. The first call reads the
         // account and the latest block, the chain ID before signing, the balance and one simulation for an estimate,
-        // one simulation before submission, and the transaction after submission.
+        // one simulation before submission, and the transaction after submission. The node's maximum time to live is
+        // read once per client, with the first build.
         expect(single).toEqual({
             estimate_gas_price: 1,
             account: 1,
             block: 1,
             chain_id: 1,
+            parameters: 1,
             ...(estimate ? { view: 1 } : {}),
             ...(estimate || simulate ? { simulate: (estimate ? 1 : 0) + (simulate ? 1 : 0) } : {}),
             submit: 1,
@@ -105,6 +107,7 @@ describe("request counts", () => {
             account: 1 + 4 * checks,
             block: 1 + 4 * checks,
             chain_id: 1,
+            parameters: 1,
             ...(estimate ? { view: 5 } : {}),
             ...(estimate || simulate ? { simulate: 5 * checks + 4 * checks } : {}),
             submit: 5,
@@ -712,10 +715,10 @@ describe("reads of the chain, chain time and expiration times", () => {
         expect(acceptedNumbers(mock)).toEqual([5, 6, 7, 8]);
     });
 
-    it(`is accepted with txExpirySecs ${MAX_TX_EXPIRATION_DURATION} by a node whose clock is up to ${TX_EXPIRATION_MARGIN_SECS} s behind the client's`, async () => {
+    it(`is accepted with txExpirySecs ${ASSUMED_MAX_TX_EXPIRATION_DURATION} by a node whose clock is up to ${TX_EXPIRATION_MARGIN_SECS} s behind the client's`, async () => {
         const mock = start({ latencyMs: [1, 1] });
         const clock = new ClientClock();
-        const supra = newClient({ txExpirySecs: MAX_TX_EXPIRATION_DURATION });
+        const supra = newClient({ txExpirySecs: ASSUMED_MAX_TX_EXPIRATION_DURATION });
         const sender = new SupraAccount();
 
         for (let index = 0; index < 10; index += 1) {
