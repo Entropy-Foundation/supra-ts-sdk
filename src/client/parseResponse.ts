@@ -1,5 +1,6 @@
 import { SupraAPIError } from "../errors/apiError";
 import { SupraNetworkError, SupraTimeoutError } from "../errors/supraError";
+import { convertU64Fields, quoteU64Fields, U64FieldError } from "./exactU64";
 import { isTimeout } from "./request";
 
 /**
@@ -16,8 +17,17 @@ import { isTimeout } from "./request";
  *    it in a `SupraAPIError` alongside the status code
  *  - a body that cannot be read -> throws `SupraTimeoutError` when the request timeout elapsed and
  *    `SupraNetworkError` otherwise, with the original error as `cause`
+ *
+ * When `u64Fields` lists paths (see `U64_FIELDS`), the numbers at those paths of a successful response are read
+ * exactly and returned as `bigint`, from the number form and the decimal string form alike; a value at such a path
+ * that is neither throws `SupraAPIError` with the 2xx status.
  */
-export async function parseJsonResponse(response: Response, url: string, timeoutMs: number): Promise<unknown> {
+export async function parseJsonResponse(
+    response: Response,
+    url: string,
+    timeoutMs: number,
+    u64Fields?: readonly string[],
+): Promise<unknown> {
     let text: string;
     try {
         text = await response.text();
@@ -32,8 +42,10 @@ export async function parseJsonResponse(response: Response, url: string, timeout
     if (text.length === 0) {
         return undefined;
     }
+    const exact = response.ok && u64Fields !== undefined && u64Fields.length > 0 ? u64Fields : undefined;
+    let parsed: unknown;
     try {
-        return JSON.parse(text) as unknown;
+        parsed = JSON.parse(exact === undefined ? text : quoteU64Fields(text, exact)) as unknown;
     } catch {
         if (response.ok) {
             throw new SupraAPIError({
@@ -44,5 +56,16 @@ export async function parseJsonResponse(response: Response, url: string, timeout
             });
         }
         return text;
+    }
+    if (exact === undefined) {
+        return parsed;
+    }
+    try {
+        return convertU64Fields(parsed, exact);
+    } catch (error) {
+        if (error instanceof U64FieldError) {
+            throw new SupraAPIError({ status: response.status, statusText: error.message, url, data: text });
+        }
+        throw error;
     }
 }
