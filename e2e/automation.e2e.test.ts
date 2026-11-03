@@ -133,29 +133,23 @@ describeE2E("automation tasks", () => {
         );
     }
 
-    test("a version 2 registration of a user task with task_type and priority_value commits under the derived hash", async () => {
+    test("a version 2 registration without a priority commits under the derived hash and gets the task's index as its priority", async () => {
         const owner = await createFundedAccount(ctx);
-        const priority = freshPriority();
-        const { response, derived, committed } = await register(owner, {
-            automationTaskType: "User",
-            automationPriority: priority,
-        });
+        const { response, derived, committed } = await register(owner, { automationTaskType: "User" });
 
         expect(response.status).toBe(TransactionStatus.Success);
         expect(response.hash.toLowerCase()).toBe(derived);
         expect(committed.hash.toLowerCase()).toBe(derived);
         const task = taskOf(committed);
         await removeTasks(owner, [task]);
-
         const payload = committed.payload as RegistrationPayloadJson;
         expect(payload.Move.type).toBe("automation_registration_payload");
         expect(payload.Move.V2?.task_type).toBe("user");
-        expect(payload.Move.V2?.task_priority).toBe(Number(priority));
-
-        // The registry stores the task type (1, a user task) and the priority in the task's auxiliary data.
+        expect(payload.Move.V2?.task_priority).toBeNull();
+        // The registry stores the task type (1, a user task) and the task's index as its priority in the auxiliary data.
         // The node renders an address without its leading zeros.
         expect(standardizeAddress(task.owner)).toBe(owner.address().toString());
-        expect(task.aux_data).toEqual(["0x01", u64Hex(priority)]);
+        expect(task.aux_data).toEqual(["0x01", u64Hex(BigInt(task.task_index))]);
 
         // The SDK's response types describe the node's answer.
         const read = await ctx.supra.getTransactionByHash({ transactionHash: derived });
@@ -167,21 +161,7 @@ describeE2E("automation tasks", () => {
             throw new Error("The registration payload is not version 2");
         }
         expect(move.V2.task_type).toBe("user");
-        expect(move.V2.task_priority).toBe(Number(priority));
-    });
-
-    test("a version 2 registration without a priority gets the task's index as its priority", async () => {
-        const owner = await createFundedAccount(ctx);
-        const { response, derived, committed } = await register(owner, { automationTaskType: "User" });
-
-        expect(response.status).toBe(TransactionStatus.Success);
-        expect(committed.hash.toLowerCase()).toBe(derived);
-        const task = taskOf(committed);
-        await removeTasks(owner, [task]);
-        const payload = committed.payload as RegistrationPayloadJson;
-        expect(payload.Move.V2?.task_type).toBe("user");
-        expect(payload.Move.V2?.task_priority).toBeNull();
-        expect(task.aux_data).toEqual(["0x01", u64Hex(BigInt(task.task_index))]);
+        expect(move.V2.task_priority).toBeNull();
     });
 
     test("a registration without a task type or a priority commits with version 1 parameters", async () => {
@@ -226,9 +206,7 @@ describeE2E("automation tasks", () => {
 
     test("cancelAutomationTask cancels a task of the sender", async () => {
         const owner = await createFundedAccount(ctx);
-        const task = taskOf(
-            (await register(owner, { automationTaskType: "User", automationPriority: freshPriority() })).committed,
-        );
+        const task = taskOf((await register(owner, { automationTaskType: "User" })).committed);
 
         const response = await outsideCycleTransition(() =>
             ctx.supra.automation.cancelAutomationTask({

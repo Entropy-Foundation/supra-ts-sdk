@@ -180,10 +180,17 @@ async function fund(node: Node, address: string): Promise<void> {
         fail(`Faucet request on ${node.label} returned HTTP ${response.status}`);
     }
     for (let attempt = 0; attempt < 120; attempt++) {
-        const resource = await fetch(
-            `${node.rpc}/rpc/v3/accounts/${address}/resources/0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>`,
-        );
-        if (resource.ok) {
+        // The balance view reads the CoinStore or the primary fungible store, whichever holds the SUPRA.
+        const balance = await fetch(`${node.rpc}/rpc/v3/view`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                function: "0x1::coin::balance",
+                type_arguments: ["0x1::supra_coin::SupraCoin"],
+                arguments: [address],
+            }),
+        });
+        if (balance.ok && BigInt(((await balance.json()) as { result: string[] }).result[0] ?? "0") > 0n) {
             return;
         }
         await sleep(500);
@@ -733,7 +740,11 @@ async function sdkSignedFixture(node: Node, runId: string, kind: "multi_agent" |
 }
 
 /** Entry function transactions that the SDK signs and submits, recorded with `--sdk-signed-only`. */
-const SDK_ENTRY_KINDS = ["module_publish", "multisig_create_transaction", "multisig_create_transaction_with_hash"] as const;
+const SDK_ENTRY_KINDS = [
+    "module_publish",
+    "multisig_create_transaction",
+    "multisig_create_transaction_with_hash",
+] as const;
 type SdkEntryKind = (typeof SDK_ENTRY_KINDS)[number];
 
 /** Max gas of the publish transaction, which needs more than `MAX_GAS`. */
@@ -963,7 +974,8 @@ async function sdkAutomationFixture(node: Node, runId: string, kind: SdkAutomati
             auxData: [],
             taskType: "User",
             // A random priority from 2^32 to 2^32 + 2^47; the node's JSON number holds it exactly.
-            priority: kind === "automation_registration_v2_priority" ? String(2n ** 32n + BigInt(randomInt(2 ** 47))) : null,
+            priority:
+                kind === "automation_registration_v2_priority" ? String(2n ** 32n + BigInt(randomInt(2 ** 47))) : null,
         },
     };
     const rawTxn = buildRawTransaction(node, raw);
@@ -1239,7 +1251,10 @@ async function main(): Promise<void> {
     for (const kind of SDK_ENTRY_KINDS.filter(selected)) {
         fixtures.push(await sdkEntryFunctionFixture(primary, runId, kind));
     }
-    for (const kind of SDK_AUTOMATION_KINDS.filter(selected)) {
+    // Nodes refuse a user task that carries a priority, so the priority case is recorded only when `--case` names it.
+    const selectedAutomation = (name: string) =>
+        values.case === undefined ? name !== "automation_registration_v2_priority" : values.case.includes(name);
+    for (const kind of SDK_AUTOMATION_KINDS.filter(selectedAutomation)) {
         fixtures.push(await sdkAutomationFixture(primary, runId, kind));
     }
 

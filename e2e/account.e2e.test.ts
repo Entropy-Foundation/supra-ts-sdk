@@ -1,12 +1,11 @@
 import type { SupraAccount } from "../src/index";
-import { SupraClient } from "../src/index";
+import { SupraClient, SupraNotFoundError } from "../src/index";
 import { createFundedAccount, createUnfundedAccount } from "./helpers/accounts";
 import { describeE2E } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
+import { SUPRA_COIN_STORE, supraLayoutOf } from "./helpers/layout";
 import { rawSupraBalance } from "./helpers/raw";
 import { sendSupra } from "./helpers/transfers";
-
-const SUPRA_COIN_STORE = "0x1::coin::CoinStore<0x1::supra_coin::SupraCoin>";
 
 describeE2E("account", () => {
     let ctx: E2EContext;
@@ -55,9 +54,9 @@ describeE2E("account", () => {
         ).rejects.toThrow("Invalid resourceType");
         const resource = await ctx.supra.account.getAccountResource({
             accountAddress: address,
-            resourceType: SUPRA_COIN_STORE,
+            resourceType: "0x1::account::Account",
         });
-        expect(resource.type).toBe(SUPRA_COIN_STORE);
+        expect(resource.type).toBe("0x1::account::Account");
     });
 
     test("getAccountInfo returns the sequence number as a bigint", async () => {
@@ -86,12 +85,19 @@ describeE2E("account", () => {
         expect(BigInt(resource.data.sequence_number)).toBe(1n);
     });
 
-    test("getAccountResource reads the SUPRA coin store of a funded account", async () => {
-        const resource = await ctx.supra.account.getAccountResource<{ coin: { value: string } }>({
+    // A faucet-funded account holds SUPRA in a CoinStore on a chain without feature 64, in a primary fungible store otherwise.
+    test("getAccountResource reads the SUPRA coin store of a funded account, or reports it missing when SUPRA is a fungible asset", async () => {
+        const layout = await supraLayoutOf(ctx, address);
+        const read = ctx.supra.account.getAccountResource<{ coin: { value: string } }>({
             accountAddress: address,
             resourceType: SUPRA_COIN_STORE,
         });
-        expect(BigInt(resource.data.coin.value)).toBe(await rawSupraBalance(ctx, address));
+        if (layout === "coin") {
+            const resource = await read;
+            expect(BigInt(resource.data.coin.value)).toBe(await rawSupraBalance(ctx, address));
+        } else {
+            await expect(read).rejects.toBeInstanceOf(SupraNotFoundError);
+        }
     });
 
     test("getAccountModules lists the framework modules", async () => {
@@ -120,7 +126,12 @@ describeE2E("account", () => {
 
     test("getAccountCoinTransactions returns the coin transactions of the account", async () => {
         const { response } = await ctx.supra.account.getAccountCoinTransactions({ accountAddress: address });
-        expect(response.length).toBeGreaterThanOrEqual(1);
+        // The coin feed lists transactions that touch a CoinStore; an account holding SUPRA as a fungible asset has none.
+        if ((await supraLayoutOf(ctx, address)) === "coin") {
+            expect(response.length).toBeGreaterThanOrEqual(1);
+        } else {
+            expect(response).toEqual([]);
+        }
     });
 
     test("getAccountAutoTransactions returns an empty list for an account without automation tasks", async () => {
@@ -141,17 +152,23 @@ describeE2E("account", () => {
     });
 
     test("getAccountCoinBalance of the fungible asset address reads the fungible asset store only", async () => {
-        // The faucet funds the account as a coin, so its fungible asset store is empty.
+        // Where the faucet funds the account as a coin its fungible asset store is empty; otherwise it holds everything.
+        const expected = (await supraLayoutOf(ctx, address)) === "coin" ? 0n : await rawSupraBalance(ctx, address);
         await expect(ctx.supra.account.getAccountCoinBalance({ accountAddress: address, asset: "0xa" })).resolves.toBe(
-            0n,
+            expected,
         );
     });
 
     test("getAccountSupraBalance splits the SUPRA balance by form without counting it twice", async () => {
         const balance = await ctx.supra.account.getAccountSupraBalance({ accountAddress: address });
         expect(balance.total).toBe(await rawSupraBalance(ctx, address));
-        expect(balance.fungibleAsset).toBe(0n);
-        expect(balance.coin).toBe(balance.total);
+        if ((await supraLayoutOf(ctx, address)) === "coin") {
+            expect(balance.fungibleAsset).toBe(0n);
+            expect(balance.coin).toBe(balance.total);
+        } else {
+            expect(balance.coin).toBe(0n);
+            expect(balance.fungibleAsset).toBe(balance.total);
+        }
     });
 
     test("getAccountCoinsCount counts the SUPRA coin store of a funded account", async () => {

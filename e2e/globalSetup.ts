@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { SKIP_MESSAGE, assertChainIdAllowed, e2eRpcUrl, fetchChainId } from "./helpers/env";
+import { SupraAccount } from "../src/index";
+import { fundFromFaucet } from "./helpers/accounts";
+import { SKIP_MESSAGE, assertChainIdAllowed, e2eRpcUrl, fetchChainId, getE2EContext } from "./helpers/env";
+import { supraLayoutOf } from "./helpers/layout";
 
 /**
  * A v12 node answers a request for an account that does not exist with 404; a v11 node answers 400.
@@ -33,7 +36,13 @@ export default async function globalSetup(): Promise<void> {
     assertChainIdAllowed(chainId);
     process.env["SUPRA_E2E_CHAIN_ID"] = String(chainId);
     process.env["SUPRA_E2E_NODE_GENERATION"] = await detectGeneration(rpcUrl);
+    // Fund a probe account and see where its SUPRA lands; tests that exist for one layout only select on this.
+    const ctx = await getE2EContext();
+    const probe = new SupraAccount();
+    await fundFromFaucet(ctx, probe.address().toString());
+    process.env["SUPRA_E2E_SUPRA_LAYOUT"] = await supraLayoutOf(ctx, probe.address().toString());
     process.stderr.write(
-        `\nEnd-to-end suite: ${rpcUrl}, chain ID ${chainId}, ${process.env["SUPRA_E2E_NODE_GENERATION"]}\n\n`,
+        `\nEnd-to-end suite: ${rpcUrl}, chain ID ${chainId}, ${process.env["SUPRA_E2E_NODE_GENERATION"]}, ` +
+            `SUPRA held as ${process.env["SUPRA_E2E_SUPRA_LAYOUT"] === "fa" ? "a fungible asset" : "a coin"}\n\n`,
     );
 }
