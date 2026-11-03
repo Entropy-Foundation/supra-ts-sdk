@@ -65,5 +65,6 @@ export async function get<Res>(
             data,
         },
         response.headers.get("retry-after"),
+        response.headers.get("x-supra-oldest-block"),
     );
 }

@@ -840,7 +840,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`. Errors t
 | Class | Raised when |
 |---|---|
 | `SupraAPIError` | the node answers with an error status (`status`, `statusText`, `url`, `data`, `major_status`, `sub_status`) |
-| `SupraNotFoundError`, `SupraGoneError`, `SupraRateLimitError`, `SupraServiceUnavailableError` (extend `SupraAPIError`) | HTTP 404, 410 (pruned data), 429 (`retryAfterSeconds`), 503 |
+| `SupraNotFoundError`, `SupraGoneError`, `SupraRateLimitError`, `SupraServiceUnavailableError` (extend `SupraAPIError`) | HTTP 404, 410 (pruned data; `SupraGoneError.oldestBlock` is the oldest block the node holds, restart reads from it), 429 (`retryAfterSeconds`), 503 |
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | a submission's sequence number is beyond the numbers the node queues for the account (`sequenceNumber`) |
 | `SupraTimeoutError`, `SupraNetworkError` | a request times out, or fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet answers `"TryLater"`, or answers unexpectedly |
