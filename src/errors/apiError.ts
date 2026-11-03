@@ -18,6 +18,7 @@ export interface SupraAPIErrorOptions {
  * | Class | When |
  * |---|---|
  * | {@link SupraNotFoundError} | HTTP 404 |
+ * | {@link SupraRouteUnsupportedError} | HTTP 404 for a route that only newer nodes serve; extends `SupraNotFoundError` |
  * | {@link SupraGoneError} | HTTP 410 (the requested data has been pruned) |
  * | {@link SupraRateLimitError} | HTTP 429, with `retryAfterSeconds` |
  * | {@link SupraServiceUnavailableError} | HTTP 503 |
@@ -89,6 +90,33 @@ export class SupraNotFoundError extends SupraAPIError {
     constructor(args: SupraAPIErrorOptions) {
         super(args);
         this.name = "SupraNotFoundError";
+    }
+}
+
+/**
+ * SupraRouteUnsupportedError is thrown when a method calls a route that the node does not serve because it is older
+ * than the release that added the route: `getAccountHistory` on a node before `supra_node_v12.0.0` (Mainnet and
+ * Testnet nodes at v11.7.x). It extends {@link SupraNotFoundError}, so `instanceof SupraNotFoundError` and `status`
+ * `404` still match. `data` is the node's original response body.
+ * @group SupraAPIError
+ */
+export class SupraRouteUnsupportedError extends SupraNotFoundError {
+    /** The name of the SDK method that called the route. */
+    readonly method: string;
+    /** The first node release that serves the route, for example `"supra_node_v12.0.0"`. */
+    readonly minimumNodeRelease: string;
+
+    constructor(args: SupraAPIErrorOptions & { method: string; minimumNodeRelease: string }) {
+        const { method, minimumNodeRelease, ...options } = args;
+        super(options);
+        this.name = "SupraRouteUnsupportedError";
+        this.message = `${method} needs a node from ${minimumNodeRelease}; the node at ${options.url} answered HTTP 404 for it`;
+        this.method = method;
+        this.minimumNodeRelease = minimumNodeRelease;
+    }
+
+    override toJSON() {
+        return { ...super.toJSON(), method: this.method, minimumNodeRelease: this.minimumNodeRelease };
     }
 }
 

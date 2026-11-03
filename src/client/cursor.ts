@@ -18,17 +18,21 @@ import { get, type RequestParams } from "./get";
  * @param args.header - The `x-supra-cursor` header, `null` or `undefined` when it is absent.
  * @param args.sent - The cursor the request was sent with, if any.
  * @param args.itemCount - The number of items in the page.
+ * @param args.emptyZeroEndsFeed - Whether an empty page with the cursor `"0"` ends the feed (default true). A feed
+ * for which `"0"` can be a real cursor on v12 sets it to false: the end is then the absent header, or an empty page
+ * that echoes the cursor it was requested with, which is how a v11 node answers a request made with `start=0`.
  */
 export function nextPageCursor(args: {
     header: string | null | undefined;
     sent: string | undefined;
     itemCount: number;
+    emptyZeroEndsFeed?: boolean;
 }): string | undefined {
-    const { header, sent, itemCount } = args;
+    const { header, sent, itemCount, emptyZeroEndsFeed = true } = args;
     if (header === undefined || header === null || header === "") {
         return undefined;
     }
-    if (itemCount === 0 && (header === "0" || header === sent)) {
+    if (itemCount === 0 && ((emptyZeroEndsFeed && header === "0") || header === sent)) {
         return undefined;
     }
     return header;
@@ -41,6 +45,8 @@ export interface PageRequestParams extends RequestParams {
     query: Record<string, string | number | boolean | undefined>;
     /** The query parameter that carries the cursor: `start` for most feeds, `cursor` for automated transactions. */
     cursorParam: string;
+    /** See `emptyZeroEndsFeed` of {@link nextPageCursor}. */
+    emptyZeroEndsFeed?: boolean;
 }
 
 /**
@@ -54,12 +60,20 @@ export async function getPage<Res, Item>(
     config: NetworkConfig,
     items: (data: Res) => Item[],
 ): Promise<PaginatedResponse<Item[]>> {
-    const { cursorParam, ...request } = args;
+    const { cursorParam, emptyZeroEndsFeed, ...request } = args;
     const sentValue = request.query[cursorParam];
     const sent = sentValue === undefined || sentValue === "" ? undefined : String(sentValue);
     const query = { ...request.query, [cursorParam]: sent };
 
     const { data, cursor: header } = await get<Res>({ ...request, query }, config);
     const response = items(data);
-    return { response, cursor: nextPageCursor({ header, sent, itemCount: response.length }) };
+    return {
+        response,
+        cursor: nextPageCursor({
+            header,
+            sent,
+            itemCount: response.length,
+            ...(emptyZeroEndsFeed === undefined ? {} : { emptyZeroEndsFeed }),
+        }),
+    };
 }

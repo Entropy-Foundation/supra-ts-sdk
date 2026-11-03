@@ -26,6 +26,20 @@ function requestedUrl(call: number): URL {
 }
 
 describe("client/cursor", () => {
+    describe("nextPageCursor with emptyZeroEndsFeed false", () => {
+        it('continues from "0" on an empty page', () => {
+            expect(nextPageCursor({ header: "0", sent: undefined, itemCount: 0, emptyZeroEndsFeed: false })).toBe("0");
+        });
+
+        it("still ends on an absent header, an empty header, and an empty page that echoes the sent cursor", () => {
+            expect(
+                nextPageCursor({ header: undefined, sent: "5", itemCount: 0, emptyZeroEndsFeed: false }),
+            ).toBeUndefined();
+            expect(nextPageCursor({ header: "", sent: "5", itemCount: 0, emptyZeroEndsFeed: false })).toBeUndefined();
+            expect(nextPageCursor({ header: "0", sent: "0", itemCount: 0, emptyZeroEndsFeed: false })).toBeUndefined();
+        });
+    });
+
     describe("nextPageCursor", () => {
         it("is undefined when the header is absent (v12 end of feed)", () => {
             expect(nextPageCursor({ header: null, sent: "c1", itemCount: 0 })).toBeUndefined();

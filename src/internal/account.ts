@@ -1,9 +1,17 @@
 import { getPage } from "../client/cursor";
 import { get } from "../client/get";
-import { SupraAPIError } from "../errors/apiError";
+import { SupraAPIError, SupraNotFoundError, SupraRouteUnsupportedError } from "../errors/apiError";
 import { standardizeAddress } from "../helper/account";
 import { isMoveStruct } from "../helper/general";
-import type { AccountAddressInput, AccountData, PaginatedResponse, SupraBalance } from "../types/account";
+import type {
+    AccountAddressInput,
+    AccountData,
+    AccountHistoryCategory,
+    AccountHistoryEntry,
+    AccountHistoryPage,
+    PaginatedResponse,
+    SupraBalance,
+} from "../types/account";
 import type { MoveModuleBytecode, MoveResource, MoveStructId } from "../types/move";
 import type { AutoTransactionResponse, TransactionQueryType, TransactionResponse } from "../types/transaction";
 import type { NetworkConfig } from "../utils/apiEndpoints";
@@ -190,6 +198,108 @@ export async function getAccountCoinTransactionsInternal<T extends TransactionRe
         config,
         (data) => data,
     );
+}
+
+/**
+ * Reads `/accounts/{address}/fa_transactions`. A v12 node ends the feed by omitting the cursor header and can send
+ * `"0"` as a real cursor, so an empty page with `"0"` does not end the feed here. A v11 node answers a request
+ * past the last row with an empty page and `"0"`; the next request, made with `start=0`, gets the same answer and
+ * ends the feed (the cursor equals the one sent).
+ */
+export async function getAccountFaTransactionsInternal<T extends TransactionResponse = TransactionResponse>(
+    args: {
+        accountAddress: AccountAddressInput;
+        options?: {
+            count?: number;
+            start?: string | undefined;
+            ascending?: boolean;
+            type?: TransactionQueryType;
+        };
+    },
+    config: NetworkConfig,
+): Promise<PaginatedResponse<T[]>> {
+    return getPage<T[], T>(
+        {
+            path: `/accounts/${standardizeAddress(args.accountAddress)}/fa_transactions`,
+            query: {
+                count: args.options?.count,
+                start: args.options?.start,
+                ascending: args.options?.ascending,
+                type: args.options?.type,
+            },
+            cursorParam: "start",
+            emptyZeroEndsFeed: false,
+        },
+        config,
+        (data) => data,
+    );
+}
+
+/** Minimum node release that serves `/accounts/{address}/history`. */
+export const ACCOUNT_HISTORY_MIN_NODE_RELEASE = "supra_node_v12.0.0";
+
+function heightHeader(headers: Headers | undefined, name: string): number | undefined {
+    const value = headers?.get(name);
+    if (value === undefined || value === null || !/^\d+$/.test(value)) {
+        return undefined;
+    }
+    return Number(value);
+}
+
+/**
+ * Reads `/accounts/{address}/history`. The feed ends only when the response has no `x-supra-cursor` header: a page
+ * can be empty and carry a cursor, and `"0"` is a valid cursor. A 404 means the node is older than v12 and is
+ * thrown as {@link SupraRouteUnsupportedError}.
+ */
+export async function getAccountHistoryInternal<T extends TransactionResponse = TransactionResponse>(
+    args: {
+        accountAddress: AccountAddressInput;
+        options?: {
+            categories?: readonly AccountHistoryCategory[];
+            count?: number;
+            ascending?: boolean;
+            start?: string | undefined;
+        };
+    },
+    config: NetworkConfig,
+): Promise<AccountHistoryPage<T>> {
+    const start = args.options?.start;
+    const categories = args.options?.categories;
+    let result;
+    try {
+        result = await get<AccountHistoryEntry<T>[]>(
+            {
+                path: `/accounts/${standardizeAddress(args.accountAddress)}/history`,
+                query: {
+                    categories: categories === undefined ? undefined : categories.join(","),
+                    count: args.options?.count,
+                    ascending: args.options?.ascending,
+                    start: start === undefined || start === "" ? undefined : start,
+                },
+            },
+            config,
+        );
+    } catch (error) {
+        if (error instanceof SupraNotFoundError && !(error instanceof SupraRouteUnsupportedError)) {
+            throw new SupraRouteUnsupportedError({
+                status: error.status,
+                statusText: error.statusText,
+                url: error.url,
+                data: error.data,
+                method: "getAccountHistory",
+                minimumNodeRelease: ACCOUNT_HISTORY_MIN_NODE_RELEASE,
+            });
+        }
+        throw error;
+    }
+
+    const { data, cursor, headers } = result;
+    return {
+        response: data,
+        cursor: cursor === undefined || cursor === "" ? undefined : cursor,
+        indexedFrom: heightHeader(headers, "x-supra-history-indexed-from"),
+        oldestBlock: heightHeader(headers, "x-supra-oldest-block"),
+    };
 }
 
 export async function getAccountAutoTransactionsInternal<T extends AutoTransactionResponse = AutoTransactionResponse>(
