@@ -23,6 +23,7 @@ import {
     getAccountCoinTransactionsInternal,
     getAccountFaTransactionsInternal,
     getAccountHistoryInternal,
+    getPrimaryStoreAddressInternal,
     getAccountInfoInternal,
     getAccountModuleInternal,
     getAccountModulesInternal,
@@ -336,11 +337,13 @@ export class Account {
     }
 
     /**
-     * Queries the fungible asset transactions of a fungible store: the finalized transactions that withdrew from or
-     * deposited to it.
+     * Queries the fungible asset transactions of one fungible store: the finalized transactions that withdrew from or
+     * deposited to that store. The feed lists the movements of the store only; an account address returns an empty
+     * page. Derive an account's primary store with {@link Account.getPrimaryStoreAddress}. To list everything that
+     * concerns an account, use {@link Account.getAccountHistory} (nodes from `supra_node_v12.0.0`).
      * @template {TransactionResponse} T - The type of the transaction to be returned.
-     * @param args.accountAddress - The address of the fungible store to query, for example the primary store of an
-     * account (`0x1::primary_fungible_store::primary_store_address`). It is not the address of the account that owns the store.
+     * @param args.storeAddress - The address of the fungible store to query, for example the result of
+     * {@link Account.getPrimaryStoreAddress}. It is not the address of the account that owns the store.
      * @param args.options.count - The number of transactions to return.
      * @param args.options.start - The `cursor` of the previous page, exclusive. Omit it, or pass `undefined`, for the first page.
      * @param args.options.ascending - Whether to return the transactions in ascending order.
@@ -359,8 +362,8 @@ export class Account {
      * const supra = new SupraClient({ network: Network.TESTNET });
      *
      * async function runExample() {
-     *    const storeAddress = "0xa";
-     *    const { response: faTransactions, cursor } = await supra.account.getAccountFaTransactions({ accountAddress: storeAddress });
+     *    const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: "0x1" });
+     *    const { response: faTransactions, cursor } = await supra.account.getAccountFaTransactions({ storeAddress });
      *    console.log(faTransactions.length, cursor);
      * }
      *
@@ -369,7 +372,7 @@ export class Account {
      * @group Account
      */
     async getAccountFaTransactions<T extends TransactionResponse>(args: {
-        accountAddress: AccountAddressInput;
+        storeAddress: AccountAddressInput;
         options?: {
             count?: number;
             start?: string | undefined;
@@ -377,9 +380,43 @@ export class Account {
             type?: TransactionQueryType;
         };
     }): Promise<PaginatedResponse<T[]>> {
-        validateAddress(args.accountAddress, "accountAddress");
+        validateAddress(args.storeAddress, "storeAddress");
         validatePaginationCount(args.options?.count);
         return getAccountFaTransactionsInternal<T>(args, this.networkInformation);
+    }
+
+    /**
+     * Returns the address of the primary fungible store of an account for a fungible asset, by calling
+     * `0x1::primary_fungible_store::primary_store_address`. The address is computed from the owner and the metadata
+     * and does not show that the store exists. It is the `storeAddress` that {@link Account.getAccountFaTransactions}
+     * takes.
+     * @param args.accountAddress - The address of the account that owns the store.
+     * @param args.metadataAddress - The address of the fungible asset's metadata object. Default: SUPRA (`0xa`).
+     * @returns A Promise that resolves to the store address, as the node renders it.
+     * @example
+     * ```typescript
+     * import { SupraClient,Network } from "supra-ts-sdk";
+     *
+     * const supra = new SupraClient({ network: Network.TESTNET });
+     *
+     * async function runExample() {
+     *    const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: "0x1" });
+     *    console.log(storeAddress);
+     * }
+     *
+     * runExample().catch(console.error);
+     * ```
+     * @group Account
+     */
+    async getPrimaryStoreAddress(args: {
+        accountAddress: AccountAddressInput;
+        metadataAddress?: AccountAddressInput | undefined;
+    }): Promise<string> {
+        validateAddress(args.accountAddress, "accountAddress");
+        if (args.metadataAddress !== undefined) {
+            validateAddress(args.metadataAddress, "metadataAddress");
+        }
+        return getPrimaryStoreAddressInternal(args, this.networkInformation);
     }
 
     /**

@@ -162,9 +162,13 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
 - `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
-- **`account.getAccountFaTransactions({ accountAddress, options? })`** reads
-  `GET /rpc/v3/accounts/{address}/fa_transactions`: the finalized transactions that withdrew from or deposited to a
-  fungible store (`accountAddress` is the store's address, for example an account's primary SUPRA store). `options`
+- **`account.getPrimaryStoreAddress({ accountAddress, metadataAddress? })`** returns the address of an account's
+  primary fungible store for a fungible asset (default SUPRA, `0xa`) with
+  `0x1::primary_fungible_store::primary_store_address`.
+- **`account.getAccountFaTransactions({ storeAddress, options? })`** reads
+  `GET /rpc/v3/accounts/{address}/fa_transactions`: the finalized transactions that withdrew from or deposited to one
+  fungible store. `storeAddress` is the store's address, for example from `getPrimaryStoreAddress`; an account
+  address returns an empty page. `getAccountHistory` lists everything that concerns an account. `options`
   are `count`, `start`, `ascending` and `type`. Mainnet, Testnet and Devnet nodes serve the route. The feed ends like
   `getAccountCoinTransactions`: `cursor` is `undefined` when the header is absent or empty, or on an empty page with
   the cursor `"0"`.

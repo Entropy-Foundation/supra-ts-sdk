@@ -238,9 +238,13 @@ for (const { categories, transaction } of history.response) {
     console.log(transaction.hash, categories);
 }
 
-// Get the fungible asset transactions of a fungible store (all networks); accountAddress is the store's address
+// Get the fungible asset transactions of ONE fungible store (all networks). It takes a store address, not an
+// account address (an account address returns an empty page). Derive the primary store of an account first
+// (SUPRA by default; pass metadataAddress for another asset). For everything that concerns an account use
+// getAccountHistory (nodes from supra_node_v12.0.0).
+const storeAddress: string = await supra.account.getPrimaryStoreAddress({ accountAddress: account.address() });
 const { response: faTxns } = await supra.account.getAccountFaTransactions({
-    accountAddress: "0xa",
+    storeAddress,
     options: { count: 10 },
 });
 

@@ -210,8 +210,15 @@ The node applies `categories` while it scans, so a page can have fewer entries t
 cursor. The feed ends only when `cursor` is `undefined`; the cursor `"0"` does not end it.
 
 `getAccountFaTransactions` lists the transactions that withdrew from or deposited to one fungible store, given the
-store's address (Mainnet, Testnet and Devnet nodes serve it). It takes `count`, `start`, `ascending` and `type`, and is
-read page by page like the feeds above.
+store's address (Mainnet, Testnet and Devnet nodes serve it). It lists the movements of that one store: an account
+address returns an empty page. `getPrimaryStoreAddress` derives an account's primary store for a fungible asset (SUPRA
+by default). The method takes `count`, `start`, `ascending` and `type`, and is read page by page like the feeds above.
+To list everything that concerns an account, use `getAccountHistory` (nodes from `supra_node_v12.0.0`).
+
+```ts
+const storeAddress = await supra.account.getPrimaryStoreAddress({ accountAddress: sender.address() });
+const page = await supra.account.getAccountFaTransactions({ storeAddress, options: { count: 50 } });
+```
 
 ## Chain ID
 

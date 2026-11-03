@@ -33,6 +33,7 @@ export const declaredClientMembers: Record<keyof SupraClient, true> = {
     getAccountCoinTransactions: true,
     getAccountFaTransactions: true,
     getAccountHistory: true,
+    getPrimaryStoreAddress: true,
     getAccountAutoTransactions: true,
     getTableItem: true,
     view: true,

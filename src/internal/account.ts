@@ -23,6 +23,8 @@ import type { NetworkConfig } from "../utils/apiEndpoints";
 import { OBJECT_CORE, SUPRA_COIN_TYPE, SUPRA_FUNGIBLE_ASSET_ADDRESS } from "../utils/constants";
 import { viewInternal } from "./methods";
 
+const FUNGIBLE_ASSET_METADATA = "0x1::fungible_asset::Metadata";
+
 export function getAccountLegacyCoins(resources: MoveResource[]) {
     return resources
         .filter((resource) => resource.type.startsWith("0x1::coin::CoinStore<"))
@@ -211,7 +213,7 @@ export async function getAccountCoinTransactionsInternal<T extends TransactionRe
  */
 export async function getAccountFaTransactionsInternal<T extends TransactionResponse = TransactionResponse>(
     args: {
-        accountAddress: AccountAddressInput;
+        storeAddress: AccountAddressInput;
         options?: {
             count?: number;
             start?: string | undefined;
@@ -223,7 +225,7 @@ export async function getAccountFaTransactionsInternal<T extends TransactionResp
 ): Promise<PaginatedResponse<T[]>> {
     return getPage<T[], T>(
         {
-            path: `/accounts/${standardizeAddress(args.accountAddress)}/fa_transactions`,
+            path: `/accounts/${standardizeAddress(args.storeAddress)}/fa_transactions`,
             query: {
                 count: args.options?.count,
                 start: args.options?.start,
@@ -235,6 +237,28 @@ export async function getAccountFaTransactionsInternal<T extends TransactionResp
         config,
         (data) => data,
     );
+}
+
+/**
+ * Reads the address of the primary fungible store that `accountAddress` has (or would have) for the fungible asset
+ * `metadataAddress` (default SUPRA), with `0x1::primary_fungible_store::primary_store_address`.
+ */
+export async function getPrimaryStoreAddressInternal(
+    args: { accountAddress: AccountAddressInput; metadataAddress?: AccountAddressInput | undefined },
+    config: NetworkConfig,
+): Promise<string> {
+    const [store] = await viewInternal<[string]>(
+        {
+            function: "0x1::primary_fungible_store::primary_store_address",
+            functionArguments: [
+                args.accountAddress.toString(),
+                (args.metadataAddress ?? SUPRA_FUNGIBLE_ASSET_ADDRESS).toString(),
+            ],
+            typeArguments: [FUNGIBLE_ASSET_METADATA],
+        },
+        config,
+    );
+    return store;
 }
 
 /** Minimum node release that serves `/accounts/{address}/history`. */

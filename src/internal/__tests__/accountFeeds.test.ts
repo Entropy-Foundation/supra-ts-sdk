@@ -3,11 +3,22 @@ import { SupraNotFoundError, SupraRouteUnsupportedError } from "../../errors/api
 import type { AccountHistoryEntry, AccountHistoryPage, PaginatedResponse } from "../../types/account";
 import { TransactionStatus, TransactionType, type UserTransactionResponse } from "../../types/transaction";
 import type { NetworkConfig } from "../../utils/apiEndpoints";
-import { getAccountFaTransactionsInternal, getAccountHistoryInternal } from "../account";
+import {
+    getAccountFaTransactionsInternal,
+    getAccountHistoryInternal,
+    getPrimaryStoreAddressInternal,
+} from "../account";
 
 jest.mock("../../client/get", () => ({
     get: jest.fn(),
 }));
+
+jest.mock("../methods", () => ({
+    viewInternal: jest.fn(),
+}));
+
+import { viewInternal } from "../methods";
+const mockView = viewInternal as jest.MockedFunction<typeof viewInternal>;
 
 import { get } from "../../client/get";
 const mockGet = get as jest.MockedFunction<typeof get>;
@@ -70,12 +81,39 @@ describe("account feeds", () => {
         jest.resetAllMocks();
     });
 
+    describe("getPrimaryStoreAddressInternal", () => {
+        const STORE = "0xc6d3d69a9810647845a5ca5ebe905256dc37327c1c39c1d673de00caaac0e3a8";
+
+        it("views primary_store_address with the owner and the SUPRA metadata by default", async () => {
+            mockView.mockResolvedValue([STORE]);
+
+            await expect(getPrimaryStoreAddressInternal({ accountAddress: "0x1" }, testConfig)).resolves.toBe(STORE);
+
+            expect(mockView).toHaveBeenCalledWith(
+                {
+                    function: "0x1::primary_fungible_store::primary_store_address",
+                    functionArguments: ["0x1", "0x000000000000000000000000000000000000000000000000000000000000000a"],
+                    typeArguments: ["0x1::fungible_asset::Metadata"],
+                },
+                testConfig,
+            );
+        });
+
+        it("uses the given metadata address", async () => {
+            mockView.mockResolvedValue([STORE]);
+
+            await getPrimaryStoreAddressInternal({ accountAddress: "0x1", metadataAddress: "0xb" }, testConfig);
+
+            expect(mockView.mock.calls[0]?.[0].functionArguments).toEqual(["0x1", "0xb"]);
+        });
+    });
+
     describe("getAccountFaTransactionsInternal", () => {
         it("requests fa_transactions with the options and the start as sent", async () => {
             mockGet.mockResolvedValue({ data: [userTxn(1)], cursor: "17" });
 
             const page = await getAccountFaTransactionsInternal(
-                { accountAddress: "0xa", options: { count: 5, start: "9", ascending: true, type: "user" } },
+                { storeAddress: "0xa", options: { count: 5, start: "9", ascending: true, type: "user" } },
                 testConfig,
             );
 
@@ -92,7 +130,7 @@ describe("account feeds", () => {
                 .mockResolvedValueOnce({ data: [userTxn(3)], cursor: undefined });
 
             const { items, requests } = await readFeed((start) =>
-                getAccountFaTransactionsInternal({ accountAddress: "0xa", options: { start } }, testConfig),
+                getAccountFaTransactionsInternal({ storeAddress: "0xa", options: { start } }, testConfig),
             );
 
             expect(items).toHaveLength(3);
@@ -105,7 +143,7 @@ describe("account feeds", () => {
                 .mockResolvedValueOnce({ data: [], cursor: "0" });
 
             const { items, requests } = await readFeed((start) =>
-                getAccountFaTransactionsInternal({ accountAddress: "0xa", options: { start, ascending } }, testConfig),
+                getAccountFaTransactionsInternal({ storeAddress: "0xa", options: { start, ascending } }, testConfig),
             );
 
             expect(items).toHaveLength(2);
@@ -117,7 +155,7 @@ describe("account feeds", () => {
             mockGet.mockResolvedValue({ data: [], cursor: "0" });
 
             const { items, requests } = await readFeed((start) =>
-                getAccountFaTransactionsInternal({ accountAddress: "0xa", options: { start } }, testConfig),
+                getAccountFaTransactionsInternal({ storeAddress: "0xa", options: { start } }, testConfig),
             );
 
             expect(items).toEqual([]);
@@ -132,7 +170,7 @@ describe("account feeds", () => {
 
             const { items, requests } = await readFeed((start) =>
                 getAccountFaTransactionsInternal(
-                    { accountAddress: "0xa", options: { start, type: "user", ascending: true } },
+                    { storeAddress: "0xa", options: { start, type: "user", ascending: true } },
                     testConfig,
                 ),
             );
@@ -144,7 +182,7 @@ describe("account feeds", () => {
         it("ends the feed on the empty cursor header", async () => {
             mockGet.mockResolvedValue({ data: [], cursor: "" });
 
-            const page = await getAccountFaTransactionsInternal({ accountAddress: "0xa" }, testConfig);
+            const page = await getAccountFaTransactionsInternal({ storeAddress: "0xa" }, testConfig);
 
             expect(page.cursor).toBeUndefined();
         });
@@ -293,12 +331,24 @@ describe("account feeds", () => {
             expect(mockGet).not.toHaveBeenCalled();
         });
 
+        it("getAccountFaTransactions validates storeAddress, and getPrimaryStoreAddress its addresses", async () => {
+            await expect(account.getAccountFaTransactions({ storeAddress: "not an address" })).rejects.toThrow(
+                "storeAddress",
+            );
+            await expect(account.getPrimaryStoreAddress({ accountAddress: "zz" })).rejects.toThrow("accountAddress");
+            await expect(
+                account.getPrimaryStoreAddress({ accountAddress: "0x1", metadataAddress: "zz" }),
+            ).rejects.toThrow("metadataAddress");
+            expect(mockGet).not.toHaveBeenCalled();
+            expect(mockView).not.toHaveBeenCalled();
+        });
+
         it("getAccountHistory and getAccountFaTransactions reject a count outside 1 to 100", async () => {
             await expect(account.getAccountHistory({ accountAddress: "0xa", options: { count: 0 } })).rejects.toThrow(
                 "Invalid count",
             );
             await expect(
-                account.getAccountFaTransactions({ accountAddress: "0xa", options: { count: 101 } }),
+                account.getAccountFaTransactions({ storeAddress: "0xa", options: { count: 101 } }),
             ).rejects.toThrow("Invalid count");
             expect(mockGet).not.toHaveBeenCalled();
         });

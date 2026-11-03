@@ -30,11 +30,11 @@ async function readFeed<T>(
     return { items, requests };
 }
 
-/** The address of the primary SUPRA fungible store of `owner`, read with the node's view function. */
-async function primarySupraStore(ctx: E2EContext, owner: string): Promise<string> {
+/** The address of the primary SUPRA fungible store of `owner`, read with a plain request to the view endpoint. */
+async function rawPrimarySupraStore(ctx: E2EContext, owner: string): Promise<string> {
     const response = await rawPost<{ result: string[] }>(ctx, "/rpc/v3/view", {
         function: "0x1::primary_fungible_store::primary_store_address",
-        type_arguments: ["0x1::object::ObjectCore"],
+        type_arguments: ["0x1::fungible_asset::Metadata"],
         arguments: [owner, SUPRA_FA],
     });
     const store = response.body.result?.[0];
@@ -59,18 +59,33 @@ describeE2E("account fa_transactions and history feeds", () => {
         }
     });
 
+    describe("getPrimaryStoreAddress", () => {
+        test("returns the address the view function returns, for SUPRA by default and by metadata address", async () => {
+            const expected = await rawPrimarySupraStore(ctx, address);
+            await expect(ctx.supra.account.getPrimaryStoreAddress({ accountAddress: address })).resolves.toBe(expected);
+            await expect(
+                ctx.supra.account.getPrimaryStoreAddress({ accountAddress: address, metadataAddress: SUPRA_FA }),
+            ).resolves.toBe(expected);
+        });
+    });
+
     describe("getAccountFaTransactions", () => {
+        test("the address of an account that is not a store has an empty feed", async () => {
+            const page = await ctx.supra.account.getAccountFaTransactions({ storeAddress: address });
+            expect(page.response).toEqual([]);
+        });
+
         test.each([true, false])(
             "reads the feed of the primary store to its end once, in both page sizes (ascending: %s)",
             async (ascending) => {
-                const store = await primarySupraStore(ctx, address);
+                const store = await ctx.supra.account.getPrimaryStoreAddress({ accountAddress: address });
                 const all = await ctx.supra.account.getAccountFaTransactions({
-                    accountAddress: store,
+                    storeAddress: store,
                     options: { count: 100, ascending },
                 });
                 const { items, requests } = await readFeed((start) =>
                     ctx.supra.account.getAccountFaTransactions({
-                        accountAddress: store,
+                        storeAddress: store,
                         options: { count: 1, ascending, start },
                     }),
                 );
@@ -87,9 +102,11 @@ describeE2E("account fa_transactions and history feeds", () => {
         );
 
         test("a store without transactions ends the feed", async () => {
-            const store = await primarySupraStore(ctx, createUnfundedAccount().address().toString());
+            const store = await ctx.supra.account.getPrimaryStoreAddress({
+                accountAddress: createUnfundedAccount().address().toString(),
+            });
             const { items } = await readFeed((start) =>
-                ctx.supra.account.getAccountFaTransactions({ accountAddress: store, options: { start } }),
+                ctx.supra.account.getAccountFaTransactions({ storeAddress: store, options: { start } }),
             );
             expect(items).toEqual([]);
         });
