@@ -854,8 +854,11 @@ calls above wait for their commit so that the sequence-number read and the execu
 ### `bigint` values
 
 Move `u64`, `u128` and `u256` values are `bigint` in several objects the SDK returns: built transactions, the
-`SendTxnPayload` of `transaction.build.sendTxnPayload`, `getAccountCoinBalance` and view results. `JSON.stringify` throws
-`TypeError: Do not know how to serialize a BigInt` for an object that holds one. `stringifyWithBigInt` writes them as
+`SendTxnPayload` of `transaction.build.sendTxnPayload`, `getAccountCoinBalance` and view results. So are the `u64`
+response fields that can exceed `Number.MAX_SAFE_INTEGER`: `execution_statistics.evm_base_fee_per_gas` of every block a
+v12 node returns, the `burn_amount` of a settlement transaction, settlement amounts and the `*_quants` figures of
+`getNativeSupply`. `JSON.stringify` throws `TypeError: Do not know how to serialize a BigInt` for an object that holds
+one. `stringifyWithBigInt` writes them as
 exact JSON numbers, the form the node accepts in a request body; to display or store such an object, convert them to
 strings:
 
