@@ -1,15 +1,9 @@
 import { post } from "../client/post";
-<<<<<<< HEAD
 import { SupraError } from "../errors/supraError";
-import { convertValueToAbiReturnTypedValue } from "../helper/general";
-import { generateViewFunctionPayload } from "../helper/view";
-import { nodeReportsReleaseInternal } from "./nodeRelease";
-import type { InputViewFunctionData, InputViewRawFunctionData } from "../types/methods";
-import type { MoveValue } from "../types/move";
-=======
 import { standardizeAddress } from "../helper/account";
 import { convertValueToAbiReturnTypedValue, getFunctionParts } from "../helper/general";
 import { generateViewFunctionPayload } from "../helper/view";
+import { nodeReportsReleaseInternal } from "./nodeRelease";
 import type {
     InputViewFunctionData,
     InputViewRawFunctionData,
@@ -17,7 +11,6 @@ import type {
     ViewBatchResponse,
 } from "../types/methods";
 import type { MoveFunctionId, MoveModule, MoveValue } from "../types/move";
->>>>>>> 20530ec (feat: add the /rpc/v4 operations: viewBatch, getTransactionsByHashes, simulate.withStateChanges, settlements, getNativeSupply)
 import type { NetworkConfig } from "../utils/apiEndpoints";
 import { getAccountModuleInternal } from "./account";
 import { V4_RPC_VERSION, withV4RouteSupport } from "./routeSupport";
