@@ -49,8 +49,18 @@ describeE2E("fungible asset", () => {
         ).resolves.toBe(balance.fungibleAsset);
     });
 
+    testForLayout("fa")("transferSupraFungibleAsset moves the SUPRA of a faucet-funded account", async () => {
+        const sender = await createFundedAccount(ctx);
+        const receiver = createUnfundedAccount().address().toString();
+
+        const txn = await ctx.supra.fungibleAsset.transferSupraFungibleAsset(await transferArgs(sender, receiver));
+
+        expect(txn.status).toBe(TransactionStatus.Success);
+        expect(await rawSupraBalance(ctx, receiver)).toBe(AMOUNT);
+    });
+
     // The refusal applies to an account whose SUPRA is in a CoinStore; where the faucet funds fungible stores there is
-    // nothing to refuse, and the transfers of migrated accounts below cover the fungible asset path.
+    // nothing to refuse, and the test above covers a funded account's transfer.
     testForLayout("coin")(
         "transferSupraFungibleAsset is refused before submission when the SUPRA is held as a coin",
         async () => {

@@ -14,9 +14,10 @@ describeE2E("events", () => {
     beforeAll(async () => {
         ctx = await getE2EContext();
         const sender = await createFundedAccount(ctx);
-        depositType = depositEventType(await supraLayoutOf(ctx, sender.address().toString()));
         receiver = createUnfundedAccount().address().toString();
         transfer = await sendSupra(ctx, sender, receiver, 2_000n);
+        // The deposit lands in the receiver's store, which the transfer created.
+        depositType = depositEventType(await supraLayoutOf(ctx, receiver));
     });
 
     test("getEventsByType returns the deposit event of a committed transfer", async () => {

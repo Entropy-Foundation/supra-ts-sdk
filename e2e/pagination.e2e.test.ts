@@ -42,17 +42,22 @@ describeE2E("feeds read to their end", () => {
     let sender: SupraAccount;
     let address: string;
     const sent: RawTransaction[] = [];
+    const receivers: string[] = [];
 
     beforeAll(async () => {
         ctx = await getE2EContext();
         sender = await createFundedAccount(ctx);
         address = sender.address().toString();
         for (let i = 0; i < 5; i++) {
-            sent.push(await sendSupra(ctx, sender, createUnfundedAccount().address().toString(), 1_000n + BigInt(i)));
+            const receiver = createUnfundedAccount().address().toString();
+            receivers.push(receiver);
+            sent.push(await sendSupra(ctx, sender, receiver, 1_000n + BigInt(i)));
         }
     });
 
-    // The coin feed lists transactions that touch a CoinStore; it is empty where SUPRA is held as a fungible asset.
+    // The coin feed lists transactions that touch a CoinStore. Where SUPRA is held as a fungible asset it is empty, also
+    // for an account migrated with `migrateCoinToFungibleStore` (the migration of an account without a CoinStore emits
+    // no coin events), so the test has no feed to read there.
     testForLayout("coin").each([true, false])(
         "getAccountCoinTransactions (ascending: %s) returns every transaction once",
         async (ascending) => {
@@ -128,7 +133,7 @@ describeE2E("feeds read to their end", () => {
         const heights = sent.map((txn) => txn.block_header?.height as number);
         const startHeight = Math.min(...heights);
         const endHeight = Math.max(...heights) + 1;
-        const eventType = depositEventType(await supraLayoutOf(ctx, address));
+        const eventType = depositEventType(await supraLayoutOf(ctx, receivers[0] as string));
 
         const all = await ctx.supra.events.getEventsByType({
             eventType,
