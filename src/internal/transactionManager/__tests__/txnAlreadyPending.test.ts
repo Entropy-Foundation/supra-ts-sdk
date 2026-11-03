@@ -1,6 +1,7 @@
 import { BCS, HexString, SupraAccount } from "supra-l1-sdk-core";
 import { SupraClient } from "../../../api/supraClient";
 import { SupraAPIError } from "../../../errors/apiError";
+import { SupraTimeoutError } from "../../../errors/supraError";
 import { SupraSubmissionOutcomeUnknownError } from "../../../errors/transactionError";
 import { TransactionStatus } from "../../../types/transaction";
 import type { SubmitTransactionResponse } from "../../../types/transactionManager/transactionSubmit";
@@ -188,6 +189,9 @@ describe("the same signed transaction submitted again to a v11.7 node", () => {
         const cause = (error as SupraSubmissionOutcomeUnknownError).cause;
         expect(cause).toBeInstanceOf(SupraAPIError);
         expect((cause as SupraAPIError).message).toMatch(/Already scheduled/);
+        expect((error as SupraSubmissionOutcomeUnknownError).readStatus).toBe(TransactionStatus.Pending);
+        expect((error as SupraSubmissionOutcomeUnknownError).readError).toBeUndefined();
+        expect((error as Error).message).toContain("The read of the transaction after the refusal returned Pending.");
         expect(next.hash).toBe(mock.submissionHash(6));
         // The read-back of the first submission, the read after the refusal and the read-back of the next call.
         expect(mock.counts["transaction"]).toBe(3);
@@ -228,7 +232,7 @@ describe("the same signed transaction submitted again to a v11.7 node", () => {
     });
 
     it.each([
-        ["a 500", [{ status: 500, body: { message: "Internal Server Error" } }] as ReadAnswer[], {}],
+        ["a 500", [{ status: 500, body: { message: "Internal Server Error" } }] as ReadAnswer[], {}, SupraAPIError],
         [
             "a 503, which is not retried under the client's retry policy",
             [
@@ -236,11 +240,12 @@ describe("the same signed transaction submitted again to a v11.7 node", () => {
                 { status: 503, body: { message: "Service Unavailable" } },
             ] as ReadAnswer[],
             { retry: { attempts: 3, maxDelayMs: 10 } },
+            SupraAPIError,
         ],
-        ["a timeout", ["hang"] as ReadAnswer[], { timeoutMs: 300 }],
+        ["a timeout", ["hang"] as ReadAnswer[], { timeoutMs: 300 }, SupraTimeoutError],
     ])(
-        "throws SupraSubmissionOutcomeUnknownError when the read fails with %s",
-        async (_name, answers, clientConfig) => {
+        "throws SupraSubmissionOutcomeUnknownError with the read's error when the read fails with %s",
+        async (_name, answers, clientConfig, readErrorClass: typeof SupraAPIError | typeof SupraTimeoutError) => {
             const mock = start({ duplicateMessages: "v11" });
             const supra = new SupraClient({ rpcUrl: RPC_URL, chainId: 255, ...clientConfig });
             const sender = new SupraAccount();
@@ -251,10 +256,48 @@ describe("the same signed transaction submitted again to a v11.7 node", () => {
             const error = await txn.submitTransaction({ senderAccount: sender }).catch((e: unknown) => e);
 
             expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
-            expect((error as SupraSubmissionOutcomeUnknownError).hash).toBe(mock.submissionHash(5));
+            const unknown = error as SupraSubmissionOutcomeUnknownError;
+            expect(unknown.hash).toBe(mock.submissionHash(5));
+            expect((unknown.cause as SupraAPIError).message).toMatch(/Already scheduled/);
+            expect(unknown.readStatus).toBeUndefined();
+            expect(unknown.readError).toBeInstanceOf(readErrorClass);
+            expect(unknown.message).toContain("The read of the transaction after the refusal failed");
             expect(reads).toHaveLength(1);
         },
     );
+
+    it("throws SupraSubmissionOutcomeUnknownError for a helper call with sequenceNumber whose transaction the pool holds", async () => {
+        const mock = start({ duplicateMessages: "v11" });
+        const supra = newClient();
+        const sender = new SupraAccount();
+        const call = { ...GAS, txExpiryTime: BigInt(mock.blockSeconds() + 500), sequenceNumber: 5n };
+
+        const first = await transfer(supra, sender, call);
+        const error = await transfer(supra, sender, call).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(SupraSubmissionOutcomeUnknownError);
+        expect((error as SupraSubmissionOutcomeUnknownError).hash).toBe(first.hash);
+        expect((error as SupraSubmissionOutcomeUnknownError).readStatus).toBe(TransactionStatus.Pending);
+        expect(mock.submissions.map((submission) => submission.status)).toEqual([200, 400]);
+    });
+
+    it("keeps the number of another call's same transaction when the read fails, and sends a helper call's transaction with the next number", async () => {
+        const mock = start({ duplicateMessages: "v11" });
+        const sender = new SupraAccount();
+        const call = { ...GAS, txExpiryTime: BigInt(mock.blockSeconds() + 500) };
+        const pending = await transfer(newClient(), sender, call);
+        const supra = newClient();
+        const reads = answerReads(mock, [{ status: 500, body: { message: "Internal Server Error" } }]);
+
+        const result = await transfer(supra, sender, call);
+        const next = await transfer(supra, sender, call);
+
+        expect(reads).toHaveLength(1);
+        expect(pending.hash).toBe(mock.submissionHash(5));
+        expect(result.hash).toBe(mock.submissionHash(6));
+        expect(next.hash).toBe(mock.submissionHash(7));
+        expect(mock.submitted).toEqual([5, 5, 6, 7]);
+    });
 
     it(`reads the transaction with a timeout of at most ${POOLED_TRANSACTION_READ_TIMEOUT_MS} ms`, async () => {
         const mock = start({ duplicateMessages: "v11" });

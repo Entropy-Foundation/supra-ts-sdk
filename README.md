@@ -254,7 +254,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 | `SupraGasUnitPriceBelowMinimumError` | the node refuses a submission or a simulation because the gas unit price is below its minimum | `gasUnitPrice`, `minimumGasUnitPrice`, `major_status`, `cause` (the `SupraAPIError` or `SupraSimulationFailedError`) |
 | `SupraTimeoutError` | a request exceeds the timeout (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `timeoutMs`, `cause` |
 | `SupraNetworkError` | the connection fails before the node answers (for a submission, the `cause` of `SupraSubmissionOutcomeUnknownError`) | `url`, `cause` |
-| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503: the node may have accepted the transaction | `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause` |
+| `SupraSubmissionOutcomeUnknownError` | a submission request times out, fails before the node answers, or is answered with a 5xx status other than 503: the node may have accepted the transaction; also after a v11.7 `Already scheduled` refusal of a copy whose read does not settle the outcome (see [Transaction outcomes](#transaction-outcomes)) | `hash`, `sender`, `sequenceNumber`, `expirationTimestampSecs`, `waitError`, `cause`, `readStatus`, `readError` |
 | `SupraFaucetUnavailableError`, `SupraFaucetResponseError` | the faucet cannot fund the account / answers unexpectedly | |
 | `SupraChainIdMismatchError` | before signing, the configured chain ID or the transaction's chain ID is not the node's | `configuredChainId`, `nodeChainId`, `transactionChainId` |
 | `SupraSimulationFailedError` | a simulation returns a status other than `Success` | `status`, `vm_status`, `major_status`, `sub_status`, `transaction` |
@@ -365,7 +365,9 @@ transfers, `publishPackage`, the automation task helpers, the multisig helpers a
     the transaction by hash once, within 5 seconds and without retries. `Success` or `Fail`: handled as accepted.
     `Pending` (the node's pool holds it, and its earlier forward may have failed), another non-final status, or a
     failed read other than a 404: handled as an unknown outcome, with the refusal as `cause` of
-    `SupraSubmissionOutcomeUnknownError` (or a wait for the hash with `enableWaitForTransaction: true`). A 404 or
+    `SupraSubmissionOutcomeUnknownError` and the read's status as `readStatus` or its error as `readError` (or a wait
+    for the hash with `enableWaitForTransaction: true`). Sending the same signed transaction to the same v11.7 node
+    again does not reach a validator while the node's pool holds it. A 404 or
     `Invalid`: the refusal is thrown as `SupraAPIError`. The 404 is taken to come from the node that refused the
     submission; several RPC nodes behind one URL can answer 404 for a transaction another of them holds.
 

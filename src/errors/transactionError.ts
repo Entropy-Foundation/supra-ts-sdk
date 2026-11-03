@@ -208,9 +208,21 @@ export class SupraTransactionTimeoutError extends SupraError {
  * SupraSubmissionOutcomeUnknownError is thrown by a submit helper when the request that submits the transaction fails
  * in a way that leaves it open whether the node accepted the transaction: the request times out, the connection fails
  * before the node answers, or the node answers with a 5xx status other than 503. The error of the request (a
- * `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`) is `cause`. It is also thrown when a v11.7 node refuses
- * a copy of a transaction that its pool holds (`Already scheduled digest=<hash>, ...`) and a read of the hash returns
- * `Pending` or fails; the 400 `SupraAPIError` of the refusal is then `cause` (see `Submit`).
+ * `SupraTimeoutError`, `SupraNetworkError` or `SupraAPIError`) is `cause`.
+ *
+ * It is also thrown for a transaction whose sequence number is the caller's (`transaction.submit.*`, the submit methods
+ * of a built transaction, helper calls with `sequenceNumber`; not a helper call numbered by the client's counter) when
+ * a v11.7 node refuses it with a 400 `Already scheduled digest=<hash>, ...` naming its hash, and the read of the hash
+ * that follows does not settle the outcome. The 400 `SupraAPIError` of the refusal is then `cause`, and either:
+ *
+ * - `readStatus` is the status the read returned: `Pending` (the node's pool holds the transaction from an earlier
+ *   submission, whose forward to a validator may have failed) or another non-final status; or
+ * - `readError` is the error of the read, which failed other than with a 404: a timeout (`SupraTimeoutError`), a
+ *   connection failure (`SupraNetworkError`), or a 429 or 5xx (`SupraAPIError`).
+ *
+ * A v11.7 node does not forward a copy of a transaction its pool holds, so sending the same signed transaction to the
+ * same node again does not reach a validator while that copy is in the node's pool; the transaction leaves it when it
+ * commits or expires.
  *
  * Look `hash` up with `getTransactionByHash`, or wait for it with `waitForTransaction`, before sending the transaction
  * again: a transaction the node accepted can commit until the chain's time reaches `expirationTimestampSecs`. The SDK
@@ -233,6 +245,16 @@ export class SupraSubmissionOutcomeUnknownError extends SupraError {
     readonly expirationTimestampSecs: bigint;
     /** The error of the wait for `hash`, or `undefined` when the SDK did not wait. */
     readonly waitError: SupraTransactionTimeoutError | undefined;
+    /**
+     * After a v11.7 `Already scheduled` refusal, the status that the read of `hash` returned (for example `Pending`);
+     * `undefined` otherwise, including when that read failed (`readError`).
+     */
+    readonly readStatus: string | undefined;
+    /**
+     * After a v11.7 `Already scheduled` refusal, the error of the read of `hash` when it failed; `undefined`
+     * otherwise.
+     */
+    readonly readError: SupraError | undefined;
 
     constructor(args: {
         hash: string;
@@ -241,8 +263,16 @@ export class SupraSubmissionOutcomeUnknownError extends SupraError {
         expirationTimestampSecs: bigint;
         cause: unknown;
         waitError?: SupraTransactionTimeoutError | undefined;
+        readStatus?: string | undefined;
+        readError?: SupraError | undefined;
     }) {
         const wait = args.waitError;
+        const read =
+            args.readError !== undefined
+                ? ` The read of the transaction after the refusal failed (${args.readError.message}).`
+                : args.readStatus !== undefined
+                  ? ` The read of the transaction after the refusal returned ${args.readStatus}.`
+                  : "";
         const reason = args.cause instanceof Error ? ` (${args.cause.message})` : "";
         const waited =
             wait === undefined
@@ -254,6 +284,7 @@ export class SupraSubmissionOutcomeUnknownError extends SupraError {
         super(
             `The submission of transaction ${args.hash} (sender ${args.sender}, sequence number ` +
                 `${args.sequenceNumber}) failed${reason}, and the node may have accepted it.` +
+                read +
                 waited +
                 ` Look the hash up or wait for it before resending; the transaction can commit until its expiration ` +
                 `time ${args.expirationTimestampSecs}.`,
@@ -265,6 +296,8 @@ export class SupraSubmissionOutcomeUnknownError extends SupraError {
         this.sequenceNumber = args.sequenceNumber;
         this.expirationTimestampSecs = args.expirationTimestampSecs;
         this.waitError = wait;
+        this.readStatus = args.readStatus;
+        this.readError = args.readError;
     }
 
     toJSON() {
@@ -275,6 +308,8 @@ export class SupraSubmissionOutcomeUnknownError extends SupraError {
             sender: this.sender,
             sequenceNumber: this.sequenceNumber.toString(),
             expirationTimestampSecs: this.expirationTimestampSecs.toString(),
+            readStatus: this.readStatus,
+            readError: this.readError?.message,
         };
     }
 }

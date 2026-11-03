@@ -40,7 +40,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   timeout; carries `hash`, `timeoutMs`, `lastStatus`, `transaction` and the last read error as `cause`). All three
   extend `SupraError`.
 - **`SupraSubmissionOutcomeUnknownError`** (extends `SupraError`; carries `hash`, `sender`, `sequenceNumber`,
-  `expirationTimestampSecs`, `waitError`, and the error of the request as `cause`) is thrown by every submit helper
+  `expirationTimestampSecs`, `waitError`, `readStatus`, `readError`, and the error of the request as `cause`; the
+  `read` fields are set after a v11.7 `Already scheduled` refusal, see Fixed) is thrown by every submit helper
   when the submission request times out (`SupraTimeoutError`), fails before the node answers (`SupraNetworkError`), or
   is answered with a 5xx status other than 503 (`SupraAPIError`). In each case the node may have accepted the
   transaction; look `hash` up or wait for it before sending the transaction again. The submit helpers derive the hash
@@ -487,7 +488,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   sequence number at a gas unit price at least this one's, and does not forward the submission, so the transaction is
   read by hash once, within 5 seconds and without retries: `Success` or `Fail` is handled as accepted; `Pending`,
   another non-final status, or a failed read other than a 404 throws `SupraSubmissionOutcomeUnknownError` with the
-  refusal as `cause` (or waits for the hash with `enableWaitForTransaction`); a 404 or `Invalid` throws the refusal as
+  refusal as `cause` and the read's status as `readStatus` or its error as `readError` (or waits for the hash with
+  `enableWaitForTransaction`); a 404 or `Invalid` throws the refusal as
   `SupraAPIError`, as in 1.2.0.
 - `simulate` sends a copy of the payload with zero signatures and does not modify the caller's payload; the caller's
   signatures were replaced with zeros when the simulation request failed.
