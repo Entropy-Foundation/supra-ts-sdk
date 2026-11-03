@@ -22,9 +22,14 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **`SupraFaucetUnavailableError`** — thrown by `fundAccountWithFaucet` when the node answers `"TryLater"` because no
   faucet account is free. **`SupraFaucetResponseError`** is thrown when the node answers with any other body that
   carries no transaction hash; the body is available as `data`.
+- **`supra.getNodeVersion()`** — reads `GET /rpc/v3/version` and returns `{ version, release?, branch, commit_hash,
+  build_time, build_env }` (type `NodeVersionInfo`). `release` is the node release tag, for example
+  `supra_node_v12.0.0.rc7`; it is absent from the response of a node older than `supra_node_v12.0.0`, so it is
+  `undefined` for a v11 node.
 - **`faucet.getFaucetTransaction({ transactionHash })`** — reads a faucet transaction
   (`GET /rpc/v3/wallet/faucet/transactions/{hash}`).
-- **Typed errors.** `SupraNotFoundError` (HTTP 404), `SupraGoneError` (410), `SupraRateLimitError` (429, with
+- **Typed errors.** `SupraNotFoundError` (HTTP 404), `SupraGoneError` (410, with `oldestBlock`, the oldest block the node holds, from the `x-supra-oldest-block` header;
+  `undefined` when the header is absent or malformed), `SupraRateLimitError` (429, with
   `retryAfterSeconds` from the body's `retry_after_seconds` or the `Retry-After` header) and
   `SupraServiceUnavailableError` (503) extend `SupraAPIError`, so `instanceof SupraAPIError` still matches.
   `SupraTimeoutError` and `SupraNetworkError` are thrown for a request that times out or fails before the node answers;
@@ -170,7 +175,8 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   `SettlementData`, `SettlementApplierSummary`, `SettlementCreditSummary` and `AppliedInboundSettlement`), and
   `"settlement"` in `TransactionQueryType`. A settlement item has no `header`, `payload` or `authenticator`.
 - `AutomationTransactionResponse.predicate` (`AutomationPredicateInfo`), the `Remove` variant of
-  `AutomationRecordAction`, `EvmTransactionOutput` in `TransactionOutput`, and the v12 fields and
+  `AutomationRecordAction` (its `kind` is `"Error"`, `"ConfigUpdate"` or `"PreExecutionLimit"`),
+  `EvmTransactionOutput` in `TransactionOutput`, and the v12 fields and
   `automation_record_count` of `ExecutedBlockStatistics`, the type of `FinalizedBlockHeader.execution_statistics`.
 - `getAccountTransactions` returns a `cursor`: the sequence number after the last transaction of the page in the
   requested order, so the feed is read to its end like the others. Its `start` also accepts a `number` or `bigint`.
@@ -223,16 +229,23 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
 - **Automation registrations with version 2 parameters.** `transaction.build.automationRegistrationRawTxnObject` takes
   `automationTaskType` (`AutomationTaskType`: `"User"` or `"System"`) and `automationPriority` (a `u64` `bigint`).
   With either one the registration carries version 2 parameters (`RegistrationParamsV2` of the node: the version 1
-  fields followed by the task type and the optional priority), with task type `"User"` when only the priority is
-  given; without them it carries version 1 parameters as before. Nodes of the v11.7.0 and v12 lines accept both.
-  Without a priority the registry uses the task's index as its priority. Only an account that the Supra framework has
-  authorised can register a `"System"` task. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
+  fields followed by the task type and the optional priority); without them it carries version 1 parameters as before.
+  Nodes of the v11.7.0 and v12 lines accept both. A priority belongs to system tasks: the registry aborts a user task
+  that carries one (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when
+  `automationPriority` is given with `automationTaskType: "User"` or with no task type. Without a priority the
+  registry uses the task's index as its priority. Only an account that the Supra framework has authorised can
+  register a `"System"` task. `automationGasPriceCap` must be at least the node's minimum gas unit price; the node
+  refuses a lower cap at validation. The submit and simulate methods that take a serialized raw transaction read version 2 parameters.
   `AutomationRegistrationParamV2JSON` is the JSON form of the submitted payload.
 - **`automation.cancelAutomationTask({ senderAccount, taskIndex, optionalTransactionArgs? })`** submits
   `0x1::automation_registry::cancel_task`, and **`automation.stopAutomationTasks({ senderAccount, taskIndexes,
   optionalTransactionArgs? })`** submits `0x1::automation_registry::stop_tasks`, for the user automation tasks of the
   sender. Like the transfers, they take the sequence number from the client's counter and estimate the max gas. The
   `Automation` class is also mixed into the client (`supra.cancelAutomationTask`, `supra.stopAutomationTasks`).
+- **Sponsored transaction from a sender without an account (documentation).** A sender for which `isAccountExists` is
+  `false` uses sequence number 0 in `rawTxnObject`; `getAccountInfo` throws for it. A node from `supra_node_v12.0.0`
+  admits the submission and the sender's sequence number is 1 afterwards; a v11.7.x node refuses it with HTTP 400. The
+  `submitSponsorTransaction` example, the README and the agent skill show the flow.
 
 ### Changed
 

@@ -49,5 +49,6 @@ export async function post<Req extends object, Res>(
             data,
         },
         response.headers.get("retry-after"),
+        response.headers.get("x-supra-oldest-block"),
     );
 }

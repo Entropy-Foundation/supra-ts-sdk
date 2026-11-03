@@ -496,8 +496,10 @@ export function scriptRawTxnObjectInternal(
 
 /**
  * Builds an automation registration. The registration parameters are version 2 (`RegistrationParamsV2`) when
- * `automationTaskType` or `automationPriority` is given, with task type `User` when only the priority is given, and
- * version 1 otherwise.
+ * `automationTaskType` or `automationPriority` is given, and version 1 otherwise. A priority is accepted only with
+ * task type `System`: the registry aborts the registration of a user task that carries one
+ * (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so a priority with task type `User` or with no task type throws a
+ * `RangeError` before building.
  */
 export function automationRegistrationRawTxnObjectInternal(
     args: {
@@ -517,6 +519,13 @@ export function automationRegistrationRawTxnObjectInternal(
     },
     config: NetworkConfig,
 ): TxnBuilderTypes.RawTransaction {
+    if (args.automationPriority !== undefined && args.automationTaskType !== "System") {
+        throw new RangeError(
+            `automationPriority is supported only with automationTaskType "System", got ${
+                args.automationTaskType === undefined ? "no task type" : `"${String(args.automationTaskType)}"`
+            }`,
+        );
+    }
     const automatedFunction = buildEntryFunctionInternal({
         function: args.function,
         functionTypeArgs: args.functionTypeArgs,
@@ -793,7 +802,8 @@ export class ExtendedRawTransaction extends TxnBuilderTypes.RawTransaction {
     }
 
     /**
-     * Submit the sponsor transaction
+     * Submit the sponsor transaction. A sender with no `Account` resource uses sequence number 0, which a v12 node
+     * admits and a v11.7.x node refuses with HTTP 400 (see `Submit.submitSponsorTransaction`).
      * @param args.feePayerAddress - Fee payer address
      * @param args.secondarySignersAccountAddress - Secondary signers address
      * @param args.senderAuthenticator - Sender authenticator

@@ -15,10 +15,9 @@ Every case records where each value comes from in its `provenance` map:
   the signature, the public key and the hash that the node reports for the committed transaction.
 - `node-verified`: produced by the SDK and accepted by the node. The multi-agent and fee payer cases, the
   module publish (`module_publish`), the two multisig proposals (`multisig_create_transaction`,
-  `multisig_create_transaction_with_hash`) and the two automation registrations with version 2 parameters
-  (`automation_registration_v2_priority`, `automation_registration_v2_no_priority`) are not built by the
-  node CLI; the SDK signs them, a node commits them, and the hash the node reports equals the hash the SDK
-  derives.
+  `multisig_create_transaction_with_hash`) and the automation registration with version 2 parameters
+  (`automation_registration_v2_no_priority`) are not built by the node CLI; the SDK signs them, a node
+  commits them, and the hash the node reports equals the hash the SDK derives.
 - `specification`: derived from the definitions of the formats: the BCS of the raw transaction, the
   signing message (the SHA3-256 hash of the salt `SUPRA::RawTransaction` or
   `SUPRA::RawTransactionWithData` followed by the BCS bytes) and the BCS of the signed transaction. The

@@ -138,6 +138,29 @@ export interface TransactionParameters {
     max_transaction_time_to_live_seconds: number;
 }
 
+/**
+ * The body of `GET /rpc/v3/version`, returned by `SupraClient.getNodeVersion()`.
+ * @group SupraClient
+ */
+export interface NodeVersionInfo {
+    /** The version of the node's Rust packages. It is the same for every release; use `release` to tell releases apart. */
+    version: string;
+    /**
+     * The node release the binary was built from, as its release tag: for example `supra_node_v12.0.0.rc7`, or
+     * `unreleased` for a build from a commit that is not a release. Absent when the node is older than
+     * `supra_node_v12.0.0`.
+     */
+    release?: string;
+    /** Git branch of the build. Empty when the build was made from a tag or the branch was not recorded. */
+    branch: string;
+    /** The git commit hash the binary was built from. Empty when the build did not record it. */
+    commit_hash: string;
+    /** Timestamp of the build. */
+    build_time: string;
+    /** The Rust tool-chain that built the binary. */
+    build_env: string;
+}
+
 export interface GasPrice {
     mean_gas_price: number;
     max_gas_price: number;
