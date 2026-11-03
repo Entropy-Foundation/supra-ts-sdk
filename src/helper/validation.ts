@@ -139,14 +139,21 @@ export function validatePaginationCount(count: unknown, paramName = "count"): vo
 }
 
 /**
- * Validates the `address` of a settlements query: `0x` followed by whole bytes of hexadecimal digits. The address is
- * sent as written, not padded: the node checks its length against the domain (32 bytes for `"move"`, 20 for `"evm"`).
+ * Validates the `address` of a settlements query: `0x` followed by at most as many hexadecimal digits as the domain's
+ * addresses have (64 for `"move"`, 40 for `"evm"`). A shorter address is padded with leading zeros when it is sent.
  * @throws Error if the address is invalid
  */
-export function validateSettlementAddress(address: unknown, paramName = "address"): void {
-    if (typeof address !== "string" || !/^0x([0-9a-fA-F]{2})+$/.test(address)) {
+export function validateSettlementAddress(address: unknown, domain: "move" | "evm", paramName = "address"): void {
+    const str =
+        typeof address === "string"
+            ? address
+            : address != null && typeof (address as { toString(): string }).toString === "function"
+              ? String(address)
+              : undefined;
+    const width = domain === "move" ? 64 : 40;
+    if (str === undefined || !new RegExp(`^0x[0-9a-fA-F]{1,${width}}$`).test(str)) {
         throw new Error(
-            `Invalid ${paramName}: expected 0x followed by whole bytes of hex digits, got ${JSON.stringify(address)}`,
+            `Invalid ${paramName}: expected 0x followed by 1 to ${width} hex digits for domain "${domain}", got ${JSON.stringify(String(address))}`,
         );
     }
 }

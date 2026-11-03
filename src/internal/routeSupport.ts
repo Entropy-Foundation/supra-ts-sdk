@@ -7,36 +7,36 @@ export const V4_RPC_VERSION = "v4";
 export const V4_ROUTES_MIN_NODE_RELEASE = "supra_node_v12.0.0";
 
 /**
- * Whether the body of a 404 is one the node writes for a request it routed: a JSON object with a `message`. A
- * node that has no handler for the route answers 404 with an empty body, or with the plain-text rejection of the
- * route it matched instead.
+ * Whether the body of a 404 is one the node writes for a request it routed: a JSON object whose `message` names the
+ * requested resource (`id`, compared case-insensitively). A node that has no handler for the route answers 404 with
+ * an empty body or the plain-text rejection of the route it matched instead, and a gateway answers with its own
+ * body, which does not name the resource.
  */
-function isHandlerNotFoundBody(data: unknown): boolean {
-    return (
-        typeof data === "object" &&
-        data !== null &&
-        typeof (data as { message?: unknown }).message === "string" &&
-        (data as { message: string }).message.length > 0
-    );
+function isHandlerNotFoundBody(data: unknown, id: string): boolean {
+    if (typeof data !== "object" || data === null) {
+        return false;
+    }
+    const message = (data as { message?: unknown }).message;
+    return typeof message === "string" && message.toLowerCase().includes(id.toLowerCase());
 }
 
 /**
  * Runs a request to a route that only nodes from {@link V4_ROUTES_MIN_NODE_RELEASE} serve, and rethrows an HTTP 404 as
  * `SupraRouteUnsupportedError` naming `method`.
  *
- * @param args.handlerNotFound - Set for a route whose handler answers 404 itself, for a resource it does not hold
- * (a settlement id the node never executed): a 404 with the node's JSON error body is then that answer and is
- * rethrown unchanged, and only a 404 without one means the route is absent.
+ * @param args.handlerNotFoundFor - The id of the resource of a route whose handler answers 404 itself for a resource
+ * it does not hold (a settlement id the node never executed): a 404 whose JSON `message` names that id is then the
+ * node's answer and is rethrown unchanged, and any other 404 means the route is absent.
  */
 export async function withV4RouteSupport<T>(
-    args: { method: string; handlerNotFound?: boolean },
+    args: { method: string; handlerNotFoundFor?: string },
     request: () => Promise<T>,
 ): Promise<T> {
     try {
         return await request();
     } catch (error) {
         if (error instanceof SupraNotFoundError && !(error instanceof SupraRouteUnsupportedError)) {
-            if (args.handlerNotFound === true && isHandlerNotFoundBody(error.data)) {
+            if (args.handlerNotFoundFor !== undefined && isHandlerNotFoundBody(error.data, args.handlerNotFoundFor)) {
                 throw error;
             }
             throw new SupraRouteUnsupportedError({

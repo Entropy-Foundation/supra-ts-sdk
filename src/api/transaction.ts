@@ -1,6 +1,7 @@
 // Portions of this file are derived from @aptos-labs/ts-sdk (https://github.com/aptos-labs/aptos-ts-sdk),
 // Copyright © Aptos Foundation, licensed under the Apache License, Version 2.0. See NOTICE.
 import type { NetworkConfig } from "../utils/apiEndpoints";
+import type { AccountAddressInput } from "../types/account";
 import type {
     CommittedTransactionResponse,
     Settlement,
@@ -215,8 +216,9 @@ export class Transaction {
      * Lists the cross-VM crossings one address is party to, oldest first
      * (`GET /rpc/v4/transactions/settlements`). Needs a node from `supra_node_v12.0.0`; Mainnet and Testnet nodes of
      * `supra_node_v11.7.x` answer HTTP 404, which is thrown as `SupraRouteUnsupportedError`.
-     * @param args.address - The address, `0x`-prefixed and sent as written: 32 bytes for `domain` `"move"`, 20 bytes
-     * for `"evm"`. The node answers HTTP 400 for an address that is not one of the domain.
+     * @param args.address - The address, `0x`-prefixed: at most 32 bytes for `domain` `"move"` (a `string` or a
+     * `HexString`), at most 20 bytes for `"evm"`. A shorter address is left-padded with zeros to the domain's width,
+     * so `"0x1"` is the Move address `0x0...01`; a longer one is rejected before any request.
      * @param args.domain - Which side of the chain the address belongs to. The two domains' addresses can share their
      * bytes, so the domain is required.
      * @param args.options.role - Only the crossings the address sent (`"sender"`) or received (`"recipient"`). Both by default.
@@ -227,8 +229,7 @@ export class Transaction {
      * node's oldest block. `cursor` is `undefined` on the last page; a page can hold fewer than `count` crossings, or
      * none, and still carry a cursor, so follow the cursor until it is `undefined`.
      * @throws {SupraRouteUnsupportedError} When the node does not serve the route.
-     * @throws {SupraAPIError} HTTP 400 for an address that is not one of the domain, or a `start` that was not issued
-     * for this address.
+     * @throws {SupraAPIError} HTTP 400 for a `start` that was not issued for this address.
      * @example
      * ```typescript
      * import { Network, SupraClient } from "supra-ts-sdk";
@@ -254,12 +255,12 @@ export class Transaction {
      * @group Transaction
      */
     async getSettlements(args: {
-        address: string;
+        address: AccountAddressInput;
         domain: SettlementDomain;
         options?: { role?: SettlementRole; count?: number; start?: string | undefined };
     }): Promise<SettlementsPage> {
-        validateSettlementAddress(args.address, "address");
         validateSettlementDomain(args.domain, "domain");
+        validateSettlementAddress(args.address, args.domain, "address");
         validateSettlementRole(args.options?.role, "role");
         validatePaginationCount(args.options?.count);
         return getSettlementsInternal(args, this.networkInformation);

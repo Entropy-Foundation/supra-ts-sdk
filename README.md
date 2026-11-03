@@ -281,7 +281,7 @@ if (simulated.changes === undefined) {
 ```
 
 `getSettlements` lists the cross-VM crossings of native SUPRA that an address is party to, oldest first. `domain` (`"move"`
-or `"evm"`) is required, and the address is sent as written (32 bytes for `"move"`, 20 for `"evm"`). Read it page by page
+or `"evm"`) is required, and the address is left-padded with zeros to 32 bytes for `"move"` or 20 bytes for `"evm"` (a longer one is rejected). Read it page by page
 as in [Reading a Feed Page by Page](#reading-a-feed-page-by-page); a page can be empty and still carry a cursor.
 `getSettlement` returns every stage of one crossing by its settlement id; a crossing the node has no record of is a
 `SupraNotFoundError`, and one recorded below its oldest retained block is a `SupraGoneError`.

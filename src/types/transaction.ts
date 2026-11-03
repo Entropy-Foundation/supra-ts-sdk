@@ -536,7 +536,7 @@ export type TransactionResponseV4 = TransactionResponse & {
  * The result of looking up one hash with `getTransactionsByHashes`.
  */
 export interface TransactionByHashesEntry {
-    /** The requested hash, as sent. */
+    /** The requested hash in lower case, as the SDK sends it. */
     hash: string;
     /**
      * The transaction, or `null` when no transaction of the requested `type` has the hash. A hash the node does not

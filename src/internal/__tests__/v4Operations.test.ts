@@ -5,7 +5,8 @@ import { Methods } from "../../api/methods";
 import { Transaction } from "../../api/transaction";
 import { Simulate } from "../../api/transactionManager/txnSimulate";
 import { SupraAPIError, SupraGoneError, SupraNotFoundError, SupraRouteUnsupportedError } from "../../errors/apiError";
-import { SupraSimulationFailedError } from "../../errors/transactionError";
+import { HexString } from "supra-l1-sdk-core";
+import { SupraGasUnitPriceBelowMinimumError, SupraSimulationFailedError } from "../../errors/transactionError";
 import type { ViewBatchResponse } from "../../types/methods";
 import type { MoveModuleBytecode } from "../../types/move";
 import type { NativeSupply } from "../../types/fungibleAsset";
@@ -70,7 +71,11 @@ function notFound(data?: unknown) {
     });
 }
 
-/** What the v11.7.2 localnet answers for a route it does not serve: HTTP 404 with an empty body. */
+/**
+ * What the v11.7.2 localnet answers for a route it does not serve: HTTP 404 with an empty body, except the
+ * settlements list route, which answers 404 `text/plain` "Path deserialize error: ..." because the path matches
+ * `/transactions/{hash}`.
+ */
 const v11NotFound = () => notFound(undefined);
 
 beforeEach(() => {
@@ -383,6 +388,25 @@ describe("simulate.withStateChanges", () => {
         expect((failure as SupraSimulationFailedError).transaction).toBe(failed);
     });
 
+    it("maps a refusal for a gas unit price below the node's minimum", async () => {
+        mockPost.mockRejectedValue(
+            new SupraAPIError({
+                status: 400,
+                statusText: "Bad Request",
+                url: "http://localhost:27001/rpc/v4/transactions/simulate",
+                data: {
+                    message: "General err: MoveTransactionValidationFailed(aa, 0, GAS_UNIT_PRICE_BELOW_MIN_BOUND)",
+                },
+            }),
+        );
+        mockGet.mockResolvedValue({ data: { median_gas_price: 100000, min_configured_gas_price: 100000 } });
+
+        const failure = await simulate.withStateChanges({ sendTxPayload: payload }).catch((e: unknown) => e);
+
+        expect(failure).toBeInstanceOf(SupraGasUnitPriceBelowMinimumError);
+        expect(failure).toMatchObject({ gasUnitPrice: 100000n, minimumGasUnitPrice: 100000n });
+    });
+
     it("throws SupraRouteUnsupportedError for a 404", async () => {
         mockPost.mockRejectedValue(v11NotFound());
 
@@ -434,12 +458,39 @@ describe("getSettlements", () => {
         expect(page.oldestBlock).toBe(0);
     });
 
-    it("sends the address as written, not padded", async () => {
+    it("sends a full-width address as given, in lower case", async () => {
+        respond(fixtures.settlementsEmpty);
         respond(fixtures.settlementsEmpty);
 
         await transaction.getSettlements({ address: EVM_ADDRESS, domain: "evm" });
+        await transaction.getSettlements({ address: MOVE_ADDRESS.toUpperCase().replace("0X", "0x"), domain: "move" });
 
         expect(mockGet.mock.calls[0]![0].query?.["address"]).toBe(EVM_ADDRESS);
+        expect(mockGet.mock.calls[1]![0].query?.["address"]).toBe(MOVE_ADDRESS);
+    });
+
+    it("left-pads a short address to 32 bytes for move and 20 bytes for evm", async () => {
+        respond(fixtures.settlementsEmpty);
+        respond(fixtures.settlementsEmpty);
+        respond(fixtures.settlementsEmpty);
+
+        await transaction.getSettlements({ address: "0x1", domain: "move" });
+        await transaction.getSettlements({ address: new HexString("0xab"), domain: "move" });
+        await transaction.getSettlements({ address: "0x01", domain: "evm" });
+
+        expect(mockGet.mock.calls[0]![0].query?.["address"]).toBe(`0x${"0".repeat(63)}1`);
+        expect(mockGet.mock.calls[1]![0].query?.["address"]).toBe(`0x${"0".repeat(62)}ab`);
+        expect(mockGet.mock.calls[2]![0].query?.["address"]).toBe(`0x${"0".repeat(39)}1`);
+    });
+
+    it("rejects an address longer than the domain's", async () => {
+        await expect(transaction.getSettlements({ address: `0x1${"0".repeat(64)}`, domain: "move" })).rejects.toThrow(
+            "1 to 64 hex digits",
+        );
+        await expect(transaction.getSettlements({ address: MOVE_ADDRESS, domain: "evm" })).rejects.toThrow(
+            "1 to 40 hex digits",
+        );
+        expect(mockGet).not.toHaveBeenCalled();
     });
 
     it("does not send an empty start, and takes the cursor from the header", async () => {
@@ -483,7 +534,7 @@ describe("getSettlements", () => {
     });
 
     it("rejects invalid arguments before any request", async () => {
-        await expect(transaction.getSettlements({ address: "0x1", domain: "move" })).rejects.toThrow("whole bytes");
+        await expect(transaction.getSettlements({ address: "1", domain: "move" })).rejects.toThrow("hex digits");
         await expect(transaction.getSettlements({ address: EVM_ADDRESS, domain: "sevm" as never })).rejects.toThrow(
             '"move" or "evm"',
         );
@@ -514,7 +565,10 @@ describe("getSettlement", () => {
     it("throws the node's SupraNotFoundError, not SupraRouteUnsupportedError, for an unknown crossing", async () => {
         mockGet.mockRejectedValue(notFound(fixtures.settlementUnknown));
 
-        const failure = await transaction.getSettlement({ settlementId: SETTLEMENT_ID }).catch((e: unknown) => e);
+        // The fixture is the node's answer for the id it names.
+        const failure = await transaction
+            .getSettlement({ settlementId: `0x${"00".repeat(31)}01` })
+            .catch((e: unknown) => e);
 
         expect(failure).toBeInstanceOf(SupraNotFoundError);
         expect(failure).not.toBeInstanceOf(SupraRouteUnsupportedError);
@@ -527,6 +581,37 @@ describe("getSettlement", () => {
 
         expect(failure).toBeInstanceOf(SupraRouteUnsupportedError);
         expect(failure).toMatchObject({ method: "getSettlement" });
+    });
+
+    it("throws SupraRouteUnsupportedError for a gateway's JSON 404 that does not name the crossing", async () => {
+        for (const body of [{ message: "Not Found" }, { message: "no Route matched with those values" }]) {
+            mockGet.mockRejectedValueOnce(notFound(body));
+
+            const failure = await transaction.getSettlement({ settlementId: SETTLEMENT_ID }).catch((e: unknown) => e);
+
+            expect(failure).toBeInstanceOf(SupraRouteUnsupportedError);
+        }
+    });
+
+    it("throws SupraRouteUnsupportedError for a 404 with a text or HTML body", async () => {
+        for (const body of ["<html><body>404 Not Found</body></html>", "Path deserialize error: HexDecode"]) {
+            mockGet.mockRejectedValueOnce(notFound(body));
+
+            const failure = await transaction.getSettlement({ settlementId: SETTLEMENT_ID }).catch((e: unknown) => e);
+
+            expect(failure).toBeInstanceOf(SupraRouteUnsupportedError);
+        }
+    });
+
+    it("matches the crossing in the node's message without regard to case", async () => {
+        mockGet.mockRejectedValue(
+            notFound({ message: `Information not available for ${SETTLEMENT_ID.toUpperCase()}` }),
+        );
+
+        const failure = await transaction.getSettlement({ settlementId: SETTLEMENT_ID }).catch((e: unknown) => e);
+
+        expect(failure).toBeInstanceOf(SupraNotFoundError);
+        expect(failure).not.toBeInstanceOf(SupraRouteUnsupportedError);
     });
 
     it("passes the 410 of a pruned crossing", async () => {

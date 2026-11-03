@@ -6,6 +6,7 @@ import { post } from "../client/post";
 import { SupraError } from "../errors/supraError";
 import { SupraTransactionFailedError, SupraTransactionTimeoutError } from "../errors/transactionError";
 import { standardizeAddress } from "../helper/account";
+import type { AccountAddressInput } from "../types/account";
 import {
     TransactionStatus,
     type CommittedTransactionResponse,
@@ -112,11 +113,20 @@ export async function getSettlementInternal(
     args: { settlementId: string },
     config: NetworkConfig,
 ): Promise<Settlement> {
-    return withV4RouteSupport({ method: "getSettlement", handlerNotFound: true }, () =>
+    return withV4RouteSupport({ method: "getSettlement", handlerNotFoundFor: args.settlementId }, () =>
         get<Settlement>({ path: `/transactions/settlements/${args.settlementId}` }, config, V4_RPC_VERSION).then(
             (res) => res.data,
         ),
     );
+}
+
+/**
+ * The address of a settlements query in the form the node takes: `0x` and the hexadecimal digits, left-padded with
+ * zeros to the domain's width (32 bytes for `"move"`, 20 for `"evm"`) and in lower case.
+ */
+export function settlementAddressOf(address: AccountAddressInput, domain: SettlementDomain): string {
+    const digits = String(address).replace(/^0x/i, "").toLowerCase();
+    return `0x${digits.padStart(domain === "move" ? 64 : 40, "0")}`;
 }
 
 /**
@@ -125,7 +135,7 @@ export async function getSettlementInternal(
  */
 export async function getSettlementsInternal(
     args: {
-        address: string;
+        address: AccountAddressInput;
         domain: SettlementDomain;
         options?: { role?: SettlementRole; count?: number; start?: string | undefined };
     },
@@ -137,7 +147,7 @@ export async function getSettlementsInternal(
             {
                 path: "/transactions/settlements",
                 query: {
-                    address: args.address,
+                    address: settlementAddressOf(args.address, args.domain),
                     domain: args.domain,
                     role: args.options?.role,
                     count: args.options?.count,

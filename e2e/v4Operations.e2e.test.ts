@@ -295,12 +295,15 @@ describeE2E("v4 operations", () => {
             expect(failure).not.toBeInstanceOf(SupraRouteUnsupportedError);
         });
 
-        testOnV12("refuses an address that is not one of the domain with HTTP 400", async () => {
-            const failure = await ctx.supra.transaction
-                .getSettlements({ address: `0x${"11".repeat(20)}`, domain: "move" })
-                .catch((error: unknown) => error);
+        testOnV12("pads a short address to the domain's width and rejects a longer one locally", async () => {
+            const padded = await ctx.supra.transaction.getSettlements({ address: "0x1", domain: "move" });
+            expect(padded.response).toEqual([]);
+            const evm = await ctx.supra.transaction.getSettlements({ address: "0x01", domain: "evm" });
+            expect(evm.response).toEqual([]);
 
-            expect(failure).toMatchObject({ status: 400 });
+            await expect(
+                ctx.supra.transaction.getSettlements({ address: `0x${"11".repeat(32)}`, domain: "evm" }),
+            ).rejects.toThrow("1 to 40 hex digits");
         });
 
         testOnV11("are unsupported", async () => {

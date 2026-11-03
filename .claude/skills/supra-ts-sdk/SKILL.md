@@ -293,8 +293,8 @@ for (const change of simulated.changes ?? []) {
     console.log(change.type, change.state_key_hash, simulated.prior_values?.[change.state_key_hash]);
 }
 
-// Cross-VM crossings of native SUPRA. `domain` ("move" | "evm") is required; the address is sent as written (32
-// bytes for "move", 20 for "evm"). Read page by page until `cursor` is undefined (an empty page can carry one).
+// Cross-VM crossings of native SUPRA. `domain` ("move" | "evm") is required; the address is left-padded with
+// zeros to 32 bytes for "move" or 20 for "evm" (longer is rejected). Read page by page until `cursor` is undefined (an empty page can carry one).
 const page = await supra.transaction.getSettlements({
     address: "0x" + "11".repeat(20),
     domain: "evm",

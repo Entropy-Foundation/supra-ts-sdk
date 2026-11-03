@@ -129,10 +129,12 @@ export class Methods {
      * Move state, in request order, and share a gas budget; an element reached after the budget is spent is not
      * executed and its entry is an `error` with status `400`.
      *
-     * An element the node fails (a Move abort, `OUT_OF_GAS`, a function that does not exist) does not fail the
-     * others: its entry holds `error`, with the status and message `POST /rpc/v4/view` gives for it, and no
-     * exception is thrown. An element whose module ABI cannot be read, or whose arguments do not match its ABI,
-     * throws before any request is sent, as `view` does.
+     * An element the node fails when it executes it (a Move abort, `OUT_OF_GAS`) does not fail the others: its entry
+     * holds `error`, with the status and message `POST /rpc/v4/view` gives for it, and no exception is thrown. An
+     * element that names a module or function that does not exist throws while the SDK reads the ABI, before any
+     * request is sent, unless the caller passes `abi`; so does an element whose arguments do not match its ABI, as
+     * `view` does. The ABI reads happen before the route is called, so on a v11.7.x node they run before the 404 is
+     * answered.
      * @template T - The type of the array each successful element returns.
      * @param args.requests - The view functions, as for {@link Methods.view}. The node accepts 1 to 20 by default
      * (`rest_limits.view_batch.max_view_functions`, set by the operator) and answers HTTP 400 outside its range.
