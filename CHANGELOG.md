@@ -248,10 +248,16 @@ Entries marked **Breaking:** change behaviour or types that code written for 1.2
   type parameter replaced by the call's type argument, as a node from `supra_node_v12.0.0` reads it. They sent and
   returned such values as given and as the node's JSON. On a v12 node, `identity<T>(x: T): T` with the type argument
   `u64` takes a `bigint` (sent as a JSON number and refused by the node in 1.2.0) and returns a `bigint` where it
-  returned a string, and with `0x1::object::Object<…>` returns the address where it returned `{ inner }`. A v11 node
-  reads every type parameter as `address`; there, results that 1.2.0 returned are unchanged, and a value the node
-  answers as an address for another type argument is returned as the node sent it. Type arguments other than
-  `address` need a node from `supra_node_v12.0.0`.
+  returned a string, and with `0x1::object::Object<…>` returns the address where it returned `{ inner }`. Arguments
+  are checked against the substituted type before the request: `"18446744073709551616"` for `u64`, `"300"` for `u8`
+  and `"1"` for `bool` throw, where 1.2.0 sent them.
+- **Breaking:** a generic view whose type parameter occurs in a parameter or return type (outside
+  `0x1::object::Object<…>`) with a type argument other than `address`, `signer` or `0x1::object::Object<…>` throws
+  `SupraError` before the view request on a node older than `supra_node_v12.0.0`, which reads every type parameter as
+  `address`. To tell, the client reads `GET /rpc/v3/version` once and keeps the answer; calls with only address-like
+  type arguments make no version request and behave as in 1.2.0 on both lines. In 1.2.0 such a call reached a v11 node,
+  which refused it, or, for a value whose encoding is 32 bytes (a `u256`, for example), read the value's bytes as the
+  type argument and answered with an address-formatted string.
 - **Breaking:** `fundAccountWithFaucet` sends the request on every network, including custom configurations, instead of
   throwing `Faucet is only available on testnet` on all but Testnet. A node that does not serve the faucet answers with
   an error status, which is thrown as `SupraAPIError`.

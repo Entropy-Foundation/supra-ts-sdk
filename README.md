@@ -738,9 +738,12 @@ const [value] = await supra.methods.view<[bigint]>({
 console.log(value); // 12345n
 ```
 
-Type arguments other than `address` need a node from `supra_node_v12.0.0` (Devnet). A v11 node reads every type
-parameter as `address`: it refuses other type arguments, or reads the argument as an address and answers with an
-address, which the SDK returns as the node sent it. `address` type arguments and `0x1::object::Object<…>` work on both.
+A v11 node (Mainnet, Testnet) reads every type parameter as `address`, so for any other type argument it refuses the
+request or reads the value's bytes as the wrong type. Type arguments other than `address`, `signer` and
+`0x1::object::Object<…>`, for a type parameter that occurs in a parameter or return type outside `Object<…>`, therefore
+need a node from `supra_node_v12.0.0` (Devnet). For such a call the client reads `GET /rpc/v3/version` once and keeps
+the answer; on a node that reports no `release` the call throws `SupraError` before the view request is sent. Calls with
+only address-like type arguments make no version request and work on both.
 
 ### Automation tasks
 

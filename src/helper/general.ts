@@ -72,7 +72,8 @@ export function convertPayloadTypeArgsToMoveType(
 
 /**
  * Converts the arguments of a view request to the node's JSON, each as its parameter type with the type parameters
- * replaced by the request's type arguments (see `convertGenericViewArgument`).
+ * replaced by the request's type arguments (`substituteTypeParameters`).
+ * @throws Error if an argument does not convert at its substituted type
  */
 export function convertPayloadArgsToJSONParsable(functionAbi: MoveFunction, args: InputViewFunctionData) {
     // Convert return values
@@ -86,15 +87,20 @@ export function convertPayloadArgsToJSONParsable(functionAbi: MoveFunction, args
 
     const typeArguments = typeArgumentTypeStrings(args.typeArguments);
     return functionAbi.params.map((typeStr, idx) => {
-        return convertGenericViewArgument(typeStr, typeArguments, args.functionArguments![idx]);
+        return convertArgsValueToJSONParsable(
+            substituteTypeParameters(typeStr, typeArguments),
+            args.functionArguments![idx],
+        );
     });
 }
 
 /**
  * A type parameter of a function's ABI, `T` followed by its index, where it stands as a type in a type string: not
- * part of a longer name and not a module or struct name next to `::`.
+ * part of a longer name and not a module or struct name next to `::`. The first group is the character before it (or
+ * the empty start of the string), the second its index. Written without a lookbehind, which Safari before 16.4 does
+ * not parse.
  */
-const TYPE_PARAMETER = /(?<![\w:])T(\d+)(?![\w:])/g;
+const TYPE_PARAMETER = /(^|[^\w:])T(\d+)(?![\w:])/g;
 
 /**
  * `type`, a parameter or return type of a function's ABI, with each type parameter `T<n>` in it replaced by
@@ -113,8 +119,59 @@ const TYPE_PARAMETER = /(?<![\w:])T(\d+)(?![\w:])/g;
 export function substituteTypeParameters(type: string, typeArguments: readonly string[]): string {
     return type.replace(
         TYPE_PARAMETER,
-        (parameter: string, index: string) => typeArguments[Number(index)] ?? parameter,
+        (match: string, prefix: string, index: string) =>
+            `${prefix}${typeArguments[Number(index)] ?? match.slice(prefix.length)}`,
     );
+}
+
+/** Object type prefix as the ABI and `typeTagToString` write it. */
+const OBJECT_TYPE_PREFIX = "0x1::object::Object<";
+
+/**
+ * Whether a node before `supra_node_v12.0.0`, which reads every type parameter as `address`, reads a value of this
+ * type argument correctly: `address`, `signer` and `0x1::object::Object<…>`, which is laid out as an address.
+ * @param typeArgument - A type argument in the form `typeTagToString` writes.
+ */
+export function isAddressLikeTypeArgument(typeArgument: string): boolean {
+    return typeArgument === "address" || typeArgument === "signer" || typeArgument.startsWith(OBJECT_TYPE_PREFIX);
+}
+
+/** `type` without its `0x1::object::Object<…>` types, which every node reads as an address whatever they contain. */
+function withoutObjectTypes(type: string): string {
+    let rest = type;
+    for (let start = rest.indexOf(OBJECT_TYPE_PREFIX); start >= 0; start = rest.indexOf(OBJECT_TYPE_PREFIX)) {
+        let depth = 0;
+        let end = start + OBJECT_TYPE_PREFIX.length - 1;
+        for (; end < rest.length; end++) {
+            if (rest[end] === "<") depth++;
+            if (rest[end] === ">" && --depth === 0) break;
+        }
+        rest = `${rest.slice(0, start)}address${rest.slice(end + 1)}`;
+    }
+    return rest;
+}
+
+/**
+ * The first type argument of a call that a node before `supra_node_v12.0.0` reads wrongly: one that is not
+ * address-like (`isAddressLikeTypeArgument`) and whose type parameter occurs in a parameter or return type outside
+ * `0x1::object::Object<…>`. Such a node reads the value of that type parameter as an `address`. `undefined` when there
+ * is none, so that the call is read the same way by every node.
+ * @param types - The parameter and return types of the function's ABI.
+ * @param typeArguments - The type arguments of the call, in the form `typeTagToString` writes.
+ */
+export function typeArgumentReadAsAddress(
+    types: readonly string[],
+    typeArguments: readonly string[],
+): string | undefined {
+    for (const type of types) {
+        for (const match of withoutObjectTypes(type).matchAll(TYPE_PARAMETER)) {
+            const typeArgument = typeArguments[Number(match[2])];
+            if (typeArgument !== undefined && !isAddressLikeTypeArgument(typeArgument)) {
+                return typeArgument;
+            }
+        }
+    }
+    return undefined;
 }
 
 /**
@@ -126,35 +183,6 @@ export function typeArgumentTypeStrings(typeArguments: readonly TypeArgument[] |
     return (typeArguments ?? []).map((typeArgument) =>
         typeTagToString(convertTypeArgsValueToMoveTypeValue(typeArgument)),
     );
-}
-
-/**
- * Converts a view argument whose ABI parameter type is `type` to the node's JSON.
- *
- * The argument is converted as `type` with its type parameters replaced by `typeArguments`
- * (`substituteTypeParameters`), the type a node from `supra_node_v12.0.0` reads it as. An argument that does not
- * convert at that type but converts with every type parameter of `type` read as `address` is converted that way, the
- * type an earlier node reads it as.
- * @throws Error if the argument converts at neither type; the error is the one of the substituted type
- */
-function convertGenericViewArgument(
-    type: string,
-    typeArguments: readonly string[],
-    value: SimpleEntryFunctionArgumentTypes,
-): unknown {
-    const instantiated = substituteTypeParameters(type, typeArguments);
-    if (instantiated === type) {
-        return convertArgsValueToJSONParsable(type, value);
-    }
-    try {
-        return convertArgsValueToJSONParsable(instantiated, value);
-    } catch (error) {
-        try {
-            return convertArgsValueToJSONParsable(type.replace(TYPE_PARAMETER, "address"), value);
-        } catch {
-            throw error;
-        }
-    }
 }
 
 /**
@@ -265,10 +293,9 @@ export function convertArgsValueToJSONParsable(type: string, value: SimpleEntryF
  * Converts the results of a view function to TypeScript values, each as its return type with the type parameters
  * replaced by the call's type arguments.
  *
- * A result whose return type has a type parameter is converted as the substituted type (`substituteTypeParameters`),
- * the type a node from `supra_node_v12.0.0` answers it as, when it has the JSON form of that type. Otherwise, as from
- * an earlier node, which answers each type parameter as an `address`, it is converted as the ABI type, with the value
- * of each type parameter returned as the node sent it.
+ * A node from `supra_node_v12.0.0` answers a result of a type parameter as its type argument. An earlier node answers
+ * it as an `address`, which is the same JSON for the address-like type arguments (`isAddressLikeTypeArgument`); a call
+ * with any other type argument is refused before it reaches such a node (see `viewInternal`).
  * @param returnType - The return types of the function's ABI.
  * @param response - The results, as the node sent them.
  * @param typeArguments - The type arguments of the call, as Move type strings (see `typeArgumentTypeStrings`).
@@ -282,46 +309,25 @@ export function convertValueToAbiReturnTypedValue(
     if (!returnType || returnType.length === 0) return [];
 
     // Multiple return
-    return returnType.map((typeStr, idx) => {
-        const instantiated = substituteTypeParameters(typeStr, typeArguments);
-        if (instantiated === typeStr) {
-            return convertValueToReturnTypedValue(typeStr, response[idx]);
-        }
-        try {
-            return convertReturnValue(instantiated, response[idx], true);
-        } catch {
-            return convertValueToReturnTypedValue(typeStr, response[idx]);
-        }
-    });
+    return returnType.map((typeStr, idx) =>
+        convertValueToReturnTypedValue(substituteTypeParameters(typeStr, typeArguments), response[idx]),
+    );
 }
 
 /**
  * Convert a Move value to a TS value
  */
 export function convertValueToReturnTypedValue(type: string, value: unknown): unknown {
-    return convertReturnValue(type, value, false);
-}
-
-/**
- * Converts a view result of Move type `type` to a TypeScript value.
- * @param strict - When true, a value without the JSON form a node gives `type` throws: an integer that is neither a
- *   JSON integer nor a decimal string, a `bool` that is not a boolean, an `address` or `vector<u8>` that is not a
- *   string, an `Option` that is not an object with `vec`, and an `Object` that is neither a string nor `{ inner }`.
- * @throws Error for a `vector` other than `vector<u8>` that is not an array, and, when `strict`, for the values above
- */
-function convertReturnValue(type: string, value: unknown, strict: boolean): unknown {
     const intTypes = ["u8", "u16", "u32", "i8", "i16", "i32"];
     const bigIntTypes = ["u64", "u128", "u256", "i64", "i128", "i256"];
-    const mismatch = () => new Error(`Expected the JSON form of ${type}, got ${describeArgument(value)}`);
 
     // --------------------
-    // 0️⃣ Object
+    // 0️⃣ Object: `{ inner }` from a node, or an address where a type parameter was answered as one
     // --------------------
-    if (type.startsWith("0x1::object::Object")) {
+    if (type.startsWith(OBJECT_TYPE_PREFIX)) {
         if (typeof value == "object" && value !== null && "inner" in value) {
             return (value as { inner: unknown }).inner;
         }
-        if (strict && typeof value !== "string") throw mismatch();
     }
 
     // --------------------
@@ -329,21 +335,23 @@ function convertReturnValue(type: string, value: unknown, strict: boolean): unkn
     // --------------------
     const optionInner = extractOptionInner(type);
     if (optionInner) {
-        if (strict && (typeof value !== "object" || value === null || !("vec" in value))) throw mismatch();
         const optVal = value as { vec?: unknown[] };
         // Special RPC quirk for Option<u8>
         if (optionInner === "u8") return optVal.vec;
         // Empty Option
         if (!optVal.vec || optVal.vec.length === 0) return null;
         // Recursive conversion
-        return convertReturnValue(optionInner, optVal.vec[0], strict);
+        return convertValueToReturnTypedValue(optionInner, optVal.vec[0]);
     }
 
     // --------------------
-    // 2️⃣ vector<u8> (SPECIAL): the node's hex string
+    // 2️⃣ vector<u8> (SPECIAL)
     // --------------------
     if (type === "vector<u8>") {
-        if (strict && typeof value !== "string") throw mismatch();
+        if (typeof value === "string") {
+            // assume base64 or hex string
+            return value; // or decode to Uint8Array if you want
+        }
         return value;
     }
 
@@ -355,16 +363,12 @@ function convertReturnValue(type: string, value: unknown, strict: boolean): unkn
         if (!Array.isArray(value)) {
             throw new Error(`Expected array for ${type}`);
         }
-        return value.map((v) => convertReturnValue(vectorInner, v, strict));
+        return value.map((v) => convertValueToReturnTypedValue(vectorInner, v));
     }
 
     // --------------------
     // 4️⃣ Primitives
     // --------------------
-    const isInteger = intTypes.includes(type) || bigIntTypes.includes(type);
-    if (strict && isInteger && !isJsonInteger(value)) throw mismatch();
-    if (strict && type === "bool" && typeof value !== "boolean") throw mismatch();
-    if (strict && type === "address" && typeof value !== "string") throw mismatch();
     if (intTypes.includes(type)) return Number(value);
     if (bigIntTypes.includes(type)) return BigInt(value as string | number | bigint);
     if (type === "bool") return Boolean(value);
@@ -377,9 +381,7 @@ function convertReturnValue(type: string, value: unknown, strict: boolean): unkn
         if (typeof value !== "object" || value === null || !("value" in value)) {
             throw new Error(`Expected an object with a value field for ${type}, got ${describeArgument(value)}`);
         }
-        const raw = (value as { value: unknown }).value;
-        if (strict && !isJsonInteger(raw)) throw mismatch();
-        return { value: BigInt(raw as string | number | bigint) };
+        return { value: BigInt((value as { value: string | number | bigint }).value) };
     }
 
     // --------------------
@@ -388,13 +390,6 @@ function convertReturnValue(type: string, value: unknown, strict: boolean): unkn
     if (isMoveStruct(type)) return value;
 
     return value;
-}
-
-/** Whether `value` is an integer as the node writes one in JSON: a JSON integer or a string of decimal digits. */
-function isJsonInteger(value: unknown): boolean {
-    return (
-        (typeof value === "number" && Number.isInteger(value)) || (typeof value === "string" && /^-?\d+$/.test(value))
-    );
 }
 
 /**

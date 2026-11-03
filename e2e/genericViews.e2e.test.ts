@@ -1,5 +1,5 @@
 import type { MoveFunctionId, MoveValue, SimpleEntryFunctionArgumentTypes } from "../src/index";
-import { standardizeAddress } from "../src/index";
+import { SupraError, standardizeAddress } from "../src/index";
 import { createFundedAccount } from "./helpers/accounts";
 import { describeE2E, nodeGeneration } from "./helpers/describe";
 import { getE2EContext, type E2EContext } from "./helpers/env";
@@ -10,12 +10,14 @@ import { publishTaggedModule } from "./helpers/taggedModule";
  * views of `sdk_e2e::tagged` in `fixtures/move`), called through `methods.view`.
  *
  * A node from `supra_node_v12.0.0` converts arguments and results of a type parameter as the request's type argument.
- * A v11 node reads every type parameter as `address`: there only address type arguments, and structs it lays out as
- * an address such as `Object<T>`, can be called.
+ * A v11 node reads every type parameter as `address`: there only address type arguments, and `Object<T>`, which it
+ * lays out as an address, can be called, and the SDK refuses any other type argument before the view request.
  */
 
 /** `test` on a v12 node; skipped on a v11 node, which reads every type parameter as `address`. */
 const testFromV12: jest.It = nodeGeneration() === "v11" ? test.skip : test;
+/** `test` on a v11 node; skipped on a v12 node, which reads type parameters as their type arguments. */
+const testOnV11: jest.It = nodeGeneration() === "v11" ? test : test.skip;
 
 const METADATA_OBJECT = "0x1::object::Object<0x1::fungible_asset::Metadata>";
 
@@ -107,5 +109,21 @@ describeE2E("generic view functions", () => {
         testFromV12("boxed<u64> returns the struct as the node's JSON", async () => {
             expect(await view("boxed", ["u64"], [7n])).toEqual([{ value: "7" }]);
         });
+    });
+
+    describe("other type arguments, before v12", () => {
+        testOnV11.each([
+            ["identity", "u256", 1n],
+            ["identity", "u64", 12345n],
+            ["identity", "bool", true],
+            ["identity_vector", "u256", [1n]],
+        ] as [string, string, SimpleEntryFunctionArgumentTypes][])(
+            "%s<%s> throws SupraError before the view request",
+            async (name, typeArgument, value) => {
+                const call = view(name, [typeArgument], [value]);
+                await expect(call).rejects.toThrow(SupraError);
+                await expect(call).rejects.toThrow("needs a node from supra_node_v12.0.0");
+            },
+        );
     });
 });

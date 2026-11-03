@@ -14,6 +14,8 @@ import {
     fixedPointRawType,
     substituteTypeParameters,
     typeArgumentTypeStrings,
+    typeArgumentReadAsAddress,
+    isAddressLikeTypeArgument,
 } from "../general";
 import { HexString, TxnBuilderTypes, TypeTagParser } from "supra-l1-sdk-core";
 import { parseTypeArgument, typeTagToString } from "../typeTag";
@@ -717,6 +719,8 @@ describe("fixed-point structs", () => {
     });
 });
 
+const METADATA_OBJECT = "0x1::object::Object<0x1::fungible_asset::Metadata>";
+
 describe("substituteTypeParameters", () => {
     it.each([
         ["T0", ["u64"], "u64"],
@@ -728,6 +732,7 @@ describe("substituteTypeParameters", () => {
             "0x1::object::Object<0x1::fungible_asset::Metadata>",
         ],
         ["0xabc::m::Pair<T1, T0>", ["u8", "bool"], "0xabc::m::Pair<bool, u8>"],
+        ["0xabc::m::Pair<T1,T0>", ["u8", "bool"], "0xabc::m::Pair<bool,u8>"],
         ["vector<0x1::option::Option<T1>>", ["bool", "vector<u64>"], "vector<0x1::option::Option<vector<u64>>>"],
         ["vector<T10>", [...Array<string>(10).fill("u8"), "u64"], "vector<u64>"],
         ["&T0", ["u64"], "&u64"],
@@ -810,14 +815,14 @@ describe("generic view arguments and results", () => {
         expect(convertValueToAbiReturnTypedValue(["T0"], ["5"])).toEqual(["5"]);
     });
 
-    it("returns a result that does not have the JSON form of the type argument as before", () => {
-        expect(convertValueToAbiReturnTypedValue(["T0"], ["0xff"], ["u256"])).toEqual(["0xff"]);
-        expect(convertValueToAbiReturnTypedValue(["T0"], ["0x1"], ["bool"])).toEqual(["0x1"]);
-        expect(convertValueToAbiReturnTypedValue(["T0"], ["0x1"], ["0x1::option::Option<u64>"])).toEqual(["0x1"]);
-        expect(convertValueToAbiReturnTypedValue(["T0"], [["0x1"]], ["vector<u8>"])).toEqual([["0x1"]]);
-        expect(
-            convertValueToAbiReturnTypedValue(["T0"], [{ value: "0x1" }], ["0x1::fixed_point32::FixedPoint32"]),
-        ).toEqual([{ value: "0x1" }]);
+    it("returns an Object result answered as an address, as a node before v12 answers it", () => {
+        expect(convertValueToAbiReturnTypedValue(["T0"], ["0xa"], [METADATA_OBJECT])).toEqual(["0xa"]);
+        expect(convertValueToAbiReturnTypedValue(["T0"], [{ inner: "0xa" }], [METADATA_OBJECT])).toEqual(["0xa"]);
+    });
+
+    it("does not read 0x1::object::ObjectCore as an Object", () => {
+        const core = { guid_creation_num: "1", owner: "0x1", allow_ungated_transfer: true };
+        expect(convertValueToAbiReturnTypedValue(["T0"], [core], ["0x1::object::ObjectCore"])).toEqual([core]);
     });
 
     it("sends the type arguments and their Move type strings from generateViewFunctionPayload", async () => {
@@ -832,6 +837,32 @@ describe("generic view arguments and results", () => {
             functionArguments: ["12345"],
             returnType: ["T0"],
             typeArgumentTypes: ["u64"],
+            typeArgumentNeedingV12: "u64",
         });
+    });
+});
+
+describe("typeArgumentReadAsAddress", () => {
+    it("is undefined for address-like type arguments", () => {
+        expect(typeArgumentReadAsAddress(["T0", "vector<T1>"], ["address", METADATA_OBJECT])).toBeUndefined();
+        expect(typeArgumentReadAsAddress(["T0"], ["signer"])).toBeUndefined();
+        expect(isAddressLikeTypeArgument("0x1::object::ObjectCore")).toBe(false);
+    });
+
+    it("is undefined for a type parameter that occurs only inside Object<T>, or not at all", () => {
+        expect(typeArgumentReadAsAddress(["0x1::object::Object<T0>", "u64"], ["0xabc::m::S"])).toBeUndefined();
+        expect(
+            typeArgumentReadAsAddress(["vector<0x1::object::Object<0xabc::m::Pair<T0, T0>>>"], ["u64"]),
+        ).toBeUndefined();
+        expect(typeArgumentReadAsAddress(["u64", "address"], ["u64"])).toBeUndefined();
+    });
+
+    it("is the first other type argument whose type parameter occurs in a type", () => {
+        expect(typeArgumentReadAsAddress(["T0"], ["u256"])).toBe("u256");
+        expect(typeArgumentReadAsAddress(["address", "0x1::option::Option<T1>"], ["u8", "bool"])).toBe("bool");
+        expect(typeArgumentReadAsAddress(["0x1::object::Object<T0>", "vector<T0>"], ["0xabc::m::S"])).toBe(
+            "0xabc::m::S",
+        );
+        expect(typeArgumentReadAsAddress(["0xabc::m::Boxed<T0>"], ["vector<u8>"])).toBe("vector<u8>");
     });
 });

@@ -437,8 +437,10 @@ When **return types** come back from `view()`:
 
 A parameter or return type that is a type parameter of the function, or contains one (`vector<T>`, `Option<T>`, a
 struct over `T`), is converted as its type argument: `identity<T>(x: T): T` called with `typeArguments: ["u64"]` takes
-and returns a `bigint`. Type arguments other than `address` need a node from `supra_node_v12.0.0` (Devnet); a v11 node
-reads every type parameter as `address`, and its answer is returned as the node sent it.
+and returns a `bigint`. A v11 node reads every type parameter as `address`, so type arguments other than `address`,
+`signer` and `0x1::object::Object<…>` need a node from `supra_node_v12.0.0` (Devnet). For such a call the client reads
+`GET /rpc/v3/version` once per client and throws `SupraError` before the view request when the node reports no
+`release`; calls with only address-like type arguments make no version request.
 
 ---
 
