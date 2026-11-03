@@ -408,8 +408,21 @@ export type AutomationRecordAction =
     | {
           Remove: {
               task_index: number;
-              /** Why the task is removed, which determines the refund its owner receives. */
-              kind: "Error" | "GasConfigUpdate";
+              /**
+               * Why the task is removed, which determines the refund its owner receives.
+               *
+               * - `"Error"`: the task failed at runtime (an undecodable payload or predicate, a failed predicate, or a
+               *   gas amount no transaction can carry). The owner receives a partial refund.
+               * - `"ConfigUpdate"`: the gas config of a new epoch rules out the task's transaction (its gas amount is
+               *   above the per-transaction gas cap, or its gas price cap is below the minimum gas price). A user
+               *   task's owner receives the remaining fee of the current cycle and the deposit in full; a system task
+               *   pays no fees and is refunded nothing. Recorded for both Move and EVM tasks.
+               * - `"PreExecutionLimit"`: a limit of the gas schedule or of the VM (transaction size, intrinsic gas,
+               *   dependency count or size, type size, or the minimum gas of a `#[randomness]` entry function) stopped
+               *   the task's transaction before its entry function ran. A user task's owner receives the same
+               *   partial refund as for `"Error"`; a system task is refunded nothing. Recorded for Move tasks only.
+               */
+              kind: "Error" | "ConfigUpdate" | "PreExecutionLimit";
               reason: string;
           };
       };

@@ -157,6 +157,17 @@ console.log("Framework (0x1) account info:", accountData);
 // Expected fields: sequence_number, authentication_key, etc.
 ```
 
+### Reading the Node Version
+
+`getNodeVersion()` reads `GET /rpc/v3/version`. `release` is the node release tag; it is absent before
+`supra_node_v12.0.0`, so it is `undefined` for a v11 node.
+
+```ts
+const info = await supra.getNodeVersion();
+console.log(info.release); // "supra_node_v12.0.0.rc7" on a v12 node, undefined on a v11 node
+console.log(info.version, info.branch, info.commit_hash, info.build_time, info.build_env);
+```
+
 ### Reading a Feed Page by Page
 
 Paginated methods return `{ response, cursor }`. Pass `cursor` back unchanged until it is `undefined`. A page
@@ -247,7 +258,7 @@ Every error the SDK raises on its own behalf derives from `SupraError`.
 |---|---|---|
 | `SupraAPIError` | the node answers with an error status | `status`, `statusText`, `url`, `data`, `major_status`, `sub_status` |
 | `SupraNotFoundError` (extends `SupraAPIError`) | HTTP 404 | |
-| `SupraGoneError` (extends `SupraAPIError`) | HTTP 410: the node has pruned the data | |
+| `SupraGoneError` (extends `SupraAPIError`) | HTTP 410: the node has pruned the data | `oldestBlock?: bigint`, the oldest block the node holds; restart reads from it |
 | `SupraRateLimitError` (extends `SupraAPIError`) | HTTP 429 | `retryAfterSeconds` |
 | `SupraServiceUnavailableError` (extends `SupraAPIError`) | HTTP 503 | |
 | `SupraAccountQueueFullError` (extends `SupraAPIError`) | HTTP 400 for a submission beyond the sequence numbers the node queues for the account | `sequenceNumber` |
@@ -395,6 +406,27 @@ try {
   }
 }
 ```
+
+### Sponsored transaction from a sender without an account
+
+`rawTxnObject` and the sponsor submission take the sender's sequence number from the caller. A sender with no `Account`
+resource (`isAccountExists` is `false`) uses sequence number 0 and is not read with `getAccountInfo`, which throws for
+an absent account (`SupraNotFoundError` on v12, a `SupraAPIError` with status 400 on v11):
+
+```ts
+const accountAddress = sender.address();
+const senderSequenceNumber = (await supra.account.isAccountExists({ accountAddress }))
+  ? (await supra.account.getAccountInfo({ accountAddress })).sequence_number
+  : 0n;
+```
+
+The simulation with that number succeeds on every node. A node from `supra_node_v12.0.0` (Devnet) admits the
+submission, the transaction creates the account, and the sender's sequence number is 1 afterwards. A v11.7.x node
+(Mainnet, Testnet) refuses the submission with HTTP 400, "Transaction validation failed: Failed to read the
+AccountResource".
+
+The fee payer pays the gas, but a new sender holds no SUPRA, so its payload must not spend from the sender's balance (a
+transfer from it aborts). `0x1::supra_account::create_account` spends nothing.
 
 ### Sequence numbers
 
@@ -717,7 +749,15 @@ automation cycle after its registration until the task expires. A task is regist
 registration transaction built by `transaction.build.automationRegistrationRawTxnObject`. With
 `automationTaskType` or `automationPriority` the registration carries version 2 parameters; without them, version 1.
 Nodes of the v11.7.0 and v12 lines accept both. A task registered without a priority gets its task index as its
-priority. Only accounts that the Supra framework has authorised can register `"System"` tasks.
+priority. `automationPriority` is for system tasks only: the registry aborts a user task that carries a priority
+(`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when `automationPriority` is given with
+`automationTaskType: 'User'` or with no task type. Only accounts that the Supra framework has authorised can register
+`"System"` tasks, with or without a priority.
+
+`automationGasPriceCap` must be at least the node's minimum gas unit price (`supra.getMinGasUnitPrice()`). The node
+refuses a registration with a lower cap at validation: submitting answers `400` with `MoveTransactionValidationFailed`
+and `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND` (a `SupraAPIError`), and a simulation reports `Invalid` with that
+status (a `SupraSimulationFailedError`). The builder does not check the cap.
 
 ```ts
 const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
@@ -733,7 +773,6 @@ const registration = supra.transaction.build.automationRegistrationRawTxnObject(
     automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
     automationAuxData: [],
     automationTaskType: 'User',
-    automationPriority: 10n,
     optionalTransactionPayloadArgs: { gasUnitPrice },
 });
 const registered = await registration.submitTransaction({
