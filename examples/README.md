@@ -42,10 +42,27 @@ Mainnet, and they do not call a faucet unless `SUPRA_EXAMPLES_FUND=1` is set.
 
 Keep private keys in environment variables or an untracked file. Do not commit them.
 
+With `SUPRA_EXAMPLES_FUND=1`, every account an example generates is funded by its own faucet request, and the Devnet
+faucet limits the requests from one IP address, so it refuses them partway through `pnpm examples`. A localnet faucet
+has no such limit. To run all the examples against Devnet, either set `SUPRA_PRIVATE_KEY` to a funded account, or
+create one from a single faucet grant with [`faucetFunder.ts`](./faucetFunder.ts):
+
+```bash
+SUPRA_NETWORK=devnet SUPRA_PRIVATE_KEY="$(pnpm exec tsx examples/faucetFunder.ts)" pnpm examples
+```
+
+`faucetFunder.ts` generates an account, requests SUPRA for it once, waits until the balance shows, and prints only the
+private key on stdout; the address and the progress go to stderr. The examples then fund the accounts they generate
+with 25 SUPRA transfers from that account. `faucet.ts` skips its own request because `SUPRA_EXAMPLES_FUND` is not set.
+
+The scheduled workflow `.github/workflows/examples-devnet.yml` runs the examples against Devnet that way, once a day and
+on manual dispatch. It uses no repository secret: each run creates a funder account with one faucet request, masks its
+key in the log, and runs `pnpm examples` from that account.
+
 Examples against Devnet:
 
 ```bash
-SUPRA_NETWORK=devnet SUPRA_EXAMPLES_FUND=1 pnpm examples
+SUPRA_NETWORK=devnet SUPRA_PRIVATE_KEY="$(pnpm exec tsx examples/faucetFunder.ts)" pnpm examples
 SUPRA_NETWORK=devnet SUPRA_PRIVATE_KEY=<key> pnpm exec tsx examples/coin.ts
 ```
 
@@ -76,7 +93,8 @@ SUPRA_RPC_URL=http://localhost:27001 SUPRA_CHAIN_ID=255 SUPRA_EXAMPLES_FUND=1 pn
 [`setup.ts`](./setup.ts) reads the environment, creates the client and the accounts, and sets the exit status.
 [`twoSignersModule.ts`](./twoSignersModule.ts) publishes the module of `e2e/fixtures/move` with the entry function that
 takes two signers, for the multi-agent transaction of `submitTransaction.ts`; the network has no such framework
-function. [`runAll.ts`](./runAll.ts) is the script behind `pnpm examples`.
+function. [`runAll.ts`](./runAll.ts) is the script behind `pnpm examples`. [`faucetFunder.ts`](./faucetFunder.ts) is
+not an example: it creates the funded account described under [Environment](#environment).
 
 ## Sequence numbers
 

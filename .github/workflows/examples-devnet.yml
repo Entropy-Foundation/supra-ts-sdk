@@ -1,8 +1,10 @@
 name: Examples on Devnet
 
-# Builds the SDK and runs every example in `examples/` against Devnet. The examples that send transactions use the
-# account of the repository secret SUPRA_DEVNET_PRIVATE_KEY (an Ed25519 private key, 32 bytes as hex). When the secret
-# is empty, they generate fresh accounts and fund them from the Devnet faucet.
+# Builds the SDK and runs every example in `examples/` against Devnet. The workflow needs no repository secret. Each run
+# creates a throwaway account with `examples/faucetFunder.ts`, funds it with one request to the Devnet faucet, and runs
+# the examples from that account: they fund the accounts they generate by transfers from it and request nothing from
+# the faucet. `faucet.ts` skips its own faucet request because SUPRA_EXAMPLES_FUND is not set; the funding step makes
+# the same SDK faucet call. The key of the throwaway account is masked in the log and written nowhere else.
 
 on:
   schedule:
@@ -11,6 +13,12 @@ on:
 
 permissions:
   contents: read
+
+# The Devnet faucet limits requests per IP address, and runners share addresses. One run at a time keeps two runs from
+# drawing on the faucet allowance of one IP address at once.
+concurrency:
+  group: examples-devnet
+  cancel-in-progress: false
 
 jobs:
   examples:
@@ -26,12 +34,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The key is visible to this step only, not to the dependency installation above.
-      - name: Run the examples
-        env:
-          SUPRA_PRIVATE_KEY: ${{ secrets.SUPRA_DEVNET_PRIVATE_KEY }}
+      - run: pnpm build
+      # The funder prints only the private key on stdout; `::add-mask::` hides it in the log before anything else can
+      # print it.
+      - name: Fund an account and run the examples
         run: |
-          if [ -z "$SUPRA_PRIVATE_KEY" ]; then
-            export SUPRA_EXAMPLES_FUND=1
-          fi
-          pnpm examples
+          set -euo pipefail
+          key="$(pnpm exec tsx examples/faucetFunder.ts)"
+          echo "::add-mask::$key"
+          SUPRA_PRIVATE_KEY="$key" pnpm examples
