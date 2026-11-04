@@ -27,7 +27,7 @@ import {
  */
 
 /** The chain ID of Mainnet. The examples do not send transactions to it. */
-const MAINNET_CHAIN_ID = 8;
+export const MAINNET_CHAIN_ID = 8;
 
 /** Quants given to each account other than the first when it is funded from the first account (25 SUPRA). */
 const SHARED_FUNDING_QUANTS = 2_500_000_000n;
@@ -69,7 +69,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** Requests funds for `account` from the faucet, retrying while the faucet has no free account, and waits for them. */
-async function fundFromFaucet(supra: SupraClient, account: SupraAccount): Promise<void> {
+export async function fundFromFaucet(supra: SupraClient, account: SupraAccount): Promise<void> {
     const deadline = Date.now() + FUNDING_TIMEOUT_MS;
     for (;;) {
         try {
