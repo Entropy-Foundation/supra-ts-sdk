@@ -232,13 +232,16 @@ export class Build {
      * @param args.function - Target function name as MoveFunctionId
      * @param args.functionTypeArgs - Target function type args
      * @param args.functionArgs - Target function args
-     * @param args.automationMaxGasAmount - Max gas amount for automated transaction
+     * @param args.automationMaxGasAmount - Max gas amount for automated transaction. An automated transaction that
+     * needs more fails, and its owner pays for the gas it used. Simulate the function as a user transaction of the
+     * owner and use its gas with a margin: the first execution can use far more gas than later ones (see the example).
      * @param args.automationGasPriceCap - Gas unit price upper limit that user is willing to pay. It must be at
      * least the node's minimum gas unit price (`getMinGasUnitPrice()`). Otherwise the node refuses the registration at
      * validation: the submit call answers with a `SupraAPIError` (status 400, `MoveTransactionValidationFailed` with
      * `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND`) and a simulation reports `Invalid` with the same status, as a
      * `SupraSimulationFailedError`. The builder does not check the cap.
-     * @param args.automationFeeCapForEpoch - Maximum automation fee that user is willing to pay for epoch.
+     * @param args.automationFeeCapForEpoch - Maximum automation fee that user is willing to pay for epoch. The registry
+     * refuses a cap below its estimate for the max gas (the view `0x1::automation_registry::estimate_automation_fee`).
      * @param args.automationExpirationTimestampSecs - Expiration time of the automated transaction in seconds since UTC Epoch start.
      * @param args.automationAuxData - Reserved for future extensions of registration parameters. Where the node adds
      * the task type and the priority to the auxiliary data (feature `SUPRA_AUTOMATION_V2`, enabled on Mainnet, Testnet
@@ -268,17 +271,51 @@ export class Build {
      *
      * async function runExample() {
      *     const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
+     *     const senderSequenceNumber = (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number;
+     *     const automated = {
+     *         function: "0x1::supra_account::transfer" as const,
+     *         functionTypeArgs: [],
+     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+     *     };
+     *
+     *     // The max gas is twice the gas that the function uses as a user transaction of the owner. The first
+     *     // execution can use far more gas than later ones.
+     *     const simulation = await supra.transaction.simulate.simple({
+     *         sendTxPayload: await supra.transaction.build.sendTxnPayload({
+     *             senderAccount: account,
+     *             rawTxn: supra.transaction.build.rawTxnObject({
+     *                 senderAddress: account.address(),
+     *                 senderSequenceNumber,
+     *                 ...automated,
+     *                 optionalTransactionPayloadArgs: { gasUnitPrice, maxGas: 5_000n },
+     *             }),
+     *         }),
+     *     });
+     *     if (simulation.output === null || typeof simulation.output !== "object" || !("Move" in simulation.output)) {
+     *         throw new Error("The simulation returned no Move output");
+     *     }
+     *     const automationMaxGasAmount = 2n * BigInt(simulation.output.Move.gas_used);
+     *
+     *     // The registry refuses a fee cap below its estimate for the max gas, which rises with the gas that other
+     *     // tasks have committed; the cap is twice the estimate.
+     *     const [estimatedFee] = await supra.methods.view<[string]>({
+     *         function: "0x1::automation_registry::estimate_automation_fee",
+     *         functionArguments: [automationMaxGasAmount.toString()],
+     *         typeArguments: [],
+     *     });
+     *
+     *     if (estimatedFee === undefined) {
+     *         throw new Error("The node returned no automation fee estimate");
+     *     }
      *
      *     // Version 2 registration of a user task (a user task has no priority)
      *     const registration = supra.transaction.build.automationRegistrationRawTxnObject({
      *         senderAddress: account.address(),
-     *         senderSequenceNumber: (await supra.account.getAccountInfo({ accountAddress: account.address() })).sequence_number,
-     *         function: "0x1::supra_account::transfer",
-     *         functionTypeArgs: [],
-     *         functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
-     *         automationMaxGasAmount: 500n,
+     *         senderSequenceNumber,
+     *         ...automated,
+     *         automationMaxGasAmount,
      *         automationGasPriceCap: 2n * gasUnitPrice,
-     *         automationFeeCapForEpoch: 1_000_000_000n,
+     *         automationFeeCapForEpoch: 2n * BigInt(estimatedFee),
      *         automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 60 * 60),
      *         automationAuxData: [],
      *         automationTaskType: "User",
