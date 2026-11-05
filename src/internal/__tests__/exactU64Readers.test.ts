@@ -251,11 +251,16 @@ describe.each(FORMS)("a u64 field sent as a $name", (form) => {
     it("the block readers return a bigint evm_base_fee_per_gas, and null stays null", async () => {
         const block = {
             ...rc7Block,
-            execution_statistics: { ...rc7Block.execution_statistics, evm_base_fee_per_gas: FIELD },
+            execution_statistics: {
+                ...rc7Block.execution_statistics,
+                evm_base_fee_per_gas: FIELD,
+                evm_automated_txn_gas_unit_price: FIELD,
+            },
         };
         respond(render(block, form));
         const latest = await getLatestBlockInternal(config);
         expect(latest.execution_statistics?.evm_base_fee_per_gas).toBe(form.expected);
+        expect(latest.execution_statistics?.evm_automated_txn_gas_unit_price).toBe(form.expected);
         expect(latest.execution_statistics?.block_total_evm_block_metadata_gas_used).toBe(7298);
         expect(latest.header.height).toBe(30014);
 
@@ -264,6 +269,7 @@ describe.each(FORMS)("a u64 field sent as a $name", (form) => {
             (await getBlockByHashInternal({ blockHash: rc7Block.header.hash }, config)).execution_statistics,
         ).toMatchObject({
             evm_base_fee_per_gas: form.expected,
+            evm_automated_txn_gas_unit_price: form.expected,
         });
 
         const withTransactions = { ...block, transactions: [settlementTransaction()] };
@@ -273,16 +279,58 @@ describe.each(FORMS)("a u64 field sent as a $name", (form) => {
             config,
         );
         expect(byHeight.execution_statistics?.evm_base_fee_per_gas).toBe(form.expected);
+        expect(byHeight.execution_statistics?.evm_automated_txn_gas_unit_price).toBe(form.expected);
         const txn = byHeight.transactions?.[0];
         if (txn?.txn_type !== "settlement" || txn.data.vm !== "move") {
             throw new Error("expected a Move settlement");
         }
         expect(txn.data.burn_amount).toBe(form.expected);
 
-        respond(JSON.stringify({ ...rc7Block, execution_statistics: { evm_base_fee_per_gas: null } }));
-        expect((await getLatestBlockInternal(config)).execution_statistics?.evm_base_fee_per_gas).toBeNull();
+        respond(
+            JSON.stringify({
+                ...rc7Block,
+                execution_statistics: { evm_base_fee_per_gas: null, evm_automated_txn_gas_unit_price: null },
+            }),
+        );
+        const nulls = (await getLatestBlockInternal(config)).execution_statistics;
+        expect(nulls?.evm_base_fee_per_gas).toBeNull();
+        expect(nulls?.evm_automated_txn_gas_unit_price).toBeNull();
         respond(JSON.stringify({ ...rc7Block, execution_statistics: {} }));
-        expect((await getLatestBlockInternal(config)).execution_statistics?.evm_base_fee_per_gas).toBeUndefined();
+        const absent = (await getLatestBlockInternal(config)).execution_statistics;
+        expect(absent?.evm_base_fee_per_gas).toBeUndefined();
+        expect(absent?.evm_automated_txn_gas_unit_price).toBeUndefined();
+    });
+});
+
+/** The largest `u128`, which the node renders for `evm_automated_txn_gas_unit_price`. */
+const LARGEST_U128 = "340282366920938463463374607431768211455";
+
+describe("evm_automated_txn_gas_unit_price, a u128", () => {
+    it.each([
+        ["a decimal string above 2^64", `"${LARGEST_U128}"`, 340282366920938463463374607431768211455n],
+        ["a number above 2^64", LARGEST_U128, 340282366920938463463374607431768211455n],
+        ["a decimal string above 2^64 and below the largest", `"18446744073709551616"`, 18446744073709551616n],
+        ["a number above 2^53", "9007199254740993", 9007199254740993n],
+    ])("is read exactly from %s by every block reader", async (_name, literal, expected) => {
+        const text = JSON.stringify({
+            ...rc7Block,
+            execution_statistics: { evm_automated_txn_gas_unit_price: FIELD },
+        }).replace(`"${FIELD}"`, literal);
+
+        respond(text);
+        expect((await getLatestBlockInternal(config)).execution_statistics?.evm_automated_txn_gas_unit_price).toBe(
+            expected,
+        );
+        respond(text);
+        expect(
+            (await getBlockByHashInternal({ blockHash: rc7Block.header.hash }, config)).execution_statistics
+                ?.evm_automated_txn_gas_unit_price,
+        ).toBe(expected);
+        respond(text);
+        expect(
+            (await getBlockByHeightInternal({ height: 30014 }, config)).execution_statistics
+                ?.evm_automated_txn_gas_unit_price,
+        ).toBe(expected);
     });
 });
 

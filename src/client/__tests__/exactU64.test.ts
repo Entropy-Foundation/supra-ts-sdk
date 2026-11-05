@@ -20,6 +20,23 @@ describe("quoteU64Fields", () => {
         expect(read(text, ["amount"])).toEqual({ amount: 18446744073709551615n });
     });
 
+    it("keeps a value above 2^64 exactly, from a number and from a string", () => {
+        const max = "340282366920938463463374607431768211455";
+        for (const literal of [max, `"${max}"`]) {
+            const text = `{"amount":${literal}}`;
+            expect(read(text, ["amount"])).toEqual({ amount: 340282366920938463463374607431768211455n });
+        }
+    });
+
+    it("reads the block fields of both block paths, including a u128", () => {
+        const text = '{"execution_statistics":{"evm_base_fee_per_gas":1,"evm_automated_txn_gas_unit_price":2}}';
+        for (const paths of [U64_FIELDS.block, U64_FIELDS.blockWithTransactions]) {
+            expect(read(text, paths)).toEqual({
+                execution_statistics: { evm_base_fee_per_gas: 1n, evm_automated_txn_gas_unit_price: 2n },
+            });
+        }
+    });
+
     it("leaves a target value that is already a string, null or absent as it is", () => {
         const text = '{"a":"7","b":null,"d":{"x":1}}';
         expect(quoteU64Fields(text, ["a", "b", "c"])).toBe(text);

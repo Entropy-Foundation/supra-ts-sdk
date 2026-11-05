@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `ExecutedBlockStatistics.evm_automated_txn_gas_unit_price` is `bigint | null`; it was `number | null`.
+  The node's value is a `u128`, which a `number` cannot hold above `Number.MAX_SAFE_INTEGER`. The block readers
+  (`getLatestBlock`, `getBlockByHash`, `getBlockByHeight`) read it exactly, from the JSON number that `supra_node_v12.0.0`
+  release candidates send and from the decimal string that a later release sends, as they read `evm_base_fee_per_gas`.
+  Code that read the field as a `number` converts with `Number(price)` (which rounds above `Number.MAX_SAFE_INTEGER`)
+  or keeps the `bigint`.
+
 ## [2.0.0] - 2026-11-04
 
 This release supports Supra node v11.7.2, which runs on Mainnet and Testnet, and the v12.0.0 release candidates, which

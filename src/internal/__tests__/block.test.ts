@@ -19,6 +19,12 @@ const testConfig: NetworkConfig = {
     rpcUrl: "https://rpc-testnet.supra.com",
 };
 
+/** The exactly read fields of a block's `execution_statistics`. */
+const EXACT_STATISTICS = [
+    "execution_statistics.evm_base_fee_per_gas",
+    "execution_statistics.evm_automated_txn_gas_unit_price",
+] as const;
+
 const mockBlockHeader = {
     hash: "0xabc",
     height: 100,
@@ -34,10 +40,7 @@ describe("internal/block", () => {
         it("should call get with /block path", async () => {
             mockGet.mockResolvedValue({ data: mockBlockHeader });
             const result = await getLatestBlockInternal(testConfig);
-            expect(mockGet).toHaveBeenCalledWith(
-                { path: "/block", u64Fields: ["execution_statistics.evm_base_fee_per_gas"] },
-                testConfig,
-            );
+            expect(mockGet).toHaveBeenCalledWith({ path: "/block", u64Fields: [...EXACT_STATISTICS] }, testConfig);
             expect(result).toEqual(mockBlockHeader);
         });
     });
@@ -53,7 +56,7 @@ describe("internal/block", () => {
                 {
                     path: "/block/height/100",
                     query: { with_finalized_transactions: true, type: "user" },
-                    u64Fields: ["execution_statistics.evm_base_fee_per_gas", "transactions[*].data.burn_amount"],
+                    u64Fields: [...EXACT_STATISTICS, "transactions[*].data.burn_amount"],
                 },
                 testConfig,
             );
@@ -66,7 +69,7 @@ describe("internal/block", () => {
                 {
                     path: "/block/height/50",
                     query: { with_finalized_transactions: undefined, type: undefined },
-                    u64Fields: ["execution_statistics.evm_base_fee_per_gas", "transactions[*].data.burn_amount"],
+                    u64Fields: [...EXACT_STATISTICS, "transactions[*].data.burn_amount"],
                 },
                 testConfig,
             );
@@ -78,7 +81,7 @@ describe("internal/block", () => {
             mockGet.mockResolvedValue({ data: mockBlockHeader });
             await getBlockByHashInternal({ blockHash: "0xabc" }, testConfig);
             expect(mockGet).toHaveBeenCalledWith(
-                { path: "/block/0xabc", u64Fields: ["execution_statistics.evm_base_fee_per_gas"] },
+                { path: "/block/0xabc", u64Fields: [...EXACT_STATISTICS] },
                 testConfig,
             );
         });
