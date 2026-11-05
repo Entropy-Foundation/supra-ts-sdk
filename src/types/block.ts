@@ -13,8 +13,12 @@ export interface ExecutedBlockStatistics {
     block_total_automated_gas_used?: number | null;
     user_txn_count?: number | null;
     automation_record_count?: number | null;
-    /** v12. */
-    evm_automated_txn_gas_unit_price?: number | null;
+    /**
+     * v12. The gas unit price at which the block's EVM automated transactions were scheduled and charged: the lowest
+     * gas price of any user transaction in the block, or the chain's minimum when it carried none. Read exactly: the
+     * node's value is a `u128` and can exceed `Number.MAX_SAFE_INTEGER`.
+     */
+    evm_automated_txn_gas_unit_price?: bigint | null;
     /** v12. The EVM base fee in wei per gas, read exactly: the node's value can exceed `Number.MAX_SAFE_INTEGER`. */
     evm_base_fee_per_gas?: bigint | null;
     /** v12. */

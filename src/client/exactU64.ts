@@ -1,8 +1,9 @@
 /**
- * Exact reading of the `u64` fields that a node renders as JSON numbers.
+ * Exact reading of the unsigned integer fields (`u64`, and one `u128`) that a node renders as JSON numbers.
  *
- * `JSON.parse` turns every number into an IEEE 754 double, which cannot hold a `u64` above 2^53 - 1. The fields
+ * `JSON.parse` turns every number into an IEEE 754 double, which cannot hold an integer above 2^53 - 1. The fields
  * listed in {@link U64_FIELDS} can exceed that value, and a later node release renders them as decimal strings.
+ * The conversion has no upper bound of its own, so a field of any width is read exactly.
  * {@link quoteU64Fields} wraps the number tokens at those paths in quotes before the text is parsed, and
  * {@link convertU64Fields} turns the parsed values into `bigint`, so a field reads the same from either form.
  *
@@ -11,7 +12,10 @@
  * results) as they are.
  */
 
-/** The paths of the `u64` fields of each response that the SDK reads, as sent by node releases that render them. */
+/**
+ * The paths of the unsigned integer fields of each response that the SDK reads exactly, as sent by node releases that
+ * render them. All are `u64` except `execution_statistics.evm_automated_txn_gas_unit_price`, a `u128`.
+ */
 export const U64_FIELDS = {
     /** `GET /rpc/v4/supply/native`. */
     nativeSupply: ["burn_owed_quants", "escrow_settled_quants", "escrow_balance_quants"],
@@ -28,9 +32,13 @@ export const U64_FIELDS = {
     /** `POST /rpc/v4/transactions/by_hashes`. */
     transactionsByHashes: ["transactions[*].transaction.data.burn_amount"],
     /** `GET /rpc/v3|v4/block` and `/block/{block_hash}`. */
-    block: ["execution_statistics.evm_base_fee_per_gas"],
+    block: ["execution_statistics.evm_base_fee_per_gas", "execution_statistics.evm_automated_txn_gas_unit_price"],
     /** `GET /rpc/v3|v4/block/height/{height}`, which can carry the block's transactions. */
-    blockWithTransactions: ["execution_statistics.evm_base_fee_per_gas", "transactions[*].data.burn_amount"],
+    blockWithTransactions: [
+        "execution_statistics.evm_base_fee_per_gas",
+        "execution_statistics.evm_automated_txn_gas_unit_price",
+        "transactions[*].data.burn_amount",
+    ],
 } as const satisfies Record<string, readonly string[]>;
 
 /** A field that does not hold a non-negative integer that `bigint` can represent exactly. */

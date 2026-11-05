@@ -30,6 +30,16 @@ describeE2E("blocks", () => {
         }
     });
 
+    test("evm_automated_txn_gas_unit_price is a bigint or null from v12 and absent before", async () => {
+        const stats = (await ctx.supra.block.getLatestBlock()).execution_statistics;
+        const price = stats?.evm_automated_txn_gas_unit_price;
+        if (nodeGeneration() === "v11") {
+            expect(price).toBeUndefined();
+        } else {
+            expect(price === null || price === undefined || typeof price === "bigint").toBe(true);
+        }
+    });
+
     test("getBlockByHeight returns the block that committed a transfer", async () => {
         const height = transfer.block_header?.height as number;
         const block = await ctx.supra.block.getBlockByHeight({ height });
