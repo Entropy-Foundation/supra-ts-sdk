@@ -379,7 +379,8 @@ describeE2E("the transaction hash derived before submitting", () => {
                 function: SUPRA_ACCOUNT_TRANSFER,
                 functionTypeArgs: [],
                 functionArgs: [createUnfundedAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
-                automationMaxGasAmount: 500n,
+                // The first execution of a transfer to a new account uses about 1,000 gas units.
+                automationMaxGasAmount: 5_000n,
                 automationGasPriceCap: 200_000n,
                 automationFeeCapForEpoch: 1_000_000_000n,
                 automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 2 * 60 * 60),

@@ -430,11 +430,16 @@ await supra.multisig.executeRejectedMultisigTransaction({ senderAccount: account
 
 ## Automation Tasks
 
-An automation task is registered with `transaction.build.automationRegistrationRawTxnObject`, a builder that makes no request (pass `gasUnitPrice`, and `maxGas` for a sender with less than 20 SUPRA). Passing `automationTaskType` (`"User"` or `"System"`) or `automationPriority` (a `u64` `bigint`) makes it a version 2 registration; without them it is version 1. v11.7.0 and v12 nodes accept both. Without a priority the registry uses the task's index as its priority. `automationPriority` is for system tasks only: a user task that carries one aborts (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when it is given with `"User"` or with no task type. A `"System"` task can be registered only by an account the Supra framework has authorised (others abort with `EUNAUTHORIZED_SYSTEM_ACCOUNT`). `automationGasPriceCap` must be at least the node's minimum gas unit price (`supra.getMinGasUnitPrice()`); a lower cap is refused at validation (submit: `SupraAPIError`, 400 `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND`; simulation: `SupraSimulationFailedError`), and the builder does not check it. `automationAuxData` must be `[]`.
+An automation task is registered with `transaction.build.automationRegistrationRawTxnObject`, a builder that makes no request (pass `gasUnitPrice`, and `maxGas` for a sender with less than 20 SUPRA). Passing `automationTaskType` (`"User"` or `"System"`) or `automationPriority` (a `u64` `bigint`) makes it a version 2 registration; without them it is version 1. v11.7.0 and v12 nodes accept both. Without a priority the registry uses the task's index as its priority. `automationPriority` is for system tasks only: a user task that carries one aborts (`EUSER_TASK_PRIORITY_NOT_SUPPORTED`), so the builder throws a `RangeError` when it is given with `"User"` or with no task type. A `"System"` task can be registered only by an account the Supra framework has authorised (others abort with `EUNAUTHORIZED_SYSTEM_ACCOUNT`). `automationGasPriceCap` must be at least the node's minimum gas unit price (`supra.getMinGasUnitPrice()`); a lower cap is refused at validation (submit: `SupraAPIError`, 400 `AUTOMATION_TASK_GAS_PRICE_CAP_BELOW_MIN_BOUND`; simulation: `SupraSimulationFailedError`), and the builder does not check it. `automationAuxData` must be `[]`. `automationMaxGasAmount` is the gas limit of each automated transaction; one that needs more fails and its owner pays for the gas it used, and the first execution can use far more gas than later ones (a transfer to a new account: about 1,000 units, then fewer than 10). Use twice the `gas_used` of `transaction.simulate.simple` for the function sent as a user transaction of the owner. `automationFeeCapForEpoch` must be at least the registry's estimate for that max gas (view `0x1::automation_registry::estimate_automation_fee`, which rises with the gas other tasks have committed); use twice the estimate.
 
 The registration's `0x1::automation_registry::AutomationTaskMetaData` event carries the `task_index`. `supra.automation.cancelAutomationTask` (`cancel_task`) and `supra.automation.stopAutomationTasks` (`stop_tasks`) take it, submit through the client's sequence-number counter like the transfers, and estimate their max gas. Both abort for a task of another account and while the registry moves to the next automation cycle (`ECYCLE_TRANSITION_IN_PROGRESS`).
 
 ```typescript
+// Values read from the node: the gas_used that transaction.simulate.simple reports for the function, and the
+// registry's estimate_automation_fee for twice that gas
+const simulatedGasUsed = 1_034n;
+const estimatedFee = 2_481_600n;
+
 const gasUnitPrice = await supra.getEstimatedGasUnitPrice();
 const registration = supra.transaction.build.automationRegistrationRawTxnObject({
     senderAddress: account.address(),
@@ -442,9 +447,9 @@ const registration = supra.transaction.build.automationRegistrationRawTxnObject(
     function: "0x1::supra_account::transfer",
     functionTypeArgs: [],
     functionArgs: [new SupraAccount().address().toUint8Array(), BCS.bcsSerializeUint64(1_000n)],
-    automationMaxGasAmount: 500n,
+    automationMaxGasAmount: 2n * simulatedGasUsed,
     automationGasPriceCap: 2n * gasUnitPrice,
-    automationFeeCapForEpoch: 1_000_000_000n,
+    automationFeeCapForEpoch: 2n * estimatedFee,
     automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / 1000) + 60 * 60),
     automationAuxData: [],
     automationTaskType: "User",

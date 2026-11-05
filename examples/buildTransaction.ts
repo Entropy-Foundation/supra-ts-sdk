@@ -129,17 +129,62 @@ runExample(async () => {
     // ---------------------------------------------------------------------------
     // Build an automation registration transaction
     // ---------------------------------------------------------------------------
+
+    // The automated function and its arguments.
+    const automatedTransfer = {
+        function: "0x1::supra_account::transfer" as MoveFunctionId,
+        functionTypeArgs: [],
+        functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
+    };
+
+    // Max gas of the simulated transaction. The node checks that the sender's balance covers it at the gas unit price,
+    // so it stays below what a funded account holds; raise it for a function that uses more.
+    const SIMULATION_MAX_GAS = 5_000n;
+    // The automated transaction runs in a later block, on state that may differ from the simulated one, so the task's
+    // max gas is this many times the simulated gas.
+    const MAX_GAS_FACTOR = 2n;
+    // The registry's fee estimate rises with the gas other tasks have committed, which can change before the
+    // registration is included, so the fee cap is this many times the estimate.
+    const FEE_CAP_FACTOR = 2n;
+
+    // Simulate the automated function as a user transaction from the task's owner. The simulation does not use the
+    // sequence number, so the next one is read without being taken.
+    const simulation = await supra.transaction.simulate.simple({
+        sendTxPayload: await supra.transaction.build.sendTxnPayload({
+            senderAccount: account,
+            rawTxn: supra.transaction.build.rawTxnObject({
+                senderAddress: account.address(),
+                senderSequenceNumber: sequenceNumber,
+                ...automatedTransfer,
+                optionalTransactionPayloadArgs: { gasUnitPrice, maxGas: SIMULATION_MAX_GAS },
+            }),
+        }),
+    });
+    if (simulation.output === null || typeof simulation.output !== "object" || !("Move" in simulation.output)) {
+        throw new Error("The simulation returned no Move output");
+    }
+    const automationMaxGasAmount = MAX_GAS_FACTOR * BigInt(simulation.output.Move.gas_used);
+
+    // The registry refuses a registration whose fee cap is below its estimate for the max gas.
+    const [estimatedFee] = await supra.methods.view<[string]>({
+        function: "0x1::automation_registry::estimate_automation_fee",
+        functionArguments: [automationMaxGasAmount.toString()],
+        typeArguments: [],
+    });
+    if (estimatedFee === undefined) {
+        throw new Error("The node returned no automation fee estimate");
+    }
+    const automationFeeCapForEpoch = FEE_CAP_FACTOR * BigInt(estimatedFee);
+
     const supraCoinTransferAutomationSerializedRawTransaction = supra.transaction.build
         .automationRegistrationRawTxnObject({
             senderAddress: account.address(),
             senderSequenceNumber: nextSequenceNumber(),
-            function: "0x0000000000000000000000000000000000000000000000000000000000000001::supra_account::transfer" as MoveFunctionId,
-            functionTypeArgs: [],
-            functionArgs: [receiverAddress.toUint8Array(), BCS.bcsSerializeUint64(1000n)],
-            automationMaxGasAmount: 500n,
+            ...automatedTransfer,
+            automationMaxGasAmount,
             // The cap must not be below the network's minimum gas unit price.
             automationGasPriceCap: (await supra.getMinGasUnitPrice()) * 2n,
-            automationFeeCapForEpoch: 1_000_000_000n,
+            automationFeeCapForEpoch,
             automationExpirationTimestampSecs: BigInt(Math.floor(Date.now() / MILLISECONDS_PER_SECOND) + 60 * 60),
             automationAuxData: [],
             optionalTransactionPayloadArgs: gas,
