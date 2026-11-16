@@ -1,6 +1,6 @@
 {
-  // Type-checks the end-to-end suite, the fixture scripts and the type tests, which the main
-  // tsconfig does not include. Nothing is emitted.
+  // Type-checks the end-to-end suite, the fixture scripts, the type tests and the unit test
+  // helpers, which the main tsconfig does not include. Nothing is emitted.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
@@ -10,6 +10,6 @@
     "rootDir": ".",
     "types": ["node", "jest"]
   },
-  "include": ["e2e", "scripts", "src/__tests__/declaredTypes.test.ts"],
+  "include": ["e2e", "scripts", "src/__tests__/declaredTypes.test.ts", "src/**/__tests__/helpers"],
   "exclude": ["node_modules", "dist"]
 }

@@ -11,11 +11,11 @@
     "sourceMap": false,
     "composite": false,
     "rootDir": "..",
-    "baseUrl": ".",
+    "types": ["node"],
     "paths": {
       "supra-ts-sdk": ["../src/index.ts"]
     }
   },
   "include": ["./**/*.ts", "../src/**/*.ts"],
-  "exclude": ["../node_modules", "../dist", "../**/*.test.ts"]
+  "exclude": ["../node_modules", "../dist", "../**/__tests__/**", "../**/*.test.ts"]
 }
