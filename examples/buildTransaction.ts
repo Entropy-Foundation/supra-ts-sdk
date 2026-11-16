@@ -4,6 +4,7 @@ import {
     MILLISECONDS_PER_SECOND,
     SupraAccount,
     TxnBuilderTypes,
+    standardizeAddress,
     stringifyWithBigInt,
     type MoveFunctionId,
 } from "supra-ts-sdk";
@@ -203,15 +204,17 @@ runExample(async () => {
     // Create a multisig account that `account` owns
     // ---------------------------------------------------------------------------
 
-    // The address of the multisig account that the creation below makes.
-    const [multisigAddress] = await supra.methods.view<[string]>({
+    // The address of the multisig account that the creation below makes. The node returns an address without its
+    // leading zero digits, so it can have an odd number of hex digits; `standardizeAddress` pads it to 64 digits.
+    const [nextMultisigAddress] = await supra.methods.view<[string]>({
         function: "0x1::multisig_account::get_next_multisig_account_address",
         functionArguments: [account.address().toString()],
         typeArguments: [],
     });
-    if (multisigAddress === undefined) {
+    if (nextMultisigAddress === undefined) {
         throw new Error("The node returned no multisig account address");
     }
+    const multisigAddress = standardizeAddress(nextMultisigAddress);
 
     // One signature of the two owners is enough to execute a transaction.
     const multisigCreation = await supra.transaction.build.simple({
