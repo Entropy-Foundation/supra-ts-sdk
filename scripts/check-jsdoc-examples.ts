@@ -207,7 +207,7 @@ function main(): void {
                     declarationMap: false,
                     sourceMap: false,
                     rootDir: "..",
-                    baseUrl: ".",
+                    types: ["node"],
                     paths: { "supra-ts-sdk": ["../src/index.ts"] },
                 },
                 include: ["./*.ts"],
