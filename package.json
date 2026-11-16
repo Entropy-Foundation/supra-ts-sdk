@@ -93,7 +93,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@jest/globals": "^30.5.2",
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.2.3",
+    "@types/node": "^26.6.6",
     "@typescript-eslint/eslint-plugin": "^8.72.1",
     "@typescript-eslint/parser": "^8.72.1",
     "eslint": "^10.14.0",
