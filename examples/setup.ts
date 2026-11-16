@@ -4,6 +4,7 @@ import {
     SupraAccount,
     SupraClient,
     SupraFaucetUnavailableError,
+    SupraTimeoutError,
     TransactionStatus,
 } from "supra-ts-sdk";
 
@@ -33,6 +34,15 @@ export const MAINNET_CHAIN_ID = 8;
 const SHARED_FUNDING_QUANTS = 2_500_000_000n;
 
 const FUNDING_TIMEOUT_MS = 180_000;
+
+/** How long `fundFromFaucet` waits for the funds of a faucet request that timed out before it requests again. */
+const TIMED_OUT_FAUCET_GRACE_MS = 30_000;
+
+/**
+ * The exit status of an example that failed because a request to the node timed out (`SupraTimeoutError`). `runAll.ts`
+ * runs such an example again. 75 is `EX_TEMPFAIL` of `sysexits.h`.
+ */
+export const REQUEST_TIMEOUT_EXIT_STATUS = 75;
 
 export function createClient(): SupraClient {
     const rpcUrl = process.env["SUPRA_RPC_URL"] ?? "";
@@ -68,7 +78,11 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Requests funds for `account` from the faucet, retrying while the faucet has no free account, and waits for them. */
+/**
+ * Requests funds for `account` from the faucet and waits for them. The request is sent again while the faucet has no
+ * free account, and after a request that timed out when no funds arrive within `TIMED_OUT_FAUCET_GRACE_MS`; the faucet
+ * can have served a request whose response timed out.
+ */
 export async function fundFromFaucet(supra: SupraClient, account: SupraAccount): Promise<void> {
     const deadline = Date.now() + FUNDING_TIMEOUT_MS;
     for (;;) {
@@ -76,13 +90,39 @@ export async function fundFromFaucet(supra: SupraClient, account: SupraAccount):
             await supra.faucet.fundAccountWithFaucet({ accountAddress: account.address() });
             break;
         } catch (error) {
-            if (!(error instanceof SupraFaucetUnavailableError) || Date.now() > deadline) {
+            if (Date.now() > deadline) {
+                throw error;
+            }
+            if (error instanceof SupraTimeoutError) {
+                console.error(`The faucet request for ${account.address().toString()} timed out`);
+                if (await receivesSupraWithin(supra, account, TIMED_OUT_FAUCET_GRACE_MS)) {
+                    return;
+                }
+            } else if (!(error instanceof SupraFaucetUnavailableError)) {
                 throw error;
             }
             await sleep(2_000);
         }
     }
     await waitForBalance(supra, account);
+}
+
+/** True when the account holds SUPRA within `windowMs`. A failed balance read counts as no SUPRA. */
+async function receivesSupraWithin(supra: SupraClient, account: SupraAccount, windowMs: number): Promise<boolean> {
+    const deadline = Date.now() + windowMs;
+    for (;;) {
+        try {
+            if ((await supra.account.getAccountSupraCoinBalance({ accountAddress: account.address() })) > 0n) {
+                return true;
+            }
+        } catch {
+            // The next read, or the caller's next faucet request, decides.
+        }
+        if (Date.now() > deadline) {
+            return false;
+        }
+        await sleep(500);
+    }
 }
 
 /** Waits until the account holds SUPRA. */
@@ -165,10 +205,13 @@ export function assertSuccess(label: string, transaction: { hash: string; status
     }
 }
 
-/** Runs an example and exits with a non-zero code when it throws. */
+/**
+ * Runs an example and exits with a non-zero code when it throws: `REQUEST_TIMEOUT_EXIT_STATUS` for a
+ * `SupraTimeoutError`, 1 for any other error.
+ */
 export function runExample(main: () => Promise<void>): void {
     main().catch((error: unknown) => {
         console.error(error);
-        process.exit(1);
+        process.exit(error instanceof SupraTimeoutError ? REQUEST_TIMEOUT_EXIT_STATUS : 1);
     });
 }

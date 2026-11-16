@@ -93,7 +93,8 @@ SUPRA_RPC_URL=http://localhost:27001 SUPRA_CHAIN_ID=255 SUPRA_EXAMPLES_FUND=1 pn
 [`setup.ts`](./setup.ts) reads the environment, creates the client and the accounts, and sets the exit status.
 [`twoSignersModule.ts`](./twoSignersModule.ts) publishes the module of `e2e/fixtures/move` with the entry function that
 takes two signers, for the multi-agent transaction of `submitTransaction.ts`; the network has no such framework
-function. [`runAll.ts`](./runAll.ts) is the script behind `pnpm examples`. [`faucetFunder.ts`](./faucetFunder.ts) is
+function. [`runAll.ts`](./runAll.ts) is the script behind `pnpm examples`; it runs an example again, up to three runs in
+all, when the example fails because a request to the node timed out. [`faucetFunder.ts`](./faucetFunder.ts) is
 not an example: it creates the funded account described under [Environment](#environment).
 
 ## Sequence numbers
